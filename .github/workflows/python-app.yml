@@ -28,7 +28,8 @@ jobs:
         python -m pip install --upgrade pip
         pip install flake8 pytest
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi 
-        - name: تثبيت المتطلبات وتشغيل المحرك
+       - name: تثبيت المتطلبات وتشغيل المحرك
         run: |
           pip install honeybadger
           python assistant.py
+          echo "تم تشغيل المحرك وربط الرادار بنجاح 🚀" 
