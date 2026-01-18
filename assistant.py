@@ -12,15 +12,15 @@ def mongeze_engine_v9():
         
         # --- مرحلة الاختبار (مبلغ تجريبي 1000 جنيه) ---
         amount = 1000
-        vat = amount * 0.14        # ضريبة القيمة المضافة 14%
-        income_tax = amount * 0.10 # ضريبة الخصم 10%
-        final_total = amount + vat - income_tax
         
-        print(f"💰 المبلغ الأساسي: {amount} جنيه")
-        print(f"📈 ضريبة 14% هي: {vat} جنيه")
-        print(f"📉 خصم 10% هو: {income_tax} جنيه")
-        print(f"✅ الإجمالي الصافي: {final_total} جنيه")
-        print("-------------------------------------------")
+        # العملية (أ): حساب القيمة المضافة فقط (شراء)
+        total_with_vat = amount * 1.14 
+        
+        # العملية (ب): حساب الصافي بعد خصم الأرباح فقط (قبض)
+        net_after_tax = amount * 0.90
+        
+        print(f"🔹 لو هتبيع (بالضريبة): {total_with_vat} ج.م")
+        print(f"🔸 لو هتقبض (بعد الخصم): {net_after_tax} ج.م")
         print("✔️ تم الاختبار بنجاح يا بشمهندس أحمد")
         
     except Exception as e:
