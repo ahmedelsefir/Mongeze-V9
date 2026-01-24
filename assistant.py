@@ -43,7 +43,7 @@ if not st.session_state['logged_in']:
     
     if st.sidebar.button("دخول للنظام"):
         # تعديل جوهري لضمان الدخول حتى لو قاعدة البيانات فارغة [cite: 2026-01-13]
-        if user == "ahmedelsefir" and pw == "123": # يمكنك تغيير كلمة السر هنا
+        if user == "ahmedelsefir" and pw == "s123": # يمكنك تغيير كلمة السر هنا
             st.session_state['logged_in'] = True
             st.session_state['user'] = user
             st.rerun()
