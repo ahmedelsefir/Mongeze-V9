@@ -1,69 +1,69 @@
 import streamlit as st
 import google.generativeai as genai
+import pandas as pd
 
-# 1. التأسيس الآلي للنظام [cite: 2026-01-13]
-st.set_page_config(page_title="منظومة مُنجز الذكية", layout="wide", page_icon="🚀")
+# 1. الإعدادات الأساسية والربط الآلي
+st.set_page_config(page_title="منظومة مُنجز الشاملة", layout="wide", page_icon="🏛️")
 
-# الربط التلقائي بمفتاح API من Secrets لضمان رضا العميل [cite: 2026-01-18]
 try:
-    if "GOOGLE_API_KEY" in st.secrets:
-        genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-    else:
-        st.error("⚠️ مفتاح الاتصال غير موجود في Secrets!")
-except Exception as e:
-    st.error(f"❌ فشل الاتصال الآلي: {e}")
+    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+except:
+    st.error("⚠️ خطأ في مفتاح الاتصال بـ API")
 
-# 2. إدارة جلسة الدخول
+# 2. إدارة جلسة الدخول (بدون تعقيد قاعدة البيانات)
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
-# 3. بوابة العبور (الدخول المباشر للمطور)
 if not st.session_state['logged_in']:
-    st.title("🔐 بوابة دخول مُنجز")
-    col1, col2 = st.columns(2)
-    with col1:
-        user = st.text_input("اسم المستخدم")
-    with col2:
-        pw = st.text_input("كلمة المرور", type='password')
-    
+    st.title("🔐 بوابة دخول مُنجز الذكية")
+    user = st.text_input("اسم المستخدم")
+    pw = st.text_input("كلمة المرور", type='password')
     if st.button("دخول للنظام"):
-        # المفتاح الموحد للدخول
         if user == "ahmedelsefir" and pw == "123":
             st.session_state['logged_in'] = True
-            st.success("تم الاتصال بنجاح.. جاري التحميل")
             st.rerun()
         else:
             st.error("بيانات الدخول غير صحيحة")
 else:
-    # 4. لوحة التحكم المرنة (سهولة إضافة أي برنامج) [cite: 2026-01-13]
-    st.sidebar.title("🎮 لوحة التحكم")
-    # لإضافة برنامج جديد، فقط أضف اسمه في القائمة أدناه
-    menu = ["🤖 المساعد الذكي", "📊 المحاسب الذكي", "⚙️ الإعدادات"]
-    choice = st.sidebar.selectbox("اختر البرنامج المطلوب:", menu)
+    # 3. لوحة التحكم الجانبية (سهولة إضافة برامج أخرى)
+    st.sidebar.title("🎮 لوحة تحكم مُنجز")
+    menu = ["🤖 المساعد الذكي", "📊 المحاسب الذكي", "📦 إدارة المخازن (قريباً)", "⚙️ الإعدادات"]
+    choice = st.sidebar.selectbox("اختر الأداة:", menu)
 
-    # --- موديول المساعد الذكي (Gemini 1.5 Flash - الأكثر استقراراً) ---
+    # --- أداة 1: المساعد الذكي (اتصال آلي) ---
     if choice == "🤖 المساعد الذكي":
-        st.header("🤖 عقل مُنجز (Gemini V9)")
-        st.info("المساعد جاهز للعمل بـ دقة متناهية.")
-        
-        prompt = st.chat_input("تحدث مع مُنجز...")
+        st.header("🤖 عقل مُنجز الاصطناعي")
+        prompt = st.chat_input("اسأل مُنجز عن أي شيء في عملك...")
         if prompt:
-            try:
-                # استخدام الموديل الأحدث لتجنب أخطاء NotFound
-                model = genai.GenerativeModel('gemini-1.5-flash')
-                response = model.generate_content(prompt)
-                with st.chat_message("assistant"):
-                    st.markdown(response.text)
-            except Exception as e:
-                st.error(f"حدث خطأ في الاتصال بالذكاء الاصطناعي: {e}")
+            # البحث الآلي عن الموديل الشغال
+            models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+            model = genai.GenerativeModel(models[0] if models else 'gemini-1.5-flash')
+            response = model.generate_content(prompt)
+            with st.chat_message("assistant"):
+                st.markdown(response.text)
 
-    # --- موديول المحاسب الذكي (قيد التأسيس) ---
+    # --- أداة 2: المحاسب الذكي (المعادلات الدقيقة) ---
     elif choice == "📊 المحاسب الذكي":
-        st.header("📊 المحاسب الذكي")
-        st.write("سيتم تفعيل معادلات (1.14) و (0.90) هنا بكل دقة.")
+        st.header("📊 المحاسب الذكي (دقة 100%)")
+        st.write("أدخل المبلغ لحساب الضريبة (1.14) والخصم (0.90) تلقائياً")
+        
+        amount = st.number_input("أدخل المبلغ الأساسي:", min_value=0.0, step=1.0)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            taxed = amount * 1.14
+            st.metric("المبلغ + الضريبة (1.14)", f"{taxed:,.2f}")
+        with col2:
+            discounted = amount * 0.90
+            st.metric("المبلغ بعد الخصم (0.90)", f"{discounted:,.2f}")
 
-    # --- نظام الإعدادات والخروج ---
+    # --- أداة 3: إدارة المخازن (هيكل جاهز للإضافة) ---
+    elif choice == "📦 إدارة المخازن (قريباً)":
+        st.info("هذا القسم جاهز لاستقبال بيانات مخازنك وتتبع الجرد آلياً.")
+
+    # --- أداة 4: الإعدادات والخروج ---
     elif choice == "⚙️ الإعدادات":
+        st.subheader("إعدادات النظام")
         if st.sidebar.button("تسجيل الخروج"):
             st.session_state['logged_in'] = False
             st.rerun()
