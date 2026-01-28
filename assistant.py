@@ -45,14 +45,14 @@ else:
     # --- أداة 2: المحاسب الذكي (المعادلات الدقيقة) ---
     elif choice == "📊 المحاسب الذكي":
         st.header("📊 المحاسب الذكي (دقة 100%)")
-        st.write("أدخل المبلغ لحساب الضريبة (1.14) والخصم (0.90) تلقائياً")
+        st.write("أدخل المبلغ لحساب الضريبة (1.15) والخصم (0.90) تلقائياً")
         
         amount = st.number_input("أدخل المبلغ الأساسي:", min_value=0.0, step=1.0)
         
         col1, col2 = st.columns(2)
         with col1:
-            taxed = amount * 1.14
-            st.metric("المبلغ + الضريبة (1.14)", f"{taxed:,.2f}")
+            taxed = amount * 1.15
+            st.metric("المبلغ + الضريبة (1.15)", f"{taxed:,.2f}")
         with col2:
             discounted = amount * 0.90
             st.metric("المبلغ بعد الخصم (0.90)", f"{discounted:,.2f}")
