@@ -2,102 +2,150 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 
-# --- 1. إعدادات الهوية والبصمة (الروزماري) ---
-st.set_page_config(page_title="المنجز V10 - النظام المتكامل", layout="wide")
+# --- 1. الهوية البصرية (الروزماري الفاخر) ---
+st.set_page_config(page_title="منصة المنجز V11 - الإطلاق الشامل", layout="wide")
 st.markdown("""
     <style>
-    .main { background-color: #f7f9f7; }
-    .stButton>button { width: 100%; background-color: #2e7d32; color: white; border-radius: 8px; }
-    .stMetric { background-color: white; padding: 15px; border-radius: 10px; border: 1px solid #e0e0e0; }
+    .main { background-color: #f8faf8; }
+    .stButton>button { border-radius: 12px; height: 3em; background-color: #2e7d32; color: white; font-weight: bold; width: 100%; }
+    .order-card { background: white; padding: 20px; border-radius: 15px; border: 1px solid #eee; margin-bottom: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+    .settings-row { display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid #eee; background: white; border-radius: 8px; margin-bottom: 5px; cursor: pointer; }
+    .user-card { text-align: center; padding: 15px; background: #ffffff; border-radius: 15px; border: 1px solid #e0e0e0; }
+    .status-online { color: #28a745; font-weight: bold; font-size: 14px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. إدارة الجلسة والدخول (V9) ---
+# --- 2. إدارة قاعدة البيانات والجلسات (V9 + V11) ---
+if 'db' not in st.session_state:
+    st.session_state['db'] = {"admin": {"pw": "123", "role": "القائد", "name": "أحمد السفير", "phone": "01000000000"}}
+if 'orders' not in st.session_state:
+    st.session_state['orders'] = [
+        {"id": "349180745", "type": "إقرار قيمة مضافة", "details": "نشاط تجاري - يناير", "price": "113.0", "status": "قيد المراجعة", "time": "منذ ساعتين"},
+        {"id": "349172626", "type": "فحص نثريات", "details": "مراجعة مصروفات إدارية", "price": "132.0", "status": "تم الاعتماد", "time": "منذ 5 ساعات"}
+    ]
+if 'chat' not in st.session_state:
+    st.session_state['chat'] = [{"u": "🤖 مساعد المنجز", "t": "أهلاً بك! يرجى رفع وثائقك (البطاقة والسجل) لنبدأ العمل فوراً."}]
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
-def login():
-    st.title("🔐 بوابة المنجز V10 | تسجيل الدخول")
-    with st.container():
-        user = st.text_input("اسم المستخدم (قائد/مستشار/عميل)")
-        password = st.text_input("كلمة المرور", type="password")
-        if st.button("دخول إلى النظام"):
-            # يمكن تخصيص كلمات مرور مختلفة لكل رتبة لاحقاً
-            if user == "admin" and password == "123": 
-                st.session_state['logged_in'] = True
-                st.session_state['user_role'] = "قائد"
-                st.rerun()
-            else:
-                st.error("خطأ في البيانات، يرجى التأكد من كلمة المرور")
+# --- 3. محرك الحسابات الضريبية ---
+def calculate_tax(amount):
+    vat = amount * 0.14
+    ins = amount * 0.1875
+    comm = amount * 0.30 
+    net = amount - (vat + ins + comm)
+    return vat, ins, comm, net
 
-# --- 3. محرك العمليات الحسابية (V10) ---
-def calculate_all(amount):
-    return {
-        "vat": amount * 0.14,           # قيمة مضافة
-        "ins": amount * 0.1875,         # تأمينات 
-        "platform": amount * 0.20,      # عمولة المنصة (20%)
-        "ops": amount * 0.10,           # مصاريف تشغيل (10%)
-        "net": amount * 0.3725          # المتبقي التقريبي للعميل بعد كل الالتزامات
-    }
-
-# --- 4. التطبيق الرئيسي بعد الدخول ---
-def main_app():
-    st.sidebar.title("🌿 المنجز V10")
-    st.sidebar.info(f"مرحباً بك يا {st.session_state.get('user_role', 'مستخدم')}")
+# --- 4. بوابة الدخول والتسجيل (بوابة المنجز الأصلية) ---
+def login_screen():
+    st.title("🌿 بوابة المنجز V11 | الأمان الضريبي بالثانية")
+    t1, t2 = st.tabs(["🔑 دخول الموثقين", "📝 إنشاء حساب جديد"])
     
-    menu = ["📊 المحاسب الذكي (الـ 24 جدول)", "📑 أرشيف النثريات", "✒️ غرفة التوقيع والاعتماد", "🛡️ لوحة تحكم القائد"]
-    choice = st.sidebar.selectbox("انتقل إلى:", menu)
-
-    # --- أ. المحاسب الذكي (الدمج الحسابي) ---
-    if choice == "📊 المحاسب الذكي (الـ 24 جدول)":
-        st.header("المحاسب الذكي | الدقة المتناهية")
-        amount = st.number_input("أدخل قيمة العملية الأساسية (جنيه)", min_value=0.0)
-        
-        if amount > 0:
-            res = calculate_all(amount)
-            col1, col2, col3, col4 = st.columns(4)
-            with col1: st.metric("قيمة مضافة (14%)", f"{res['vat']:,.2f}")
-            with col2: st.metric("تأمينات (18.75%)", f"{res['ins']:,.2f}")
-            with col3: st.metric("عمولة المنصة (20%)", f"{res['platform']:,.2f}")
-            with col4: st.metric("الصافي النهائي للعميل", f"{res['net']:,.2f}")
+    with t1:
+        u = st.text_input("اسم المستخدم")
+        p = st.text_input("كلمة المرور", type="password")
+        if st.button("دخول آمن للنظام"):
+            if u in st.session_state['db'] and st.session_state['db'][u]['pw'] == p:
+                st.session_state['logged_in'] = True
+                st.session_state['user_data'] = st.session_state['db'][u]
+                st.rerun()
+            else: st.error("بيانات غير صحيحة")
             
-            st.write("---")
-            st.subheader("توزيع الجداول الضريبية (محاكاة الـ 24 جدول)")
-            st.table(pd.DataFrame({
-                "نوع الجدول": ["جدول 1 (دخل)", "جدول 5 (خصم)", "جدول 12 (تأمينات)", "جدول 24 (نثريات)"],
-                "الحالة": ["مؤمن", "مؤمن", "محدث", "بانتظار الفاتورة"],
-                "القيمة": [amount, res['vat'], res['ins'], "قيد المعالجة"]
-            }))
+    with t2:
+        role = st.selectbox("نوع الحساب", ["عميل (صاحب نشاط)", "مستشار ضريبي معتمد"])
+        nu = st.text_input("اسم المستخدم الجديد")
+        np = st.text_input("كلمة مرور قوية", type="password")
+        n_phone = st.text_input("رقم الهاتف المرتبط بالبطاقة")
+        if role == "عميل (صاحب نشاط)":
+            st.info("📂 التوثيق القانوني مطلوب:")
+            st.file_uploader("ارفع صورة البطاقة الضريبية")
+            st.file_uploader("ارفع صورة السجل التجاري")
+        if st.button("تأكيد التسجيل والتوثيق"):
+            r_map = {"عميل (صاحب نشاط)": "العميل", "مستشار ضريبي معتمد": "المستشار"}
+            st.session_state['db'][nu] = {"pw": np, "role": r_map[role], "name": nu, "phone": n_phone}
+            st.success("تم تسجيل طلبك بنجاح!")
 
-    # --- ب. أرشيف النثريات (تصوير ورفع) ---
-    elif choice == "📑 أرشيف النثريات":
-        st.header("أرشفة المستندات الورقية")
-        file = st.file_uploader("صور الفاتورة وارفعها هنا للأرشفة", type=['jpg','png','pdf'])
-        if file:
-            st.success("تم تأمين الفاتورة وربطها بالجدول رقم 24 بنجاح.")
+# --- 5. التطبيق الرئيسي (اللوحات الثلاث) ---
+def main_app():
+    data = st.session_state['user_data']
+    role = data['role']
+    name = data['name']
 
-    # --- ج. غرفة التوقيع الرقمي (الاعتماد) ---
-    elif choice == "✒️ غرفة التوقيع والاعتماد":
-        st.header("اعتماد البيانات قانونياً")
-        st.write("بصفتك (عميل/مستشار)، هل تقر بصحة البيانات؟")
-        name = st.text_input("اكتب اسمك الثلاثي للتوقيع")
-        if st.button("توقيع واعتماد"):
-            if name:
-                st.success(f"تم الاعتماد الرقمي بواسطة {name} بتاريخ {datetime.now()}")
-                st.balloons()
+    # القائمة الجانبية الاحترافية
+    st.sidebar.markdown(f"""
+        <div class="user-card">
+            <img src="https://ui-avatars.com/api/?name={name}&background=2e7d32&color=fff" style="border-radius: 50%; width: 70px;">
+            <h4>{name}</h4>
+            <span class="status-online">● متصل الآن</span><br>
+            <small>رتبة: {role} موثق</small>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.sidebar.write("---")
+    menu = st.sidebar.radio("انتقل إلى:", ["🏠 الرئيسية", "📋 الطلبات والمهام", "💬 غرفة المحادثات", "📅 المناوبات", "⚙️ الإعدادات العامة"])
 
-    # --- د. لوحة القائد (أنت) ---
-    elif choice == "🛡️ لوحة تحكم القائد":
-        st.header("إحصائيات الإمبراطورية")
-        st.metric("إجمالي العمولات المحصلة اليوم", "1,250 جنيه")
-        st.info("نظام التنبيهات: متبقي 15 يوماً على موعد الإقرار القادم.")
+    # --- القسم 1: الطلبات (بناءً على صورتك) ---
+    if menu == "📋 الطلبات والمهام":
+        st.header("📋 إدارة العمليات الضريبية")
+        for order in st.session_state['orders']:
+            st.markdown(f"""
+                <div class="order-card">
+                    <div style="display:flex; justify-content:space-between; color:#888;">
+                        <span>#{order['id']}</span><span>{order['time']}</span>
+                    </div>
+                    <div style="font-size:18px; font-weight:bold; color:#2e7d32; margin:10px 0;">{order['type']}</div>
+                    <div>{order['details']}</div>
+                    <hr>
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <b>الأتعاب: {order['price']} ج.م</b>
+                        <span style="background:{'#00c853' if order['status']=='تم الاعتماد' else '#ff9800'}; color:white; padding:5px 15px; border-radius:15px;">{order['status']}</span>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
 
-    if st.sidebar.button("تسجيل الخروج"):
+    # --- القسم 2: الإعدادات (بناءً على صورتك) ---
+    elif menu == "⚙️ الإعدادات العامة":
+        st.header("⚙️ مركز الإعدادات")
+        with st.expander("🛠️ إعدادات الملف الشخصي والضريبي", expanded=True):
+            st.markdown('<div class="settings-row"><span>📝 تعديل بيانات السجل التجاري</span><span>⬅️</span></div>', unsafe_allow_html=True)
+            st.markdown('<div class="settings-row"><span>💳 حساب صرف العمولات (IBAN)</span><span>⬅️</span></div>', unsafe_allow_html=True)
+            st.markdown('<div class="settings-row"><span>🔔 تنبيهات الإقرارات (مفعل)</span><span>⚙️</span></div>', unsafe_allow_html=True)
+
+    # --- القسم 3: الشات وبوت الرد ---
+    elif menu == "💬 غرفة المحادثات":
+        st.header("💬 التواصل الموثق")
+        for m in st.session_state['chat']:
+            with st.chat_message("assistant" if "🤖" in m['u'] else "user"):
+                st.write(f"**{m['u']}:** {m['t']}")
+        msg = st.chat_input("اكتب رسالتك...")
+        if msg:
+            st.session_state['chat'].append({"u": name, "t": msg})
+            if role == "العميل":
+                st.session_state['chat'].append({"u": "🤖 مساعد المنجز", "t": "رسالتك وصلت للمستشار، جاري الرد في غضون دقائق."})
+            st.rerun()
+
+    # --- القسم 4: الرئيسية والمحاسب ---
+    elif menu == "🏠 الرئيسية":
+        st.title("لوحة التحكم المركزية 🛡️")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("إجمالي الإيرادات المسجلة", "313,319 ج.م")
+        with col2:
+            st.metric("طلبات اليوم", "5 طلبات")
+        
+        st.write("---")
+        st.subheader("📊 المحاسب السريع (V9)")
+        val = st.number_input("أدخل مبلغ العملية:", min_value=0.0)
+        if val > 0:
+            v, i, c, n = calculate_tax(val)
+            st.success(f"صافي الربح بعد الضرائب والعمولات: {n:,.2f} ج.م")
+
+    if st.sidebar.button("🚪 خروج آمن"):
         st.session_state['logged_in'] = False
         st.rerun()
 
-# --- تشغيل النظام بتسلسل V9 -> V10 ---
+# --- انطلاق النظام ---
 if not st.session_state['logged_in']:
-    login()
+    login_screen()
 else:
     main_app()
