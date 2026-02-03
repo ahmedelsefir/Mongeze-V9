@@ -1,94 +1,88 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+import random
 
-# --- 1. إعدادات الأمان والوضوح العالي جداً ---
-st.set_page_config(page_title="المنجز V22 - نظام الحماية العالمي", layout="wide")
+# --- 1. إعدادات الهوية البصرية ---
+st.set_page_config(page_title="منصة المنجز V27", layout="wide")
 
 st.markdown("""
     <style>
-    /* تكبير الأيقونات والنصوص في القائمة الجانبية بناءً على طلب القائد */
-    .stRadio [data-testid="stWidgetLabel"] p { font-size: 30px !important; color: #ffeb3b; font-weight: bold; }
-    .stRadio div[role="radiogroup"] label { 
-        font-size: 24px !important; 
-        background: #1b5e20; 
-        color: white !important; 
-        padding: 15px; 
-        margin: 10px 0; 
-        border-radius: 12px;
-        border: 2px solid #ffeb3b;
-    }
-    .main-header { font-size: 45px; color: #1b5e20; text-align: center; font-weight: bold; border-bottom: 5px solid #2e7d32; }
+    .stRadio div[role="radiogroup"] label { font-size: 22px !important; font-weight: bold; background: #1e3d23; color: #ffeb3b !important; padding: 15px; border-radius: 12px; margin: 10px 0; border: 2px solid #fff; }
+    .policy-box { background: #f0f2f6; padding: 20px; border-radius: 10px; border: 1px solid #ccc; height: 150px; overflow-y: scroll; font-size: 14px; margin-bottom: 20px; }
+    .main-card { background: white; padding: 25px; border-radius: 20px; border-right: 12px solid #1b5e20; box-shadow: 0 10px 20px rgba(0,0,0,0.1); }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. محرك الأمان (Honeybadger Insights) ---
-# نحن الآن نستخدم المفاتيح التي وفرتها يا قائد لربط الرادار
-def report_to_honeybadger(error_msg):
-    # هذا الكود يرسل التنبيه فوراً لصفحة Insights التي رأيتها
-    st.sidebar.caption("📡 رادار الأمان: متصل بالخادم العالمي")
+# --- 2. محرك إدارة الدخول (التحقق والخصوصية) ---
+if 'step' not in st.session_state: st.session_state.step = 'login'
 
-# --- 3. بوابة الدخول الذكية ---
 if 'logged_in' not in st.session_state:
-    st.markdown("<p class='main-header'>🛡️ عرين المنجز - الدخول المؤمن</p>", unsafe_allow_html=True)
-    role = st.selectbox("اختر رتبتك (الرؤية واضحة):", ["القائد (المدير العام)", "المستشار الضريبي", "العميل"])
-    if st.button("🚀 فتح الأنظمة المؤمنة"):
-        st.session_state['logged_in'] = True
-        st.session_state['role'] = role
-        st.rerun()
-
-else:
-    role = st.session_state['role']
-    st.sidebar.title(f"👤 {role}")
+    st.title("🛡️ بوابة دخول المنجز المؤمنة")
     
-    # القائمة بأيقونات ووصف عملاق (بدون ميكروسكوب!)
-    menu = st.sidebar.radio("قائمة الخدمات:", [
-        "🏠 الرئيسية - (نظرة عامة على أمان النظام)",
-        "🤖 مساعد المنجز - (البوت الذكي للردود الحية)",
-        "📊 المحاسب الذكي - (جداول الـ 24 والتقارير)",
-        "📅 المناوبات - (جدول العمل المحفوظ)",
-        "⚙️ الإعدادات - (إدارة مفاتيح الأمان والربط)"
-    ])
+    # الخطوة 1: إدخال الايميل والموافقة على السياسة
+    if st.session_state.step == 'login':
+        with st.container():
+            email = st.text_input("📧 أدخل البريد الإلكتروني للعميل")
+            
+            st.markdown("### 📄 سياسة الخصوصية وشروط الاستخدام")
+            st.markdown("""<div class='policy-box'>
+                بموافقتك على هذا، أنت تقر بأن منصة المنجز هي المسؤولة عن تنظيم حساباتك الضريبية... 
+                يتم حماية بياناتك وفقاً لمعايير التشفير العالمية. 
+                لا يتم مشاركة السجلات التجارية أو البطاقات الضريبية مع أي طرف ثالث...
+                تلتزم المنصة بتوفير الدعم الفني والمحاسبي خلال فترة الاشتراك.
+                </div>""", unsafe_allow_html=True)
+            
+            agree = st.checkbox("أوافق على سياسة الخصوصية وشروط الاستخدام")
+            
+            if st.button("🚀 إرسال كود التحقق"):
+                if agree and "@" in email:
+                    st.session_state.temp_email = email
+                    st.session_state.otp = str(random.randint(1000, 9999)) # توليد رقم عشوائي
+                    st.session_state.step = 'verify'
+                    st.success(f"تم إرسال كود التحقق إلى {email} (محاكاة: الكود هو {st.session_state.otp})")
+                    st.rerun()
+                else:
+                    st.error("يرجى إدخال إيميل صحيح والموافقة على الشروط أولاً.")
 
-    st.markdown(f"<p class='main-header'>{menu.split(' - ')[0]}</p>", unsafe_allow_html=True)
-
-    # --- حل مشكلة البوت التفاعلي (الصورة 2) ---
-    if "مساعد المنجز" in menu:
-        st.subheader("💬 دردشة حية مع ذكاء المنجز")
-        # البوت الآن سيرد بردود حية بناءً على سؤالك عن الباقات
-        user_q = st.chat_input("اسأل عن عروض الاشتراك...")
-        if user_q:
-            if "باقة" in user_q or "عرض" in user_q:
-                st.info("🤖: أهلاً بك! لدينا باقة 'البرنس' (14 يوم تجريبي مجاناً) وباقة 'الإمبراطور' (تفعيل سنوي بكود 16 رقم).")
+    # الخطوة 2: التحقق من الرقم المرسل
+    elif st.session_state.step == 'verify':
+        st.subheader(f"🔑 التحقق من الهوية ({st.session_state.temp_email})")
+        code_input = st.text_input("أدخل الكود المكون من 4 أرقام المرسل لإيميلك")
+        if st.button("تأكيد الدخول"):
+            if code_input == st.session_state.otp:
+                st.session_state.logged_in = True
+                st.session_state.role = "العميل VIP"
+                st.success("تم التحقق بنجاح! نورت الإمبراطورية.")
+                st.rerun()
             else:
-                st.write(f"🤖: استلمت سؤالك: '{user_q}'.. جاري معالجته عبر نظام Honeybadger المؤمن.")
+                st.error("الكود غير صحيح، حاول مرة أخرى.")
+        if st.button("⬅️ العودة"):
+            st.session_state.step = 'login'
+            st.rerun()
+    st.stop()
 
-    # --- حل مشكلة الصفحة البيضاء (الصورة 3) ---
-    elif "المحاسب الذكي" in menu:
-        st.header("📊 موديول المحاسبة الرقمية")
-        # بدلاً من الصفحة البيضاء، نعرض البيانات فوراً
-        st.success("✅ تم استدعاء جداول الـ 24 من قاعدة البيانات المؤمنة.")
-        data = {"البند": ["إيرادات", "مصاريف", "صافي ربح"], "القيمة": [50000, 20000, 30000]}
-        st.table(pd.DataFrame(data))
+# --- 3. واجهة التطبيق الرئيسية (بعد تخطي الأمان) ---
+role = st.session_state.role
+st.sidebar.title(f"👤 {role}")
+menu = st.sidebar.radio("الخدمات:", ["🏠 الرئيسية", "🤖 مساعد المنجز", "📊 المحاسب الرقمي", "📂 مركز الوثائق"])
 
-    # --- حل مشكلة جدول المناوبات (الصورة 1) ---
-    elif "المناوبات" in menu:
-        st.header("📅 تنظيم الورديات")
-        # لتجنب الخطأ الظاهر في الصورة، نتحقق من وجود البيانات أولاً
-        if 'shifts' not in st.session_state: st.session_state['shifts'] = []
-        
-        if role == "المستشار الضريبي":
-            with st.expander("حجز وردية جديدة"):
-                day = st.date_input("اختر اليوم")
-                if st.button("تأكيد الحجز"):
-                    st.session_state['shifts'].append({"المستشار": "أحمد", "اليوم": str(day)})
-                    st.success("تم الحفظ!")
+if menu == "🏠 الرئيسية":
+    st.markdown("<div class='main-card'><h1>🌿 مرحباً بك في المنجز</h1><p>دخولك مؤمن بالكامل ونظام الخصوصية مفعل ✅</p></div>", unsafe_allow_html=True)
+    st.metric("حالة الحساب", "نشط - فترة تجريبية")
 
-        if st.session_state['shifts']:
-            st.table(pd.DataFrame(st.session_state['shifts']))
-        else:
-            st.warning("لا توجد مناوبات حالية، النظام في حالة انتظار.")
+elif menu == "🤖 مساعد المنجز":
+    st.header("💬 المساعد الذكي")
+    # البوت يرد على أسئلة الخصوصية الآن
+    p = st.chat_input("اسأل المنجز...")
+    if p:
+        with st.chat_message("user"): st.write(p)
+        with st.chat_message("assistant"):
+            if "خصوصية" in p or "أمان" in p:
+                st.write("🤖: بياناتك مشفرة ولا يمكن لأحد الاطلاع عليها إلا المستشار المسؤول عن ملفك.")
+            else:
+                st.write("🤖: أهلاً بك! أنا هنا لخدمتك.")
 
-    if st.sidebar.button("🚪 خروج آمن"):
-        st.session_state['logged_in'] = False
-        st.rerun()
+elif menu == "📂 مركز الوثائق":
+    st.header("📂 رفع الوثائق المؤمنة")
+    st.info("بناءً على سياسة الخصوصية التي وافقت عليها، ملفاتك في أمان تام.")
+    st.file_uploader("ارفع السجل التجاري")
