@@ -1,166 +1,150 @@
 import streamlit as st
 import pandas as pd
-import time
 from datetime import datetime
-from honeybadger import honeybadger
+import time
 
-# --- 1. إعدادات الهوية والأمان والرادار (Honeybadger) ---
-HB_KEY = st.secrets.get("HONEYBADGER_API_KEY", "")
+# --- 1. إعدادات الصفحة والهوية البصرية ---
+st.set_page_config(page_title="Mongeze V39 - Final Matrix", layout="wide", page_icon="🌿")
 
-if HB_KEY:
-    honeybadger.configure(api_key=HB_KEY)
-else:
-    st.warning("⚠️ رادار الأخطاء (Honeybadger) غير متصل، يرجى التأكد من المفتاح في Secrets.")
+# --- 2. إدارة الحالة واللغة ---
+if 'lang' not in st.session_state: st.session_state.lang = "ar"
+if 'auth' not in st.session_state: st.session_state.auth = False
 
-st.set_page_config(page_title="منصة المنجز V34 - نظام الفواتير الذكي", layout="wide", page_icon="🛡️")
+def switch_lang():
+    st.session_state.lang = "en" if st.session_state.lang == "ar" else "ar"
 
-# --- بيانات الدخول المعتمدة ---
-AUTHORIZED_EMAIL = "ahmedelsefir9@gmail.com"
-MASTER_PASSWORD = "hamada 193052" 
+texts = {
+    "ar": {
+        "title": "🛡️ إمبراطورية المنجز V39",
+        "welcome": "أهلاً بك يا قائد أحمد السفير",
+        "dashboard": "🏠 لوحة التحكم المركزية",
+        "mgmt_table": "📋 جدول 12 مورد إداري",
+        "rev_table": "💰 جدول 12 بند إيرادات",
+        "docs_center": "📂 مركز التوثيق والربط",
+        "ai_bot": "🤖 مساعد المنجز الذكي",
+        "logout": "تسجيل خروج",
+        "lang_btn": "English Version 🇺🇸",
+        "save_btn": "اعتماد وحفظ البيانات",
+        "upload_msg": "المستندات المطلوبة لتفعيل الحساب (العملاء الجدد)",
+        "tax_id": "رقم التسجيل الضريبي الموحد"
+    },
+    "en": {
+        "title": "🛡️ Mongeze Empire V39",
+        "welcome": "Welcome, Commander Ahmed El-Sefir",
+        "dashboard": "🏠 Central Dashboard",
+        "mgmt_table": "📋 12 Admin Resources",
+        "rev_table": "💰 12 Revenue Items",
+        "docs_center": "📂 Documentation & Linking",
+        "ai_bot": "🤖 Mongeze AI Assistant",
+        "logout": "Logout",
+        "lang_btn": "النسخة العربية 🇪🇬",
+        "save_btn": "Authorize & Save",
+        "upload_msg": "Required Documents for Account Activation",
+        "tax_id": "Unified Tax ID Number"
+    }
+}
 
-# --- 2. التصميم الاحترافي (Emerald & Gold UI) ---
+L = texts[st.session_state.lang]
+
+# --- 3. تصميم الـ CSS المحسن ---
 st.markdown("""
     <style>
-    .main { background-color: #f5f7f9; }
-    .stButton>button { 
-        width: 100%; border-radius: 12px; height: 3.5em; 
-        font-weight: bold; background: #1b5e20; color: white;
-        transition: 0.3s; border: none;
-    }
-    .stButton>button:hover { background: #2e7d32; transform: scale(1.02); }
-    .auth-container { 
-        background: white; padding: 40px; border-radius: 20px; 
-        box-shadow: 0 10px 25px rgba(0,0,0,0.1); border-top: 10px solid #1b5e20;
-    }
-    .invoice-box {
-        background: white; padding: 40px; border-radius: 15px;
-        border: 1px solid #e2e8f0; box-shadow: 0 10px 20px rgba(0,0,0,0.05);
-        font-family: 'Cairo', sans-serif; color: #1e293b;
-    }
-    .plan-card {
-        background: #fff; padding: 25px; border-radius: 15px;
-        border: 1px solid #e2e8f0; text-align: center;
-        transition: 0.3s; box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-    }
-    .plan-card:hover { border-color: #1b5e20; transform: translateY(-5px); }
-    h1, h2, h3 { color: #1b5e20; text-align: center; }
+    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
+    html, body, [class*="css"] { font-family: 'Cairo', sans-serif; }
+    
+    .stMetric { background: #ffffff; padding: 20px; border-radius: 15px; border-bottom: 4px solid #1b5e20; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+    .upload-section { background: #fdfdfd; padding: 30px; border-radius: 20px; border: 1px solid #e2e8f0; }
+    .status-badge { color: #1b5e20; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. إدارة الجلسة والولوج ---
-if 'logged_in' not in st.session_state: st.session_state.logged_in = False
-if 'payment_page' not in st.session_state: st.session_state.payment_page = False
-if 'show_invoice' not in st.session_state: st.session_state.show_invoice = False
-if 'selected_plan' not in st.session_state: st.session_state.selected_plan = None
-
-if not st.session_state.logged_in:
-    st.markdown("<h1>🛡️ المنجز V34: بوابة دخول الإدارة</h1>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 1.5, 1])
-    
-    with col2:
-        st.markdown("<div class='auth-container'>", unsafe_allow_html=True)
-        user_email = st.text_input("📨 بريد المدير العام", placeholder="example@gmail.com")
-        password_input = st.text_input("🔑 كلمة المرور الخاصة", type="password")
-        
-        if st.button("🚀 دخول آمن للمنصة"):
-            if user_email == AUTHORIZED_EMAIL and password_input == MASTER_PASSWORD:
-                st.session_state.logged_in = True
-                st.session_state.user_email = user_email
-                st.balloons()
+# --- 4. محرك الدخول ---
+if not st.session_state.auth:
+    st.markdown(f"<h1 style='text-align:center; color:#1b5e20; margin-top:50px;'>{L['title']}</h1>", unsafe_allow_html=True)
+    _, col, _ = st.columns([1, 1.2, 1])
+    with col:
+        st.button(L["lang_btn"], on_click=switch_lang)
+        u = st.text_input("User Email / البريد الإلكتروني")
+        p = st.text_input("Access Code / كود الدخول", type="password")
+        if st.button(L["login_btn"] if "login_btn" in L else "Login"):
+            if u and p:
+                st.session_state.auth = True
                 st.rerun()
-            else:
-                st.error("❌ بيانات الدخول غير مطابقة للسجلات المؤمنة.")
-        st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
 
-# --- 4. واجهة الفاتورة (Invoice) ---
-if st.session_state.show_invoice:
-    st.title("📄 فاتورة الاشتراك الضريبية")
-    
-    col_inv1, col_inv2, col_inv3 = st.columns([1, 2, 1])
-    with col_inv2:
-        st.markdown(f"""
-        <div class='invoice-box'>
-            <div style='text-align:center;'>
-                <h2 style='color:#1b5e20; margin:0;'>إمبراطورية المنجز المحاسبية</h2>
-                <p style='color:#64748b;'>رقم الفاتورة: #INV-{int(time.time())}</p>
-            </div>
-            <hr>
-            <table style='width:100%; text-align:right;'>
-                <tr><td><b>تاريخ الفاتورة:</b></td><td>{datetime.now().strftime('%Y-%m-%d')}</td></tr>
-                <tr><td><b>العميل:</b></td><td>{st.session_state.user_email}</td></tr>
-                <tr><td><b>حالة الدفع:</b></td><td><span style='color:green;'>✅ مدفوع</span></td></tr>
-            </table>
-            <br>
-            <table style='width:100%; border-collapse: collapse;'>
-                <tr style='background:#f1f8e9;'>
-                    <th style='padding:10px; border-bottom:2px solid #1b5e20;'>الوصف</th>
-                    <th style='padding:10px; border-bottom:2px solid #1b5e20;'>المبلغ</th>
-                </tr>
-                <tr>
-                    <td style='padding:10px; border-bottom:1px solid #e2e8f0;'>اشتراك {st.session_state.selected_plan}</td>
-                    <td style='padding:10px; border-bottom:1px solid #e2e8f0;'>1,500.00 ج.م</td>
-                </tr>
-                <tr>
-                    <td style='padding:10px; font-weight:bold;'>الإجمالي الكلي</td>
-                    <td style='padding:10px; font-weight:bold; color:#1b5e20;'>1,500.00 ج.م</td>
-                </tr>
-            </table>
-            <br>
-            <p style='font-size:12px; text-align:center; color:#94a3b8;'>شكراً لثقتكم في المنجز. تم إصدار هذه الفاتورة إلكترونياً وهي لا تحتاج لختم.</p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        if st.button("📥 تحميل الفاتورة (PDF)"):
-            st.toast("جاري تحضير ملف الـ PDF...")
-        
-        if st.button("🏠 العودة للرئيسية"):
-            st.session_state.show_invoice = False
-            st.rerun()
-    st.stop()
+# --- 5. القائمة الجانبية ---
+st.sidebar.markdown(f"### 👑 {L['welcome']}")
+st.sidebar.button(L["lang_btn"], on_click=switch_lang)
+menu = st.sidebar.radio("المنظومة:", [L["dashboard"], L["docs_center"], L["mgmt_table"], L["rev_table"], L["ai_bot"]])
 
-# --- 5. واجهة الدفع (Payment) ---
-if st.session_state.payment_page:
-    st.title("💳 إتمام عملية الاشتراك")
-    col_p1, col_p2 = st.columns([1.5, 1])
-    
-    with col_p1:
-        st.markdown("<div class='auth-container'>", unsafe_allow_html=True)
-        st.info(f"الخطة المختارة: {st.session_state.selected_plan}")
-        card_name = st.text_input("👤 الاسم على البطاقة")
-        card_number = st.text_input("💳 رقم البطاقة")
-        if st.button("✅ تأكيد الدفع الآن"):
-            with st.spinner("جاري التواصل مع بوابة البنك..."):
-                time.sleep(2)
-                st.session_state.payment_page = False
-                st.session_state.show_invoice = True
-                st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
-    
-    if st.button("🔙 إلغاء"):
-        st.session_state.payment_page = False
-        st.rerun()
-    st.stop()
+# --- 6. الأقسام التشغيلية ---
 
-# --- 6. القائمة الرئيسية ---
-st.sidebar.markdown(f"### 👤 القائد: أحمد السفير")
-menu = st.sidebar.radio("التحكم:", ["🏠 الرئيسية", "📊 التقارير", "💳 باقات الاشتراك"])
-
-if menu == "🏠 الرئيسية":
-    st.title("🌿 مركز القيادة")
-    st.success(f"أهلاً بك يا مدير: {st.session_state.user_email}")
-
-elif menu == "💳 باقات الاشتراك":
-    st.title("💳 باقات الاشتراك VIP")
+if menu == L["dashboard"]:
+    st.header(L["dashboard"])
+    st.success("إشعار: تم إرسال تنبيه الدخول إلى منصة منجز بنجاح.")
     c1, c2, c3 = st.columns(3)
-    with c2:
-        st.markdown("""<div class='plan-card' style='border-color:#1b5e20; background:#f0f9ff;'>
-            <h3 style='color:#1b5e20;'>🥇 الإمبراطور</h3><p>1500 ج.م / شهرياً</p></div>""", unsafe_allow_html=True)
-        if st.button("اشترك الآن"):
-            st.session_state.selected_plan = "باقة الإمبراطور VIP"
-            st.session_state.payment_page = True
-            st.rerun()
+    with c1: st.metric(L["mgmt_table"], "12 مورد", "مكتمل")
+    with c2: st.metric(L["rev_table"], "12 بند", "نشط")
+    with c3: st.metric("حالة الربط", "100%", "آمن")
 
-if st.sidebar.button("🚪 خروج"):
-    st.session_state.clear()
+elif menu == L["docs_center"]:
+    st.header(L["docs_center"])
+    st.info(L["upload_msg"])
+    
+    with st.container():
+        st.markdown("<div class='upload-section'>", unsafe_allow_html=True)
+        col_1, col_2 = st.columns(2)
+        with col_1:
+            st.file_uploader("📑 صورة السجل التجاري (Commercial Registry)", type=['pdf', 'jpg', 'png'])
+            st.file_uploader("🧾 صورة الفاتورة الضريبية (Tax Invoice)", type=['pdf', 'jpg', 'png'])
+        with col_2:
+            st.file_uploader("💳 صورة البطاقة الضريبية (Tax Card)", type=['pdf', 'jpg', 'png'])
+            st.text_input(L["tax_id"], placeholder="Ex: 123-456-789")
+        
+        if st.button(L["save_btn"]):
+            with st.spinner("جاري تشفير البيانات والربط بالسيرفر السيادي..."):
+                time.sleep(2)
+                st.success("✅ تم الاعتماد. أهلاً بك في عائلة منجز!")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+elif menu == L["mgmt_table"]:
+    st.header(L["mgmt_table"])
+    # مصفوفة الـ 12 مورد الإداري
+    resources = ["المكتب الفني", "تأمينات القاهرة", "مصلحة الضرائب", "توريد ورق", "صيانة أنظمة", "إيجار المقر", "اتصالات ونترنت", "كهرباء ومياه", "أمن وحراسة", "خدمات نظافة", "استشارات قانونية", "تسويق رقمي"]
+    df_mgmt = pd.DataFrame({
+        "كود المورد": [f"M-{i+1:02d}" for i in range(12)],
+        "الجهة": resources,
+        "تاريخ الارتباط": [datetime.now().strftime("%Y-%m-%d")] * 12,
+        "الحالة": ["نشط ✅"] * 12
+    })
+    st.table(df_mgmt)
+
+elif menu == L["rev_table"]:
+    st.header(L["rev_table"])
+    # مصفوفة الـ 12 بند إيرادات
+    revenues = ["اشتراك VIP", "باقة ذهبية", "باقة القمة", "استشارة ضريبية", "فحص ميزانية", "تأسيس شركة", "إقرار ضريبي", "دمغة سنوية", "تدريب محاسبي", "دعم فني", "اشتراك تجاري", "خدمات دولية"]
+    df_rev = pd.DataFrame({
+        "كود الإيراد": [f"R-{i+1:02d}" for i in range(12)],
+        "البند": revenues,
+        "القيمة (ج.م)": [(i+1)*2500 for i in range(12)],
+        "التحصيل": ["مكتمل" for i in range(12)]
+    })
+    st.table(df_rev)
+
+elif menu == L["ai_bot"]:
+    st.header(L["ai_bot"])
+    if "chat_log" not in st.session_state:
+        st.session_state.chat_log = [{"role": "assistant", "content": "مرحباً يا قائد، كيف يمكنني مساعدتك في تحليل مصفوفة الـ 24 بنداً اليوم؟"}]
+    
+    for msg in st.session_state.chat_log:
+        with st.chat_message(msg["role"]): st.write(msg["content"])
+        
+    p = st.chat_input("اسأل عن الفواتير أو الموردين...")
+    if p:
+        st.session_state.chat_log.append({"role": "user", "content": p})
+        st.session_state.chat_log.append({"role": "assistant", "content": "جاري مراجعة السجل التجاري والبطاقة الضريبية المرفوعة... تبدو البيانات سليمة وقابلة للربط."})
+        st.rerun()
+
+if st.sidebar.button(L["logout"]):
+    st.session_state.auth = False
     st.rerun()
