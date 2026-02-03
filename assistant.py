@@ -1,208 +1,166 @@
 import streamlit as st
 import pandas as pd
-import random
 import time
 from datetime import datetime
+from honeybadger import honeybadger
 
-# --- 1. إعدادات الهوية البصرية الفاخرة (Emerald & Gold UI) ---
-st.set_page_config(
-    page_title="منصة المنجز V32 - الإمبراطورية",
-    page_icon="🌿",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# --- 1. إعدادات الهوية والأمان والرادار (Honeybadger) ---
+HB_KEY = st.secrets.get("HONEYBADGER_API_KEY", "")
 
-# تخصيص التصميم عبر CSS لضمان الوضوح والجمال
+if HB_KEY:
+    honeybadger.configure(api_key=HB_KEY)
+else:
+    st.warning("⚠️ رادار الأخطاء (Honeybadger) غير متصل، يرجى التأكد من المفتاح في Secrets.")
+
+st.set_page_config(page_title="منصة المنجز V34 - نظام الفواتير الذكي", layout="wide", page_icon="🛡️")
+
+# --- بيانات الدخول المعتمدة ---
+AUTHORIZED_EMAIL = "ahmedelsefir9@gmail.com"
+MASTER_PASSWORD = "hamada 193052" 
+
+# --- 2. التصميم الاحترافي (Emerald & Gold UI) ---
 st.markdown("""
     <style>
-    /* تنسيق القائمة الجانبية - أيقونات ضخمة وألوان ملكية */
-    .stRadio div[role="radiogroup"] label { 
-        font-size: 22px !important; 
-        font-weight: bold; 
-        background: linear-gradient(90deg, #1b5e20 0%, #2e7d32 100%);
-        color: #ffeb3b !important; 
-        padding: 18px; 
-        margin: 10px 0; 
-        border-radius: 15px; 
-        border: 2px solid #ffffff; 
-        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-        transition: 0.3s;
+    .main { background-color: #f5f7f9; }
+    .stButton>button { 
+        width: 100%; border-radius: 12px; height: 3.5em; 
+        font-weight: bold; background: #1b5e20; color: white;
+        transition: 0.3s; border: none;
     }
-    .stRadio div[role="radiogroup"] label:hover { transform: scale(1.02); border-color: #ffeb3b; }
-    
-    /* كرت الترحيب السحري */
-    .welcome-card {
-        background: linear-gradient(135deg, #ffffff 0%, #f1f8e9 100%);
-        padding: 40px;
-        border-radius: 25px;
-        border-right: 15px solid #1b5e20;
-        box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-        text-align: center;
-        margin-bottom: 30px;
-        animation: fadeIn 1.5s ease-in-out;
+    .stButton>button:hover { background: #2e7d32; transform: scale(1.02); }
+    .auth-container { 
+        background: white; padding: 40px; border-radius: 20px; 
+        box-shadow: 0 10px 25px rgba(0,0,0,0.1); border-top: 10px solid #1b5e20;
     }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
-    
-    /* صندوق سياسة الخصوصية */
-    .policy-box {
-        background: #f8fafc;
-        padding: 20px;
-        border-radius: 12px;
-        border: 1px dashed #1b5e20;
-        height: 150px;
-        overflow-y: scroll;
-        font-size: 14px;
-        color: #334155;
-        margin: 15px 0;
+    .invoice-box {
+        background: white; padding: 40px; border-radius: 15px;
+        border: 1px solid #e2e8f0; box-shadow: 0 10px 20px rgba(0,0,0,0.05);
+        font-family: 'Cairo', sans-serif; color: #1e293b;
     }
-    
-    /* تحسين الخطوط العامة */
-    h1, h2, h3 { color: #1b5e20; font-family: 'Cairo', sans-serif; }
+    .plan-card {
+        background: #fff; padding: 25px; border-radius: 15px;
+        border: 1px solid #e2e8f0; text-align: center;
+        transition: 0.3s; box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    }
+    .plan-card:hover { border-color: #1b5e20; transform: translateY(-5px); }
+    h1, h2, h3 { color: #1b5e20; text-align: center; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. إدارة الأمان والتحقق (Auth Engine) ---
-if 'auth_step' not in st.session_state: st.session_state.auth_step = 'login'
-if 'user_logged' not in st.session_state: st.session_state.user_logged = False
+# --- 3. إدارة الجلسة والولوج ---
+if 'logged_in' not in st.session_state: st.session_state.logged_in = False
+if 'payment_page' not in st.session_state: st.session_state.payment_page = False
+if 'show_invoice' not in st.session_state: st.session_state.show_invoice = False
+if 'selected_plan' not in st.session_state: st.session_state.selected_plan = None
 
-# واجهة الدخول (قبل الوصول للبرنامج)
-if not st.session_state.user_logged:
-    st.markdown("<h1 style='text-align:center;'>🛡️ بوابة المنجز النخبوية</h1>", unsafe_allow_html=True)
+if not st.session_state.logged_in:
+    st.markdown("<h1>🛡️ المنجز V34: بوابة دخول الإدارة</h1>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 1.5, 1])
     
-    col1, col2, col3 = st.columns([1, 1.8, 1])
     with col2:
-        if st.session_state.auth_step == 'login':
-            email = st.text_input("📧 البريد الإلكتروني للعميل VIP")
-            st.markdown("<b>📜 سياسة الخصوصية وشروط الاستخدام:</b>", unsafe_allow_html=True)
-            st.markdown("""<div class='policy-box'>
-                أهلاً بك في المنجز. نحن نلتزم بحماية بياناتك الضريبية بأعلى معايير التشفير. 
-                بالموافقة، تمنحنا صلاحية تنظيم ملفاتك المحاسبية. 
-                لن يتم مشاركة أي سجلات مع جهات خارجية. 
-                نظامنا مراقب بـ Honeybadger لضمان استقرار الخدمة 24/7.
-                </div>""", unsafe_allow_html=True)
-            
-            agree = st.checkbox("أوافق على كافة الشروط والسياسات")
-            
-            if st.button("🚀 إرسال كود التحقق (OTP)"):
-                if "@" in email and agree:
-                    st.session_state.temp_email = email
-                    st.session_state.secure_otp = str(random.randint(1000, 9999))
-                    st.session_state.auth_step = 'verify'
-                    st.success(f"تم إرسال الكود لبريدك! (للمعاينة: {st.session_state.secure_otp})")
-                    st.rerun()
-                else:
-                    st.warning("يرجى إدخال إيميل صحيح والموافقة على السياسة.")
-
-        elif st.session_state.auth_step == 'verify':
-            st.info(f"رمز التحقق أُرسل إلى: {st.session_state.temp_email}")
-            otp_input = st.text_input("🔢 أدخل الرمز المكون من 4 أرقام")
-            if st.button("🔐 تأكيد وهبوط آمن"):
-                if otp_input == st.session_state.secure_otp:
-                    st.session_state.user_logged = True
-                    st.balloons() # لمسة احتفالية عند النجاح
-                    st.rerun()
-                else:
-                    st.error("الرمز غير صحيح، يرجى المحاولة مرة أخرى.")
-            if st.button("⬅️ العودة لتغيير الإيميل"):
-                st.session_state.auth_step = 'login'
+        st.markdown("<div class='auth-container'>", unsafe_allow_html=True)
+        user_email = st.text_input("📨 بريد المدير العام", placeholder="example@gmail.com")
+        password_input = st.text_input("🔑 كلمة المرور الخاصة", type="password")
+        
+        if st.button("🚀 دخول آمن للمنصة"):
+            if user_email == AUTHORIZED_EMAIL and password_input == MASTER_PASSWORD:
+                st.session_state.logged_in = True
+                st.session_state.user_email = user_email
+                st.balloons()
                 st.rerun()
+            else:
+                st.error("❌ بيانات الدخول غير مطابقة للسجلات المؤمنة.")
+        st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
 
-# --- 3. اللمسة السحرية: رسالة الترحيب (تظهر لمرة واحدة عند الدخول) ---
-if 'first_load' not in st.session_state:
-    st.session_state.first_load = True
-
-if st.session_state.first_load:
-    st.markdown(f"""
-        <div class='welcome-card'>
-            <h1 style='margin-bottom:10px;'>🌿 نورت إمبراطورية المنجز يا قائد</h1>
-            <p style='font-size:22px; color:#475569;'>يسعدنا انضمامك اليوم كعضو VIP (<b>{st.session_state.temp_email}</b>)</p>
-            <p style='font-size:18px;'>تم تأمين حسابك بنجاح وجاري مزامنة بياناتك مع السيرفر الرئيسي.</p>
+# --- 4. واجهة الفاتورة (Invoice) ---
+if st.session_state.show_invoice:
+    st.title("📄 فاتورة الاشتراك الضريبية")
+    
+    col_inv1, col_inv2, col_inv3 = st.columns([1, 2, 1])
+    with col_inv2:
+        st.markdown(f"""
+        <div class='invoice-box'>
+            <div style='text-align:center;'>
+                <h2 style='color:#1b5e20; margin:0;'>إمبراطورية المنجز المحاسبية</h2>
+                <p style='color:#64748b;'>رقم الفاتورة: #INV-{int(time.time())}</p>
+            </div>
+            <hr>
+            <table style='width:100%; text-align:right;'>
+                <tr><td><b>تاريخ الفاتورة:</b></td><td>{datetime.now().strftime('%Y-%m-%d')}</td></tr>
+                <tr><td><b>العميل:</b></td><td>{st.session_state.user_email}</td></tr>
+                <tr><td><b>حالة الدفع:</b></td><td><span style='color:green;'>✅ مدفوع</span></td></tr>
+            </table>
+            <br>
+            <table style='width:100%; border-collapse: collapse;'>
+                <tr style='background:#f1f8e9;'>
+                    <th style='padding:10px; border-bottom:2px solid #1b5e20;'>الوصف</th>
+                    <th style='padding:10px; border-bottom:2px solid #1b5e20;'>المبلغ</th>
+                </tr>
+                <tr>
+                    <td style='padding:10px; border-bottom:1px solid #e2e8f0;'>اشتراك {st.session_state.selected_plan}</td>
+                    <td style='padding:10px; border-bottom:1px solid #e2e8f0;'>1,500.00 ج.م</td>
+                </tr>
+                <tr>
+                    <td style='padding:10px; font-weight:bold;'>الإجمالي الكلي</td>
+                    <td style='padding:10px; font-weight:bold; color:#1b5e20;'>1,500.00 ج.م</td>
+                </tr>
+            </table>
+            <br>
+            <p style='font-size:12px; text-align:center; color:#94a3b8;'>شكراً لثقتكم في المنجز. تم إصدار هذه الفاتورة إلكترونياً وهي لا تحتاج لختم.</p>
         </div>
         """, unsafe_allow_html=True)
-    st.toast("نورت المنجز! نتمنى لك تجربة استثنائية.")
-    time.sleep(3)
-    st.session_state.first_load = False
-    st.rerun()
+        
+        if st.button("📥 تحميل الفاتورة (PDF)"):
+            st.toast("جاري تحضير ملف الـ PDF...")
+        
+        if st.button("🏠 العودة للرئيسية"):
+            st.session_state.show_invoice = False
+            st.rerun()
+    st.stop()
 
-# --- 4. واجهة التطبيق الرئيسية (The Masterpiece) ---
-st.sidebar.markdown(f"### 👤 المدير العام")
-st.sidebar.caption(f"متصل: {st.session_state.temp_email}")
+# --- 5. واجهة الدفع (Payment) ---
+if st.session_state.payment_page:
+    st.title("💳 إتمام عملية الاشتراك")
+    col_p1, col_p2 = st.columns([1.5, 1])
+    
+    with col_p1:
+        st.markdown("<div class='auth-container'>", unsafe_allow_html=True)
+        st.info(f"الخطة المختارة: {st.session_state.selected_plan}")
+        card_name = st.text_input("👤 الاسم على البطاقة")
+        card_number = st.text_input("💳 رقم البطاقة")
+        if st.button("✅ تأكيد الدفع الآن"):
+            with st.spinner("جاري التواصل مع بوابة البنك..."):
+                time.sleep(2)
+                st.session_state.payment_page = False
+                st.session_state.show_invoice = True
+                st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+    
+    if st.button("🔙 إلغاء"):
+        st.session_state.payment_page = False
+        st.rerun()
+    st.stop()
 
-menu = st.sidebar.radio("قائمة الإنجازات الاحترافية:", [
-    "🏠 اللوحة العامة المركزية", 
-    "🤖 مساعد المنجز (AI)", 
-    "📊 المحاسب الرقمي (جداول 24)", 
-    "📅 إدارة المناوبات", 
-    "📂 مركز الوثائق المؤمن",
-    "⚙️ إعدادات النظام والأسرار"
-])
+# --- 6. القائمة الرئيسية ---
+st.sidebar.markdown(f"### 👤 القائد: أحمد السفير")
+menu = st.sidebar.radio("التحكم:", ["🏠 الرئيسية", "📊 التقارير", "💳 باقات الاشتراك"])
 
-# سحب المفاتيح من الخزنة (Secrets) لضمان الأمان
-HB_KEY = st.secrets.get("HONEYBADGER_API_KEY", "Hidden-Vault")
+if menu == "🏠 الرئيسية":
+    st.title("🌿 مركز القيادة")
+    st.success(f"أهلاً بك يا مدير: {st.session_state.user_email}")
 
-if menu == "🏠 اللوحة العامة المركزية":
-    st.markdown("<h2>🌿 نظرة عامة على النشاط</h2>", unsafe_allow_html=True)
+elif menu == "💳 باقات الاشتراك":
+    st.title("💳 باقات الاشتراك VIP")
     c1, c2, c3 = st.columns(3)
-    c1.metric("إجمالي السجلات", "1,420", "+25")
-    c2.metric("حالة الخادم", "مستقر 100%", "آمن")
-    c3.metric("النمو الضريبي", "18%", "نشط")
-    
-    # محتوى تفاعلي لمنع الصفحات البيضاء
-    st.info("💡 نصيحة المنجز: تأكد من مراجعة جدول المناوبات اليومي لضمان سرعة الرد على العملاء.")
+    with c2:
+        st.markdown("""<div class='plan-card' style='border-color:#1b5e20; background:#f0f9ff;'>
+            <h3 style='color:#1b5e20;'>🥇 الإمبراطور</h3><p>1500 ج.م / شهرياً</p></div>""", unsafe_allow_html=True)
+        if st.button("اشترك الآن"):
+            st.session_state.selected_plan = "باقة الإمبراطور VIP"
+            st.session_state.payment_page = True
+            st.rerun()
 
-elif menu == "🤖 مساعد المنجز (AI)":
-    st.header("💬 المساعد الذكي التفاعلي")
-    if 'messages' not in st.session_state: st.session_state.messages = []
-    
-    for m in st.session_state.messages:
-        with st.chat_message(m["role"]): st.write(m["content"])
-        
-    query = st.chat_input("اسأل المنجز عن الباقات أو الدعم الفني...")
-    if query:
-        st.session_state.messages.append({"role": "user", "content": query})
-        with st.chat_message("user"): st.write(query)
-        
-        # رد آلي احترافي
-        response = "🤖: أهلاً بك يا قائد! جارٍ تحليل استفسارك برمجياً. هل تود معرفة تفاصيل باقة الإمبراطور السنوية؟"
-        st.session_state.messages.append({"role": "assistant", "content": response})
-        with st.chat_message("assistant"): st.write(response)
-
-elif menu == "📊 المحاسب الرقمي (جداول 24)":
-    st.header("📊 موديول التحليل المالي")
-    st.success("✅ تم جلب البيانات وتشفيرها بنجاح.")
-    chart_data = pd.DataFrame({
-        "الشهر": ["يناير", "فبراير", "مارس"],
-        "الإيرادات": [45000, 52000, 48000]
-    })
-    st.line_chart(chart_data.set_index("الشهر"))
-    st.table(chart_data)
-
-elif menu == "📅 إدارة المناوبات":
-    st.header("📅 تنظيم ورديات العمل")
-    with st.expander("➕ تسجيل مستشار جديد"):
-        st.text_input("اسم المستشار")
-        st.date_input("يوم المناوبة")
-        if st.button("اعتماد"): st.success("تم الحفظ في قاعدة البيانات.")
-    st.info("الجدول الحالي محدث بناءً على أحدث بيانات GitHub.")
-
-elif menu == "📂 مركز الوثائق المؤمن":
-    st.header("📂 أرشفة الملفات الرسمية")
-    st.warning("⚠️ سيتم تشفير الملفات فور رفعها طبقاً لسياسة الخصوصية.")
-    st.file_uploader("رفع السجل التجاري")
-    st.file_uploader("رفع البطاقة الضريبية")
-    if st.button("بدء المعالجة الرقمية"):
-        with st.spinner("جاري التشفير..."):
-            time.sleep(2)
-            st.success("تم الحفظ في الخزنة الرقمية بنجاح.")
-
-elif menu == "⚙️ إعدادات النظام والأسرار":
-    st.header("⚙️ مركز تحكم الأمان (Secrets)")
-    st.write(f"🛡️ حالة مفتاح Honeybadger: `{HB_KEY[:8]}****` (نشط)")
-    st.write("🔑 اتصال GitHub Actions: **مستقر ✅**")
-    st.slider("مستوى حساسية الذكاء الاصطناعي", 0, 100, 90)
-
-# زر الخروج الآمن
-if st.sidebar.button("🚪 تسجيل خروج آمن"):
+if st.sidebar.button("🚪 خروج"):
     st.session_state.clear()
     st.rerun()
