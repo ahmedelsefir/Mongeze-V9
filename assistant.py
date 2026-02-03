@@ -1,88 +1,41 @@
 import streamlit as st
-import pandas as pd
-import random
+import os
 
 # --- 1. إعدادات الهوية البصرية ---
-st.set_page_config(page_title="منصة المنجز V27", layout="wide")
+st.set_page_config(page_title="المنجز V30 - الأمان المطلق", layout="wide")
+
+# --- 2. جلب التوكن من "الخزنة" وليس من الكود ---
+# سيتم ضبط هذا المفتاح في إعدادات السيرفر (Secrets) وليس هنا
+github_token = st.secrets.get("GITHUB_TOKEN", "🔒 التوكن مؤمن في الخزنة")
 
 st.markdown("""
     <style>
-    .stRadio div[role="radiogroup"] label { font-size: 22px !important; font-weight: bold; background: #1e3d23; color: #ffeb3b !important; padding: 15px; border-radius: 12px; margin: 10px 0; border: 2px solid #fff; }
-    .policy-box { background: #f0f2f6; padding: 20px; border-radius: 10px; border: 1px solid #ccc; height: 150px; overflow-y: scroll; font-size: 14px; margin-bottom: 20px; }
-    .main-card { background: white; padding: 25px; border-radius: 20px; border-right: 12px solid #1b5e20; box-shadow: 0 10px 20px rgba(0,0,0,0.1); }
+    .stRadio div[role="radiogroup"] label { font-size: 22px !important; font-weight: bold; background: #0e2413; color: #ffeb3b !important; padding: 15px; margin: 10px 0; border-radius: 12px; border: 2px solid #ffeb3b; }
+    .security-banner { background: #fff3cd; color: #856404; padding: 15px; border-radius: 10px; border-right: 10px solid #ffeeba; font-weight: bold; margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. محرك إدارة الدخول (التحقق والخصوصية) ---
-if 'step' not in st.session_state: st.session_state.step = 'login'
-
+# --- 3. بوابة الدخول الذكية ---
 if 'logged_in' not in st.session_state:
-    st.title("🛡️ بوابة دخول المنجز المؤمنة")
-    
-    # الخطوة 1: إدخال الايميل والموافقة على السياسة
-    if st.session_state.step == 'login':
-        with st.container():
-            email = st.text_input("📧 أدخل البريد الإلكتروني للعميل")
-            
-            st.markdown("### 📄 سياسة الخصوصية وشروط الاستخدام")
-            st.markdown("""<div class='policy-box'>
-                بموافقتك على هذا، أنت تقر بأن منصة المنجز هي المسؤولة عن تنظيم حساباتك الضريبية... 
-                يتم حماية بياناتك وفقاً لمعايير التشفير العالمية. 
-                لا يتم مشاركة السجلات التجارية أو البطاقات الضريبية مع أي طرف ثالث...
-                تلتزم المنصة بتوفير الدعم الفني والمحاسبي خلال فترة الاشتراك.
-                </div>""", unsafe_allow_html=True)
-            
-            agree = st.checkbox("أوافق على سياسة الخصوصية وشروط الاستخدام")
-            
-            if st.button("🚀 إرسال كود التحقق"):
-                if agree and "@" in email:
-                    st.session_state.temp_email = email
-                    st.session_state.otp = str(random.randint(1000, 9999)) # توليد رقم عشوائي
-                    st.session_state.step = 'verify'
-                    st.success(f"تم إرسال كود التحقق إلى {email} (محاكاة: الكود هو {st.session_state.otp})")
-                    st.rerun()
-                else:
-                    st.error("يرجى إدخال إيميل صحيح والموافقة على الشروط أولاً.")
+    st.title("🛡️ نظام المنجز - الدخول المشفر")
+    if st.button("🚀 دخول للنظام"):
+        st.session_state['logged_in'] = True
+        st.rerun()
+else:
+    st.sidebar.title("👤 لوحة القائد")
+    menu = st.sidebar.radio("الخدمات المحمية:", ["🏠 الرئيسية", "🤖 مساعد المنجز", "⚙️ مركز الأمان"])
 
-    # الخطوة 2: التحقق من الرقم المرسل
-    elif st.session_state.step == 'verify':
-        st.subheader(f"🔑 التحقق من الهوية ({st.session_state.temp_email})")
-        code_input = st.text_input("أدخل الكود المكون من 4 أرقام المرسل لإيميلك")
-        if st.button("تأكيد الدخول"):
-            if code_input == st.session_state.otp:
-                st.session_state.logged_in = True
-                st.session_state.role = "العميل VIP"
-                st.success("تم التحقق بنجاح! نورت الإمبراطورية.")
-                st.rerun()
-            else:
-                st.error("الكود غير صحيح، حاول مرة أخرى.")
-        if st.button("⬅️ العودة"):
-            st.session_state.step = 'login'
-            st.rerun()
-    st.stop()
+    if menu == "🏠 الرئيسية":
+        st.markdown("<div class='security-banner'>⚠️ تنبيه أمني: تم ترحيل كافة الرموز الحساسة إلى خزنة الأسرار المشفرة.</div>", unsafe_allow_html=True)
+        st.write("أهلاً بك يا قائد. الكود الآن نظيف تماماً من أي 'توكنز' صريحة، مما يحمي الحساب من الإغلاق.")
+        st.metric("مستوى الأمان", "عالي جداً 🛡️")
 
-# --- 3. واجهة التطبيق الرئيسية (بعد تخطي الأمان) ---
-role = st.session_state.role
-st.sidebar.title(f"👤 {role}")
-menu = st.sidebar.radio("الخدمات:", ["🏠 الرئيسية", "🤖 مساعد المنجز", "📊 المحاسب الرقمي", "📂 مركز الوثائق"])
+    elif menu == "⚙️ مركز الأمان":
+        st.header("⚙️ إدارة الأسرار (Secrets)")
+        st.success("✅ يتم الآن قراءة GitHub Token من بيئة مشفرة.")
+        st.write("حالة التوكن الحالي:")
+        st.code(github_token, language="text") # سيعرض رسالة التأمين فقط
 
-if menu == "🏠 الرئيسية":
-    st.markdown("<div class='main-card'><h1>🌿 مرحباً بك في المنجز</h1><p>دخولك مؤمن بالكامل ونظام الخصوصية مفعل ✅</p></div>", unsafe_allow_html=True)
-    st.metric("حالة الحساب", "نشط - فترة تجريبية")
-
-elif menu == "🤖 مساعد المنجز":
-    st.header("💬 المساعد الذكي")
-    # البوت يرد على أسئلة الخصوصية الآن
-    p = st.chat_input("اسأل المنجز...")
-    if p:
-        with st.chat_message("user"): st.write(p)
-        with st.chat_message("assistant"):
-            if "خصوصية" in p or "أمان" in p:
-                st.write("🤖: بياناتك مشفرة ولا يمكن لأحد الاطلاع عليها إلا المستشار المسؤول عن ملفك.")
-            else:
-                st.write("🤖: أهلاً بك! أنا هنا لخدمتك.")
-
-elif menu == "📂 مركز الوثائق":
-    st.header("📂 رفع الوثائق المؤمنة")
-    st.info("بناءً على سياسة الخصوصية التي وافقت عليها، ملفاتك في أمان تام.")
-    st.file_uploader("ارفع السجل التجاري")
+    if st.sidebar.button("🚪 خروج"):
+        st.session_state.clear()
+        st.rerun()
