@@ -1,4 +1,5 @@
 streamlit
-google-generativeai
-honeybadger
 pandas
+google-generativeai
+firebase-admin
+honeybadger
