@@ -36,12 +36,17 @@ def init_firebase():
     """تهيئة الاتصال بقاعدة البيانات باستخدام المفاتيح السرية"""
     try:
         # فحص وجود التطبيق لتجنب التكرار
+       try:
+        # فحص وجود التطبيق لتجنب التكرار
         try:
             get_app()
         except ValueError:
-            # استخراج البيانات من Secrets (يجب إضافتها في Streamlit Cloud)
             if "firebase" in st.secrets:
                 key_dict = dict(st.secrets["firebase"])
+                # الإصلاح الجوهري: معالجة الـ Private Key ليتوافق مع مكتبة cryptography
+                if "private_key" in key_dict:
+                    key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n")
+                
                 cred = credentials.Certificate(key_dict)
                 initialize_app(cred)
             else:
