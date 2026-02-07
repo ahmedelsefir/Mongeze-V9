@@ -3,53 +3,29 @@ import pandas as pd
 import time
 from datetime import datetime
 import json
-from firebase_admin import credentials, firestore, initialize_app, get_app, delete_app
+import firebase_admin
+from firebase_admin import credentials, firestore, initialize_app, get_app
 
 # --- 1. إعدادات الهوية البصرية (Emerald & Gold VIP) ---
-st.set_page_config(page_title="المنجز V54 - الربط السحابي", layout="wide", page_icon="🛡️")
-
-st.markdown("""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
-    html, body, [class*="css"] { font-family: 'Cairo', sans-serif; text-align: right; }
-    .main { background-color: #f4f7f6; }
-    .app-header {
-        background: linear-gradient(90deg, #1b5e20 0%, #2e7d32 100%);
-        color: white; padding: 20px; border-radius: 15px;
-        display: flex; justify-content: space-between; align-items: center;
-        margin-bottom: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-    }
-    .info-card {
-        background: white; padding: 20px; border-radius: 15px;
-        border-right: 8px solid #d4af37; box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-        margin-bottom: 20px;
-    }
-    .stButton>button {
-        background: #1b5e20; color: white; border-radius: 10px;
-        height: 3em; font-weight: bold; width: 100%; border: none;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+st.set_page_config(page_title="المنجز - V54", layout="wide", page_icon="🏆")
 
 # --- 2. محرك الربط السحابي (Firebase Engine) ---
 def init_firebase():
-    """محرك الربط السحابي V54 - المنجز"""
-    if not firebase_admin._apps:
-        try:
-            if "firebase" in st.secrets:
-                # تحويل الأسرار لقاموس ومعالجة المفتاح فوراً
-                key_info = dict(st.secrets["firebase"])
-                if "private_key" in key_info:
-                    # السطر المصحح بالكامل لإغلاق الأقواس
-                    key_info["private_key"] = key_info["private_key"].replace("\\n", "\n")
-                
-                cred = credentials.Certificate(key_info)
-                initialize_app(cred)
-                return firestore.client()
-        except Exception as e:
-            st.error(f"❌ خطأ في بوابة التشفير: {e}")
-            return None
-    return firestore.client()
+    """تهيئة الاتصال بقاعدة البيانات - المنجز V54"""
+    try:
+        # محاولة جلب التطبيق إذا كان موجوداً لتجنب التكرار
+        return firestore.client()
+    except (ValueError, Exception):
+        if "firebase" in st.secrets:
+            key_info = dict(st.secrets["firebase"])
+            # الإصلاح الجوهري لمشكلة PEM (تأكد من إغلاق القوس هنا)
+            if "private_key" in key_info:
+                key_info["private_key"] = key_info["private_key"].replace("\\n", "\n")
+            
+            cred = credentials.Certificate(key_info)
+            initialize_app(cred)
+            return firestore.client()
+        return None
 
 # تفعيل قاعدة البيانات
 db = init_firebase()
