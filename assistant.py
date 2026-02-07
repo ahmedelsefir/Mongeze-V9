@@ -33,31 +33,26 @@ st.markdown("""
 
 # --- 2. محرك الربط السحابي (Firebase Engine) ---
 def init_firebase():
-    """محرك الربط السحابي المؤمن - المنجز V54"""
-    try:
-        # فحص إذا كان التطبيق مفعل مسبقاً
+    """محرك الربط السحابي - المنجز V54"""
+    if not firebase_admin._apps:
         try:
-            return firestore.client()
-        except Exception:
-            # إذا لم يكن مفعلاً، نقرأ الأسرار
             if "firebase" in st.secrets:
-                key_dict = dict(st.secrets["firebase"])
+                # تحويل الأسرار لقاموس ومعالجة المفتاح فوراً
+                key_info = dict(st.secrets["firebase"])
+                if "private_key" in key_info:
+                    # هذا السطر هو الحل لمشكلة الـ PEM التي تظهر في الصورة
+                    key_info["private_key"] = key_info["private_key"].replace("\\n", "\n")
                 
-                # المعالجة الجوهرية لفك تشفير المفتاح الخاص
-                if "private_key" in key_dict:
-                    key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n")
-                
-                cred = credentials.Certificate(key_dict)
+                cred = credentials.Certificate(key_info)
                 initialize_app(cred)
                 return firestore.client()
+        except Exception as e:
+            st.error(f"❌ خطأ في بوابة التشفير: {e}")
             return None
-    except Exception as e:
-        st.error(f"⚠️ خطأ في بوابة التشفير: {e}")
-        return None
+    return firestore.client()
 
-# تشغيل المحرك وتخزينه في المتغير db
+# تفعيل قاعدة البيانات
 db = init_firebase()
-if 'user_id' not in st.session_state: st.session_state.user_id = None
 
 # --- 4. بوابة الدخول ---
 if not st.session_state.auth:
