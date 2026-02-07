@@ -33,14 +33,14 @@ st.markdown("""
 
 # --- 2. محرك الربط السحابي (Firebase Engine) ---
 def init_firebase():
-    """محرك الربط السحابي - المنجز V54"""
+    """محرك الربط السحابي V54 - المنجز"""
     if not firebase_admin._apps:
         try:
             if "firebase" in st.secrets:
                 # تحويل الأسرار لقاموس ومعالجة المفتاح فوراً
                 key_info = dict(st.secrets["firebase"])
                 if "private_key" in key_info:
-                    # هذا السطر هو الحل لمشكلة الـ PEM التي تظهر في الصورة
+                    # السطر المصحح بالكامل لإغلاق الأقواس
                     key_info["private_key"] = key_info["private_key"].replace("\\n", "\n")
                 
                 cred = credentials.Certificate(key_info)
