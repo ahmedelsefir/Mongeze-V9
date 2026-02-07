@@ -33,16 +33,17 @@ st.markdown("""
 
 # --- 2. محرك الربط السحابي (Firebase Engine) ---
 def init_firebase():
-    """تهيئة الاتصال بقاعدة البيانات باستخدام المفاتيح السرية"""
+    """محرك الربط السحابي المؤمن - المنجز V54"""
     try:
-        # محاولة جلب التطبيق إذا كان مفعلاً مسبقاً
+        # فحص إذا كان التطبيق مفعل مسبقاً
         try:
             return firestore.client()
-        except ValueError:
-            # إذا لم يكن مفعلاً، نبدأ عملية الربط الجديدة
+        except Exception:
+            # إذا لم يكن مفعلاً، نقرأ الأسرار
             if "firebase" in st.secrets:
                 key_dict = dict(st.secrets["firebase"])
-                # معالجة المفتاح ليتوافق مع مكتبة التشفير
+                
+                # المعالجة الجوهرية لفك تشفير المفتاح الخاص
                 if "private_key" in key_dict:
                     key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n")
                 
@@ -51,13 +52,11 @@ def init_firebase():
                 return firestore.client()
             return None
     except Exception as e:
-        st.error(f"⚠️ فشل الربط السحابي: {e}")
+        st.error(f"⚠️ خطأ في بوابة التشفير: {e}")
         return None
 
+# تشغيل المحرك وتخزينه في المتغير db
 db = init_firebase()
-
-# --- 3. محرك الحالة (State Management) ---
-if 'auth' not in st.session_state: st.session_state.auth = False
 if 'user_id' not in st.session_state: st.session_state.user_id = None
 
 # --- 4. بوابة الدخول ---
