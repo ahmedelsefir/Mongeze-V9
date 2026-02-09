@@ -49,33 +49,23 @@ if "user_email" not in st.session_state:
 
 # --- 3. محرك الربط السحابي (Firebase Engine) ---
 def init_firebase():
-    """تهيئة الاتصال بقاعدة البيانات السحابية"""
     try:
-        # محاولة جلب التطبيق إذا كان مفعلاً مسبقاً
+        # إذا كان التطبيق مفعل مسبقاً، نرجعه فوراً
         return firestore.client()
-    except (ValueError, Exception):
-        try:
-            if "firebase" in st.secrets:
-                key_info = dict(st.secrets["firebase"])
-                # معالجة المفتاح الخاص (PEM format)
-                if "private_key" in key_info:
-                    key_info["private_key"] = key_info["private_key"].replace("\\n", "\n")
-                
-                cred = credentials.Certificate(key_info)
-                initialize_app(cred)
-                return firestore.client()
-        except Exception as e:
-            st.error(f"⚠️ فشل الربط السحابي: {e}")
-            return None
+    except Exception:
+        if "firebase" in st.secrets:
+            import json
+            # سحب البيانات كقاموس واحد من السيكرتس
+            firebase_info = dict(st.secrets["firebase"])
+            
+            # تصليح المفتاح الخاص لضمان قراءة الأسطر الجديدة
+            if "private_key" in firebase_info:
+                firebase_info["private_key"] = firebase_info["private_key"].replace("\\n", "\n")
+            
+            cred = credentials.Certificate(firebase_info)
+            initialize_app(cred)
+            return firestore.client()
     return None
-
-# تفعيل قاعدة البيانات
-db = init_firebase()
-
-# --- 4. بوابة الدخول ---
-if not st.session_state.auth:
-    st.markdown("<h1 style='text-align:center; color:#1b5e20;'>🛡️ المنجز V54 - الدخول الآمن</h1>", unsafe_allow_html=True)
-    _, col, _ = st.columns([1, 1.2, 1])
     
     with col:
         st.markdown("<div class='info-card'>", unsafe_allow_html=True)
