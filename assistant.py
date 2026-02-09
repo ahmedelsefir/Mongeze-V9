@@ -8,20 +8,30 @@ from firebase_admin import credentials, firestore, initialize_app
 # 1. إعداد الصفحة
 st.set_page_config(page_title="المنجز - V58", layout="wide", page_icon="🏆")
 
-# 2. تهيئة Firebase (نسخة السطر الواحد الآمنة)
+# 2. تهيئة Firebase (نسخة السطر الواحد الآمنة والمعدلة)
 def init_firebase():
     if not firebase_admin._apps:
         try:
-            if "firebase" in st.secrets:
-                # الحل السحري: قراءة المفتاح كـ JSON كامل مرة واحدة
+            # التحقق من وجود المفتاح في السيكرتس أولاً
+            if "firebase" in st.secrets and "json_key" in st.secrets["firebase"]:
                 import json
                 raw_json = st.secrets["firebase"]["json_key"]
                 fb_details = json.loads(raw_json)
                 
+                # تصليح الرموز السرية عشان بايثون "الخرا" ميزعلش
+                if "private_key" in fb_details:
+                    fb_details["private_key"] = fb_details["private_key"].replace("\\n", "\n")
+                
                 cred = credentials.Certificate(fb_details)
                 initialize_app(cred)
         except Exception as e:
-            st.error(f"⚠️ عطل في السحاب: {e}")
+            # عرض الخطأ فقط لو إحنا على السيرفر فعلياً
+            if "firebase" in st.secrets:
+                st.error(f"❌ عطل في السحاب: {e}")
+    try:
+        return firestore.client()
+    except:
+        return None
     try:
         return firestore.client()
     except:
