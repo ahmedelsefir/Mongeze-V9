@@ -13,9 +13,11 @@ def init_firebase():
     if not firebase_admin._apps:
         try:
             if "firebase" in st.secrets:
-                fb_details = dict(st.secrets["firebase"])
-                if "private_key" in fb_details:
-                    fb_details["private_key"] = fb_details["private_key"].replace("\\n", "\n")
+                # الحل السحري: قراءة المفتاح كـ JSON كامل مرة واحدة
+                import json
+                raw_json = st.secrets["firebase"]["json_key"]
+                fb_details = json.loads(raw_json)
+                
                 cred = credentials.Certificate(fb_details)
                 initialize_app(cred)
         except Exception as e:
