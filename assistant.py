@@ -6,7 +6,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore, initialize_app
 
 # 1. إعداد الصفحة
-st.set_page_config(page_title="المنجز - V9", layout="wide", page_icon="🏆")
+st.set_page_config(page_title="المنجز - V54", layout="wide", page_icon="🏆")
 
 # 2. تهيئة Firebase (نسخة السطر الواحد الآمنة)
 def init_firebase():
