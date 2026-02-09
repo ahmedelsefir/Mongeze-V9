@@ -50,32 +50,25 @@ if "user_email" not in st.session_state:
 # --- 3. محرك الربط السحابي (Firebase Engine) ---
 def init_firebase():
     try:
-        # إذا كان التطبيق مفعل مسبقاً، نرجعه فوراً
+        # إذا كان التطبيق مفعل، لا نكرر العملية
         return firestore.client()
     except Exception:
+        # سحب البيانات مباشرة من السيكرتس كقاموس
         if "firebase" in st.secrets:
-            import json
-            # سحب البيانات كقاموس واحد من السيكرتس
-            firebase_info = dict(st.secrets["firebase"])
-            
-            # تصليح المفتاح الخاص لضمان قراءة الأسطر الجديدة
-            if "private_key" in firebase_info:
-                firebase_info["private_key"] = firebase_info["private_key"].replace("\\n", "\n")
-            
-            cred = credentials.Certificate(firebase_info)
-            initialize_app(cred)
-            return firestore.client()
+            try:
+                # تحويل السيكرتس لقاموس بايثون نظيف
+                fb_details = dict(st.secrets["firebase"])
+                
+                # تصحيح أهم سطر (المفتاح الخاص) لضمان عدم وجود أخطاء تنسيق
+                if "private_key" in fb_details:
+                    fb_details["private_key"] = fb_details["private_key"].replace("\\n", "\n")
+                
+                cred = credentials.Certificate(fb_details)
+                initialize_app(cred)
+                return firestore.client()
+            except Exception as e:
+                st.error(f"خطأ في إعدادات السحاب: {e}")
     return None
-    
-    with col:
-        st.markdown("<div class='info-card'>", unsafe_allow_html=True)
-        u_type = st.radio("نوع الحساب:", ["مستشار (Management)", "عميل (VIP Client)"])
-        user_email = st.text_input("البريد الإلكتروني")
-        pwd = st.text_input("كلمة المرور", type="password")
-        
-        if st.button("🚀 دخول وتفعيل الربط"):
-            if pwd == "123":  # يمكنك تغيير كلمة المرور هنا
-                st.session_state.auth = True
                 st.session_state.role = 'admin' if "مستشار" in u_type else 'user'
                 st.session_state.user_email = user_email
                 st.success("تم تسجيل الدخول بنجاح!")
