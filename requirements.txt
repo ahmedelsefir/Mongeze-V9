@@ -1,5 +1,5 @@
 streamlit
 pandas
-google-generativeai
 firebase-admin
-honeybadger
+google-cloud-firestore
+google-cloud-storage==2.14.0
