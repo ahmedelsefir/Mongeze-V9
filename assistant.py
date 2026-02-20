@@ -7,9 +7,8 @@ from datetime import datetime
 
 # --- 🔐 1. الأمان الاستراتيجي (تحميل المفاتيح) ---
 if not firebase_admin._apps:
-    secret_info = json.loads(st.secrets["FIREBASE_SERVICE_ACCOUNT"])
-    secret_info["private_key"] = secret_info["private_key"].replace("\\n", "\n")
-    cred = credentials.Certificate(secret_info)
+    secret_info = st.secrets["firebase"]  # تم التغيير ليتطابق مع الـ Secrets
+    cred = credentials.Certificate(dict(secret_info)) # تحويلها لقاموس آمن
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
