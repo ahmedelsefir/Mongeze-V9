@@ -1,88 +1,103 @@
 import streamlit as st
+import google.generativeai as genai
 import firebase_admin
-from firebase_admin import credentials, firestore
-import pandas as pd
-import time
+from firebase_admin import credentials, firestore, auth
+import json
+from datetime import datetime
 
-# --- 1. فحص الاتصال السحابي (The Bridge) ---
-def connect_to_the_cloud():
-    # التحقق إذا كان التطبيق مسبقاً لمنع خطأ التكرار
-    if not firebase_admin._apps:
+# --- 🔐 1. الأمان الاستراتيجي (تحميل المفاتيح) ---
+if not firebase_admin._apps:
+    secret_info = json.loads(st.secrets["FIREBASE_SERVICE_ACCOUNT"])
+    secret_info["private_key"] = secret_info["private_key"].replace("\\n", "\n")
+    cred = credentials.Certificate(secret_info)
+    firebase_admin.initialize_app(cred)
+
+db = firestore.client()
+genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+model = genai.GenerativeModel('gemini-1.5-flash')
+
+# --- 👤 2. نظام التحقق من الهوية (Authentication) ---
+if 'logged_in' not in st.session_state:
+    st.session_state.update({'logged_in': False, 'role': None, 'user_info': {}, 'cart': []})
+
+def login_gate():
+    st.title("🛡️ منصة المنجز - تسجيل الدخول الآمن")
+    email = st.text_input("البريد الإلكتروني")
+    password = st.text_input("كلمة السر", type="password")
+    if st.button("دخول النظام"):
         try:
-            # التأكد من وجود الخزنة (Secrets)
-            if "firebase" in st.secrets:
-                fb_data = dict(st.secrets["firebase"])
-                # السطر الحاسم لتشغيل المفتاح الخاص
-                fb_data["private_key"] = fb_data["private_key"].replace("\\n", "\n")
-                
-                cred = credentials.Certificate(fb_data)
-                firebase_admin.initialize_app(cred)
-                return firestore.client()
-            else:
-                st.error("❌ الخزنة (Secrets) فارغة! يرجى إضافة مفتاح Firebase.")
-                return None
-        except Exception as e:
-            st.error(f"⚠️ فشل الربط التقني: {e}")
-            return None
-    return firestore.client()
-
-# تفعيل قاعدة البيانات
-db = connect_to_the_cloud()
-
-# --- 2. واجهة المستخدم الفاخرة ---
-st.set_page_config(page_title="المنجز V58 - القوة السحابية", layout="wide")
-
-st.markdown("""
-    <style>
-    .main { background-color: #f9fbf9; }
-    .stButton>button { width: 100%; border-radius: 20px; background-color: #1b5e20; color: gold; }
-    .vip-card { padding: 20px; border-radius: 15px; background: white; border-right: 8px solid #1b5e20; box-shadow: 2px 2px 15px rgba(0,0,0,0.1); }
-    </style>
-    """, unsafe_allow_html=True)
-
-# --- 3. نظام الدخول والحماية ---
-if 'auth' not in st.session_state: st.session_state.auth = False
-
-if not st.session_state.auth:
-    st.title("🛡️ بوابة المنجز V58")
-    user_mail = st.text_input("إيميل العميل الـ VIP")
-    if st.button("فتح البوابة"):
-        if "@" in user_mail:
-            st.session_state.auth = True
-            st.session_state.email = user_mail
-            st.rerun()
+            user = auth.get_user_by_email(email)
+            user_doc = db.collection("users").document(user.uid).get()
+            if user_doc.exists:
+                data = user_doc.to_dict()
+                st.session_state.update({'logged_in': True, 'role': data['role'], 'user_info': data, 'user_email': email})
+                st.rerun()
+        except: st.error("❌ بيانات غير صحيحة")
     st.stop()
 
-# --- 4. لوحة التحكم الرئيسية ---
-st.sidebar.image("https://cdn-icons-png.flaticon.com/512/1055/1055672.png", width=100)
-st.sidebar.title(f"القائد: {st.session_state.email.split('@')[0]}")
+if not st.session_state.logged_in:
+    login_gate()
 
-# عرض حالة الاتصال الحية
-if db:
-    st.sidebar.success("✅ متصل سحابياً (Firebase Active)")
-else:
-    st.sidebar.error("❌ غير متصل (Offline Mode)")
+# --- 🚀 3. محرك المنجز الرئيسي (Main Logic) ---
+role = st.session_state.role
+user_name = st.session_state.user_info.get('name')
 
-tabs = st.tabs(["🏠 الرئيسية", "📊 إدارة المناوبات", "⚙️ الإعدادات"])
+# قائمة التحكم بناءً على الجروب
+if role == "admin": menu = ["📊 لوحة القائد", "👥 إدارة المجموعات", "💰 المحاسبة والضرائب"]
+elif role == "staff": menu = ["🎧 خدمة العملاء AI", "📅 المناوبات"]
+elif role == "driver": menu = ["📦 استلام الطلبات", "🏆 محفظتي", "🚀 مساعد AI"]
+else: menu = ["🛍️ اطلب أي شيء", "📋 طلباتي", "🚀 مساعد AI"]
 
-with tabs[0]:
-    st.markdown("<div class='vip-card'><h1>🌿 مرحباً بك في عصر السحاب</h1><p>الآن يمكنك البدء في تخزين بيانات العملاء وضمان رضاهم التام.</p></div>", unsafe_allow_html=True)
-    
-    if st.button("🚀 اختبار إرسال أول نبضة للسحابة"):
-        if db:
-            with st.spinner("جاري الكتابة في السحابة..."):
-                db.collection("test").add({"msg": "Hello Cloud", "time": str(time.ctime())})
-                st.balloons()
-                st.success("تم الاتصال والحفظ بنجاح مبهر!")
-        else:
-            st.error("لا يمكن الإرسال.. تأكد من إعدادات Secrets")
+choice = st.sidebar.selectbox(f"مرحباً {user_name}", menu)
 
-with tabs[1]:
-    st.header("📅 إدارة المناوبات الذكية")
-    # سيتم ربط هذا الجزء مباشرة بـ Firestore لاحقاً
-    st.write("الجدول السحابي قيد المزامنة...")
+# --- 4. تنفيذ الوظائف (بناءً على كلامنا السابق) ---
 
-with tabs[2]:
-    st.header("⚙️ تفاصيل الربط")
-    if "firebase" in st.secrets:
-        st.write(f"المشروع المرتبط: `{st.secrets['firebase']['project_id']}`")
+# أ- واجهة العميل (اطلب أي شيء)
+if choice == "🛍️ اطلب أي شيء":
+    st.header("ماذا تريد أن تنجز اليوم؟")
+    order_type = st.radio("نوع الطلب", ["🍔 مطاعم", "🛒 سوبر ماركت", "📦 طلب خاص"])
+    order_desc = st.text_area("وصف الطلب...")
+    if st.button("🚀 إرسال الطلب"):
+        db.collection("orders").add({
+            "customer_email": st.session_state.user_email,
+            "order_details": order_desc,
+            "status": "pending",
+            "timestamp": datetime.now()
+        })
+        st.success("تم الإرسال! انتظر عروض المناديب الآن.")
+
+# ب- واجهة المندوب والمزايدة (Bidding)
+elif choice == "📦 استلام الطلبات":
+    st.subheader("📥 الطلبات المتاحة")
+    orders = db.collection("orders").where("status", "==", "pending").stream()
+    for o in orders:
+        data = o.to_dict()
+        with st.expander(f"طلب من {data['customer_email']}"):
+            st.write(data['order_details'])
+            bid = st.number_input("سعر التوصيل", key=o.id, min_value=10)
+            if st.button("إرسال عرضي", key=f"btn_{o.id}"):
+                db.collection("orders").document(o.id).collection("bids").add({
+                    "driver": user_name, "price": bid, "email": st.session_state.user_email
+                })
+                st.toast("تم إرسال عرضك!")
+
+# ج- واجهة القائد (المحاسبة والضرائب 14%)
+elif choice == "💰 المحاسبة والضرائب":
+    st.header("📈 التقارير المالية والضرائب")
+    # معادلة الضريبة اللي اتفقنا عليها
+    st.write("يتم احتساب 14% ضريبة قيمة مضافة على عمولة التشغيل آلياً.")
+    # (هنا يوضع كود عرض الإيرادات من الحلقات السابقة)
+
+# د- المساعد الذكي وخدمة العملاء (AI First)
+elif choice == "🚀 مساعد AI" or choice == "🎧 خدمة العملاء AI":
+    st.title("🤖 مساعد المنجز الذكي")
+    u_query = st.chat_input("كيف يمكنني مساعدتك؟")
+    if u_query:
+        # رسالة الترحيب اللي طلبتها
+        st.info(f"أهلاً بك يا {user_name}، سوف يتم الرد عليك من قبل أهم مدير خدمة عملاء الآن في خلال دقائق.")
+        resp = model.generate_content(u_query)
+        st.write(resp.text)
+
+if st.sidebar.button("تسجيل الخروج"):
+    st.session_state.logged_in = False
+    st.rerun()
