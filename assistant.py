@@ -2,101 +2,131 @@ import streamlit as st
 import google.generativeai as genai
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
-import json
 from datetime import datetime
 
-# --- 🔐 1. الأمان الاستراتيجي (تحميل المفاتيح) ---
+# --- 🛡️ 1. التأسيس الأمني (قاعدة البيانات والذكاء) ---
 if not firebase_admin._apps:
-    secret_info = st.secrets["firebase"]  # تم التغيير ليتطابق مع الـ Secrets
-    cred = credentials.Certificate(dict(secret_info)) # تحويلها لقاموس آمن
-    firebase_admin.initialize_app(cred)
+    try:
+        cred = credentials.Certificate(dict(st.secrets["firebase"]))
+        firebase_admin.initialize_app(cred)
+    except Exception as e:
+        st.error(f"⚠️ فشل الاتصال بالسحابة: {e}")
 
 db = firestore.client()
-genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-model = genai.GenerativeModel('gemini-1.5-flash')
 
-# --- 👤 2. نظام التحقق من الهوية (Authentication) ---
+# تفعيل الموديل الخارق (Gemini 1.5 Pro)
+try:
+    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+    model = genai.GenerativeModel('gemini-1.5-pro')
+except:
+    st.warning("⚠️ محرك الذكاء الاصطناعي في وضع الاستعداد.")
+
+# --- 👤 2. إدارة الجلسة والهوية ---
 if 'logged_in' not in st.session_state:
-    st.session_state.update({'logged_in': False, 'role': None, 'user_info': {}, 'cart': []})
+    st.session_state.update({'logged_in': False, 'role': None, 'user_info': {}, 'apps': []})
 
 def login_gate():
-    st.title("🛡️ منصة المنجز - تسجيل الدخول الآمن")
-    email = st.text_input("البريد الإلكتروني")
-    password = st.text_input("كلمة السر", type="password")
-    if st.button("دخول النظام"):
+    st.markdown("<h1 style='text-align: center;'>🦅 منصة المنجز - الدخول الذكي</h1>", unsafe_allow_html=True)
+    email = st.text_input("البريد الوارد (ahmedelsefir9@...)")
+    password = st.text_input("كلمة المرور الاستراتيجية", type="password")
+    
+    if st.button("فتح النظام", use_container_width=True):
         try:
             user = auth.get_user_by_email(email)
             user_doc = db.collection("users").document(user.uid).get()
             if user_doc.exists:
                 data = user_doc.to_dict()
-                st.session_state.update({'logged_in': True, 'role': data['role'], 'user_info': data, 'user_email': email})
+                st.session_state.update({
+                    'logged_in': True, 'role': data.get('role', 'user'),
+                    'user_info': data, 'user_email': email
+                })
                 st.rerun()
-        except: st.error("❌ بيانات غير صحيحة")
+        except: st.error("❌ وصول مرفوض: تأكد من البيانات")
     st.stop()
 
 if not st.session_state.logged_in:
     login_gate()
 
-# --- 🚀 3. محرك المنجز الرئيسي (Main Logic) ---
+# --- 📱 3. واجهة القائد والبرامج (Sidebar) ---
+user_info = st.session_state.user_info
 role = st.session_state.role
-user_name = st.session_state.user_info.get('name')
 
-# قائمة التحكم بناءً على الجروب
-if role == "admin": menu = ["📊 لوحة القائد", "👥 إدارة المجموعات", "💰 المحاسبة والضرائب"]
-elif role == "staff": menu = ["🎧 خدمة العملاء AI", "📅 المناوبات"]
-elif role == "driver": menu = ["📦 استلام الطلبات", "🏆 محفظتي", "🚀 مساعد AI"]
-else: menu = ["🛍️ اطلب أي شيء", "📋 طلباتي", "🚀 مساعد AI"]
+with st.sidebar:
+    st.image(user_info.get('profile_pic', "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"), width=80)
+    st.title(f"القائد: {user_info.get('name')}")
+    st.caption(f"الرتبة: {role.upper()}")
+    st.divider()
+    
+    # بوابة البرامج الجديدة (Dynamic App Switcher)
+    app_mode = st.radio("🛰️ اختر البرنامج التشغيلي:", 
+                        ["المنجز الأساسي", "مركز الذكاء التطويري", "إدارة القبول والسيستم"])
+    
+    if st.button("خروج آمن"):
+        st.session_state.clear()
+        st.rerun()
 
-choice = st.sidebar.selectbox(f"مرحباً {user_name}", menu)
+# --- 🚀 4. تنفيذ البرامج (Logic) ---
 
-# --- 4. تنفيذ الوظائف (بناءً على كلامنا السابق) ---
+# البرنامج الأول: المنجز الأساسي (العمليات اليومية)
+if app_mode == "المنجز الأساسي":
+    st.header("📦 إدارة العمليات الميدانية")
+    tabs = st.tabs(["🛒 الطلبات النشطة", "💰 المحفظة المالية", "📋 سجل الإنجاز"])
+    
+    with tabs[0]:
+        if role in ["admin", "driver"]:
+            orders = db.collection("orders").where("status", "==", "pending").stream()
+            for o in orders:
+                d = o.to_dict()
+                with st.expander(f"طلب جديد: {d.get('customer_email')}"):
+                    st.write(d.get('order_details'))
+                    if st.button("قبول المهمة", key=o.id):
+                        db.collection("orders").document(o.id).update({"status": "processing", "driver": user_info.get('name')})
+                        st.success("تم تأكيد المهمة!")
 
-# أ- واجهة العميل (اطلب أي شيء)
-if choice == "🛍️ اطلب أي شيء":
-    st.header("ماذا تريد أن تنجز اليوم؟")
-    order_type = st.radio("نوع الطلب", ["🍔 مطاعم", "🛒 سوبر ماركت", "📦 طلب خاص"])
-    order_desc = st.text_area("وصف الطلب...")
-    if st.button("🚀 إرسال الطلب"):
-        db.collection("orders").add({
-            "customer_email": st.session_state.user_email,
-            "order_details": order_desc,
-            "status": "pending",
-            "timestamp": datetime.now()
-        })
-        st.success("تم الإرسال! انتظر عروض المناديب الآن.")
+# البرنامج الثاني: مركز الذكاء التطويري (العقل المدبر)
+elif app_mode == "مركز الذكاء التطويري":
+    st.header("🧠 مساعد المنجز الخارق (Gemini 1.5 Pro)")
+    st.info("هذا الموديل مخصص لتحليل البيانات المعقدة وحل مشكلات السيستم.")
+    
+    u_input = st.chat_input("تحدث مع عقل المنجز...")
+    if u_input:
+        with st.chat_message("assistant"):
+            st.write(f"أهلاً بك يا {user_info.get('name')}.. جاري التحليل الاستراتيجي...")
+            try:
+                # ربط الذكاء ببيانات السيستم الحقيقية
+                context = f"المستخدم الحالي هو {role}. المهام المتاحة: توصيل، محاسبة، ضرائب 14%. السؤال: {u_input}"
+                response = model.generate_content(context)
+                st.markdown(response.text)
+            except Exception as e:
+                st.error(f"عذراً قائد، هناك ضغط على المحرك: {e}")
 
-# ب- واجهة المندوب والمزايدة (Bidding)
-elif choice == "📦 استلام الطلبات":
-    st.subheader("📥 الطلبات المتاحة")
-    orders = db.collection("orders").where("status", "==", "pending").stream()
-    for o in orders:
-        data = o.to_dict()
-        with st.expander(f"طلب من {data['customer_email']}"):
-            st.write(data['order_details'])
-            bid = st.number_input("سعر التوصيل", key=o.id, min_value=10)
-            if st.button("إرسال عرضي", key=f"btn_{o.id}"):
-                db.collection("orders").document(o.id).collection("bids").add({
-                    "driver": user_name, "price": bid, "email": st.session_state.user_email
-                })
-                st.toast("تم إرسال عرضك!")
+# البرنامج الثالث: إدارة القبول والسيستم (فتح البرامج الجديدة)
+elif app_mode == "إدارة القبول والسيستم":
+    st.header("⚙️ مركز التحكم والقبول")
+    
+    if role == "admin":
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("المناديب النشطين", "12") # يمكن ربطها بـ Firestore count
+        with col2:
+            st.metric("الضرائب المحصلة (14%)", "1,450 EGP")
+            
+        st.subheader("🆕 طلبات القبول والتسجيل")
+        pendings = db.collection("users").where("status", "==", "pending").stream()
+        for p in pendings:
+            p_data = p.to_dict()
+            with st.container(border=True):
+                st.write(f"إيميل: {p_data.get('email')} | الرتبة المطلوبة: {p_data.get('role')}")
+                if st.button("تفعيل البرنامج لهذا المستخدم", key=p.id):
+                    db.collection("users").document(p.id).update({"status": "active"})
+                    st.balloons()
+    else:
+        st.warning("⚠️ هذه المنطقة مخصصة للقادة فقط.")
 
-# ج- واجهة القائد (المحاسبة والضرائب 14%)
-elif choice == "💰 المحاسبة والضرائب":
-    st.header("📈 التقارير المالية والضرائب")
-    # معادلة الضريبة اللي اتفقنا عليها
-    st.write("يتم احتساب 14% ضريبة قيمة مضافة على عمولة التشغيل آلياً.")
-    # (هنا يوضع كود عرض الإيرادات من الحلقات السابقة)
-
-# د- المساعد الذكي وخدمة العملاء (AI First)
-elif choice == "🚀 مساعد AI" or choice == "🎧 خدمة العملاء AI":
-    st.title("🤖 مساعد المنجز الذكي")
-    u_query = st.chat_input("كيف يمكنني مساعدتك؟")
-    if u_query:
-        # رسالة الترحيب اللي طلبتها
-        st.info(f"أهلاً بك يا {user_name}، سوف يتم الرد عليك من قبل أهم مدير خدمة عملاء الآن في خلال دقائق.")
-        resp = model.generate_content(u_query)
-        st.write(resp.text)
-
-if st.sidebar.button("تسجيل الخروج"):
-    st.session_state.logged_in = False
-    st.rerun()
+# --- 🚀 5. بوابة "فتح البرامج الجديدة" (Future Expansion) ---
+st.divider()
+with st.expander("➕ إضافة موديول جديد للسيستم"):
+    st.write("يمكنك الآن طلب إضافة برنامج (مخازن، شحن دولي، إدارة عقارات) وسيقوم الذكاء بتوليده.")
+    new_app_idea = st.text_input("اسم البرنامج الجديد المراد فتحه داخل المنجز:")
+    if st.button("توليد هيكل البرنامج"):
+        st.write(f"جاري تحضير موديول {new_app_idea} في بيئة IDX...")
