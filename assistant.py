@@ -1,7 +1,9 @@
-google.generativeai as genai
+import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
-from datetime import datetime
+import google.generativeai as genai
+from streamlit_js_eval import streamlit_js_eval
+import pandas as pd
 
 # --- 🛡️ 1. التأسيس الأمني (قاعدة البيانات والذكاء) ---
 if not firebase_admin._apps:
