@@ -3,120 +3,95 @@ import firebase_admin
 from firebase_admin import credentials, firestore, auth
 import google.generativeai as genai
 
-# --- 🛡️ 1. التأسيس والربط السحابي الآمن ---
+# --- 1. التأسيس الذكي ---
 if not firebase_admin._apps:
     try:
         cred = credentials.Certificate(dict(st.secrets["firebase"]))
         firebase_admin.initialize_app(cred)
     except Exception as e:
-        st.error(f"⚠️ خطأ في اتصال Firebase: {e}")
+        st.error(f"⚠️ خطأ فني في قاعدة البيانات: {e}")
 
 db = firestore.client()
 
-# تفعيل محرك الذكاء (Flash سريع ومستقر)
 try:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-    model = genai.GenerativeModel('gemini-1.5-flash')
-except Exception as e:
+    model = genai.GenerativeModel('gemini-pro')
+except:
     st.warning("⚠️ محرك الذكاء في وضع الاستعداد.")
 
-# --- 👤 2. إدارة الجلسة والهوية ---
+# --- 2. إدارة الجلسة والدخول الاستراتيجي ---
 if 'logged_in' not in st.session_state:
     st.session_state.update({'logged_in': False, 'uid': None})
 
-def login_gate():
-    st.markdown("<h1 style='text-align: center;'>🦅 منظومة المنجز S9</h1>", unsafe_allow_html=True)
-    email = st.text_input("البريد الإلكتروني")
-    password = st.text_input("كلمة السر الاستراتيجية", type="password")
+if not st.session_state.logged_in:
+    st.title("🦅 منظومة المنجز S9")
     
-    if st.button("دخول للمنظومة", use_container_width=True):
-        try:
-            user = auth.get_user_by_email(email)
-            st.session_state.update({'logged_in': True, 'uid': user.uid})
-            st.rerun()
-        except:
-            st.error("❌ بيانات الدخول غير صحيحة.")
+    # إضافة تبويبات للدخول أو استعادة كلمة السر
+    tab1, tab2 = st.tabs(["🔐 تسجيل الدخول", "🔑 استعادة كلمة المرور"])
+    
+    with tab1:
+        email = st.text_input("البريد الإلكتروني", key="login_email")
+        password = st.text_input("كلمة السر", type="password", key="login_pass")
+        if st.button("فتح النظام", use_container_width=True):
+            try:
+                # التحقق من المستخدم عبر Firebase
+                user = auth.get_user_by_email(email)
+                st.session_state.update({'logged_in': True, 'uid': user.uid})
+                st.rerun()
+            except: 
+                st.error("❌ البريد أو كلمة السر غير صحيحة")
+    
+    with tab2:
+        st.info("سيتم إرسال رابط رسمي من جوجل لتغيير كلمة المرور لبريدك.")
+        reset_email = st.text_input("أدخل بريدك المسجل:", key="reset_email")
+        if st.button("إرسال رابط الاستعادة", use_container_width=True):
+            if reset_email:
+                try:
+                    # إرسال إيميل إعادة التعيين
+                    auth.generate_password_reset_link(reset_email)
+                    st.success(f"✅ تم إرسال الرابط بنجاح إلى {reset_email}")
+                except Exception as e:
+                    st.error(f"⚠️ تأكد من صحة البريد: {e}")
+            else:
+                st.warning("يرجى كتابة البريد أولاً.")
     st.stop()
 
-if not st.session_state.logged_in:
-    login_gate()
-
-# --- 📱 3. جلب بيانات المستخدم الحية من Firestore ---
+# --- 3. جلب البيانات وتحديث المحفظة ---
 user_ref = db.collection("users").document(st.session_state.uid)
 user_data = user_ref.get().to_dict() or {}
-role = user_data.get('role', 'user')
 
-# --- Sidebar: واجهة التحكم الجانبية ---
 with st.sidebar:
-    st.image(user_data.get('profile_pic', "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"), width=90)
-    st.title(f"القائد: {user_data.get('name', 'مستخدم جديد')}")
-    st.markdown(f"🔱 **الرتبة:** `{role.upper()}`")
-    st.success(f"💰 **المحفظة:** {user_data.get('balance', 0)} EGP")
-    st.divider()
-    
-    app_mode = st.radio("🛰️ البرامج التشغيلية:", 
-                        ["لوحة البيانات", "مركز الذكاء", "إدارة العمليات"])
-    
-    if st.button("خروج آمن"):
+    st.image(user_data.get('profile_pic', "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"), width=80)
+    st.header(user_data.get('name', 'القائد'))
+    st.metric("💰 الرصيد الحالي", f"{user_data.get('balance', 0)} EGP")
+    app_mode = st.radio("🛰️ البرامج التشغيلية:", ["مركز التحكم", "عقل المنجز (AI)", "العمليات الميدانية"])
+    if st.button("تسجيل الخروج"):
         st.session_state.clear()
         st.rerun()
 
-# --- 🚀 4. تنفيذ البرامج (Logic) ---
-
-# البرنامج الأول: لوحة البيانات الشخصية
-if app_mode == "لوحة البيانات":
-    st.header("👤 ملف المستخدم الاستراتيجي")
-    with st.container(border=True):
-        col1, col2 = st.columns(2)
-        with col1:
-            new_name = st.text_input("الاسم المعتمد", value=user_data.get('name', ''))
-            new_phone = st.text_input("رقم الموبايل", value=user_data.get('phone', ''))
-        with col2:
-            new_pic = st.text_input("رابط الصورة الشخصية", value=user_data.get('profile_pic', ''))
-        
-        if st.button("حفظ التعديلات"):
-            user_ref.update({"name": new_name, "phone": new_phone, "profile_pic": new_pic})
-            st.success("✅ تم التحديث في السحابة!")
-
-# البرنامج الثاني: مركز الذكاء والتحليل
-elif app_mode == "مركز الذكاء":
-    st.header("🧠 عقل المنجز (AI)")
-    prompt = st.chat_input("تحدث مع المساعد الذكي...")
-    if prompt:
-        with st.chat_message("assistant"):
+# --- 4. معالجة الأقسام ---
+if app_mode == "عقل المنجز (AI)":
+    st.header("🧠 استشارة الذكاء الاصطناعي")
+    user_query = st.chat_input("تحدث مع المنجز...")
+    if user_query:
+        with st.spinner("جاري التفكير..."):
             try:
-                context = f"أنا القائد {user_data.get('name')} برتبة {role}. سؤالي: {prompt}"
-                response = model.generate_content(context)
+                response = model.generate_content(user_query)
                 st.markdown(response.text)
             except Exception as e:
-                st.error(f"حدث خطأ في محرك الذكاء: {e}")
+                st.error(f"المحرك يحتاج لتحديث مفتاح API. الخطأ: {e}")
 
-# البرنامج الثالث: إدارة العمليات والأرباح
-elif app_mode == "إدارة العمليات":
-    st.header("📦 مركز العمليات والعمولات")
+elif app_mode == "العمليات الميدانية":
+    st.header("📦 إدارة الطلبات المباشرة")
     orders = db.collection("orders").where("status", "==", "pending").stream()
     
-    for o in orders:
-        d = o.to_dict()
-        with st.expander(f"طلب: {d.get('customer_email', 'بدون إيميل')}"):
-            price = d.get('price', 100)
-            st.write(f"التفاصيل: {d.get('order_details', 'لا توجد تفاصيل')}")
-            st.write(f"القيمة المادية: {price} EGP")
-            
-            if st.button("إتمام المهمة وقبض العمولة", key=o.id):
-                # تحديث حالة الطلب
-                db.collection("orders").document(o.id).update({"status": "delivered"})
-                # إضافة عمولة (14%) للمحفظة
-                commission = price * 0.14
-                new_balance = user_data.get('balance', 0) + commission
-                user_ref.update({"balance": new_balance})
-                st.success(f"🎊 مبروك! أضيفت عمولة قدرها {commission} EGP لرصيدك.")
-                st.balloons()
+    for order in orders:
+        ord_info = order.to_dict()
+        with st.expander(f"طلب جديد من: {ord_info.get('customer_email', 'عميل')}"):
+            st.write(f"التفاصيل: {ord_info.get('order_details')}")
+            if st.button("تم التسجيل والإتمام", key=order.id):
+                db.collection("orders").document(order.id).update({"status": "delivered"})
+                new_bal = user_data.get('balance', 0) + (ord_info.get('price', 100) * 0.14)
+                user_ref.update({"balance": new_bal})
+                st.success("✅ تم تحديث المحفظة والطلب!")
                 st.rerun()
-
-# --- 🏗️ 5. إضافة موديول جديد ---
-st.divider()
-with st.expander("➕ توسيع النظام"):
-    new_app = st.text_input("أدخل اسم البرنامج المراد توليده:")
-    if st.button("توليد الهيكل"):
-        st.info(f"جاري تحضير موديول {new_app}..")
