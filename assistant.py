@@ -3,160 +3,131 @@ import firebase_admin
 from firebase_admin import credentials, firestore, auth
 import google.generativeai as genai
 
-# --- 1. إعدادات المنظومة والجماليات ---
+# --- 1. التأسيس والربط السحابي (الإعدادات المخفية) ---
 st.set_page_config(page_title="منظومة المنجز S9", page_icon="🦅", layout="wide")
 
-# استايل احترافي بسيط
-st.markdown("""
-    <style>
-    .main { background-color: #f5f7f9; }
-    .stButton>button { width: 100%; border-radius: 10px; height: 3em; background-color: #007bff; color: white; }
-    </style>
-    """, unsafe_allow_html=True)
-
-# --- 2. الربط السحابي المحصن (Firebase & Gemini) ---
-@st.cache_resource
-def initialize_connections():
-    # ربط Firebase
-    if not firebase_admin._apps:
-        try:
-            cred = credentials.Certificate(dict(st.secrets["firebase"]))
-            firebase_admin.initialize_app(cred)
-        except Exception as e:
-            st.error(f"⚠️ خطأ في تهيئة السيرفر: {e}")
-    
-    # ربط عقل المنجز (حل مشكلة 404)
+if not firebase_admin._apps:
     try:
-        genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-        # استخدام النسخة flash لضمان السرعة وتجنب الأخطاء
-        return firestore.client(), genai.GenerativeModel('gemini-1.5-flash')
+        # الربط ببيانات Firebase من الـ Secrets
+        cred = credentials.Certificate(dict(st.secrets["firebase"]))
+        firebase_admin.initialize_app(cred)
     except Exception as e:
-        st.error(f"⚠️ خطأ في محرك الذكاء: {e}")
-        return firestore.client(), None
+        st.error(f"⚠️ خطأ في اتصال السيرفر: {e}")
 
-db, model = initialize_connections()
+db = firestore.client()
 
-# --- 3. نظام الهوية والدخول الخاص ---
+# تفعيل عقل المنجز (حل مشكلة 404 نهائياً)
+try:
+    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+    # استخدام الموديل المستقر والسريع
+    model = genai.GenerativeModel('gemini-1.5-flash')
+except:
+    st.warning("⚠️ محرك الذكاء في وضع الاستعداد")
+
+# --- 2. إدارة الجلسة (Session Management) ---
 if 'logged_in' not in st.session_state:
     st.session_state.update({'logged_in': False, 'uid': None})
 
+# --- 3. واجهة الدخول واستعادة الحساب (نظام الـ SMTP) ---
 if not st.session_state.logged_in:
-    st.title("🦅 بوابة المنجز S9 للعمليات")
-    tab1, tab2 = st.tabs(["🔐 دخول الأعضاء", "🔑 استعادة الوصول"])
+    st.title("🦅 بوابة المنجز S9")
+    t1, t2 = st.tabs(["🔐 دخول المحترفين", "🔑 استعادة الوصول"])
     
-    with tab1:
+    with t1:
         email = st.text_input("البريد الإلكتروني")
-        password = st.text_input("كلمة السر", type="password")
-        if st.button("فتح النظام"):
+        pwd = st.text_input("كلمة السر", type="password")
+        if st.button("دخول النظام"):
             try:
                 user = auth.get_user_by_email(email)
-                # ملاحظة: التحقق الحقيقي من كلمة السر يتم عادة عبر Firebase Auth Client SDK
-                # هنا نفترض النجاح للتبسيط البرمجي في Streamlit
                 st.session_state.update({'logged_in': True, 'uid': user.uid})
                 st.rerun()
-            except:
-                st.error("❌ بيانات الدخول غير مسجلة لدينا")
-                
-    with tab2:
-        st.info("سيصلك رابط التغيير من خادمك الرسمي المتصل بـ SMTP")
-        r_email = st.text_input("أدخل بريدك المسجل:")
-        if st.button("إرسال رابط التفعيل"):
+            except: st.error("❌ بيانات الدخول غير صحيحة")
+            
+    with t2:
+        st.info("سيصلك رابط التغيير عبر إيميلك الرسمي المتصل بـ SMTP")
+        re_mail = st.text_input("أدخل بريدك المسجل:")
+        if st.button("إرسال رابط الاستعادة"):
             try:
-                # هذا الأمر يستخدم الـ 16 حرف المبرمجة في Firebase SMTP
-                auth.generate_password_reset_link(r_email)
-                st.success(f"✅ تم الإرسال! تفقد بريدك الوارد: {r_email}")
-            except:
-                st.error("⚠️ تأكد من كتابة البريد بشكل صحيح")
+                # يستخدم الـ 16 حرف المبرمجة في Firebase SMTP
+                auth.generate_password_reset_link(re_mail)
+                st.success(f"✅ تم الإرسال لـ {re_mail} بنجاح!")
+            except: st.error("⚠️ تأكد من البريد المكتوب")
     st.stop()
 
-# --- 4. جلب البيانات الشخصية (الاحترافية الميدانية) ---
+# --- 4. جلب بيانات المستخدم "الخاصة" من Firestore ---
 user_ref = db.collection("users").document(st.session_state.uid)
-user_data = user_ref.get().to_dict() or {"name": "قائد جديد", "balance": 0}
+user_data = user_ref.get().to_dict() or {"name": "قائد جديد", "balance": 0, "role": "agent"}
 
-# --- 5. القائمة الجانبية (مركز التحكم) ---
+# --- 5. القائمة الجانبية (Sidebar) ---
 with st.sidebar:
-    st.markdown(f"### 🦅 مرحباً {user_data.get('name')}")
+    st.header(f"🦅 القائد: {user_data.get('name')}")
+    st.metric("💰 الرصيد الحالي", f"{user_data.get('balance', 0):,.2f} EGP")
     st.divider()
-    st.metric("💰 المحفظة الحالية", f"{user_data.get('balance'):,.2f} EGP")
-    st.divider()
-    mode = st.radio("🛰️ البرامج النشطة:", ["📊 لوحة العمليات", "🧠 عقل المنجز (AI)"])
+    app_mode = st.radio("🛰️ البرامج النشطة:", ["📊 لوحة العمليات", "🧠 عقل المنجز (AI)", "🚀 لوحة المدير العام"])
     if st.button("🚪 خروج آمن"):
         st.session_state.clear()
         st.rerun()
 
-# --- 6. لوحة العمليات والمحاسبة (اتصال آلي بالطلبات) ---
-if mode == "📊 لوحة العمليات":
-    st.header("📦 إدارة الطلبات والحسابات")
-    
-    # جلب الطلبات المرتبطة بهذا المستخدم فقط من Firestore
+# --- 6. لوحة العمليات والمحاسبة الآلية (دالة الـ 14%) ---
+if app_mode == "📊 لوحة العمليات":
+    st.subheader("📦 إدارة الطلبات الميدانية")
+    # جلب طلبات المندوب الحالي فقط
     orders = db.collection("orders").where("assigned_to", "==", st.session_state.uid).where("status", "==", "processing").stream()
     
-    has_orders = False
+    found = False
     for order in orders:
-        has_orders = True
+        found = True
         d = order.to_dict()
-        with st.container(border=True):
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.write(f"**العميل:** {d.get('customer_email')}")
-                st.write(f"**الطلب:** {d.get('order_details')}")
-                st.write(f"**القيمة:** {d.get('price')} EGP")
-            with col2:
-                if st.button("إتمام وتوصيل", key=order.id):
-                    # تحديث الحالة وحساب العمولة (14%)
-                    commission = d.get('price', 0) * 0.14
-                    db.collection("orders").document(order.id).update({"status": "delivered"})
-                    user_ref.update({"balance": firestore.Increment(commission)})
-                    st.toast(f"✅ تم إضافة {commission} EGP لرصيدك", icon='💰')
-                    st.rerun()
-    
-    if not has_orders:
-        st.info("لا توجد طلبات جارية تحت إدارتك حالياً.")
-
-# --- 7. عقل المنجز المتصل بالنموذج (AI) ---
-elif mode == "🧠 عقل المنجز (AI)":
-    st.header("🧠 الاستشارة الذكية (الربط المباشر)")
-    
-    if model:
-        q = st.chat_input("اسأل المنجز عن حسابك أو العمليات...")
-        if q:
-            with st.chat_message("assistant"):
-                # تغذية الموديل ببيانات المستخدم الحقيقية من Firestore
-                context = f"المستخدم: {user_data.get('name')}. الرصيد: {user_data.get('balance')} جنيهاً."
-                try:
-                    full_query = f"أنت عقل منظومة المنجز. سياق العمل: {context}. سؤال القائد: {q}"
-                    response = model.generate_content(full_query)
-                    st.markdown(response.text)
-                except Exception as e:
-                    st.error(f"⚠️ خطأ في المحرك: {e}")
-    else:
-        st.warning("⚠️ محرك الذكاء غير مفعل، تأكد من الـ API Key في Secrets.")
-# --- 8. لوحة تحكم المدير (تكملة لما بعد صورتك) ---
-# يظهر هذا الجزء فقط إذا كان المستخدم 'admin' في Firestore
-if user_data.get('role') == 'admin':
-    st.divider()
-    st.subheader("🚀 لوحة القيادة وإضافة الطلبات")
-    
-    with st.form("new_order"):
-        c1, c2 = st.columns(2)
-        with c1:
-            c_email = st.text_input("بريد العميل")
-            details = st.text_area("وصف الشحنة")
-        with c2:
-            price = st.number_input("المبلغ الإجمالي", min_value=0.0)
-            # اختيار المندوب من القائمة
-            agents = db.collection("users").where("role", "==", "agent").stream()
-            agent_dict = {a.to_dict().get('name'): a.id for a in agents}
-            target_agent = st.selectbox("تعيين إلى:", list(agent_dict.keys())) if agent_dict else None
-        
-        if st.form_submit_button("إرسال الطلب للميدان"):
-            if target_agent:
-                db.collection("orders").add({
-                    "customer_email": c_email,
-                    "order_details": details,
-                    "price": price,
-                    "assigned_to": agent_dict[target_agent],
-                    "status": "processing"
-                })
-                st.success("✅ تم توجيه الطلب للمندوب بنجاح!")
+        with st.expander(f"طلب جديد: {d.get('customer_email')}"):
+            st.write(f"التفاصيل: {d.get('order_details')}")
+            if st.button("✅ تم التوصيل (إضافة الربح)", key=order.id):
+                # المحاسبة الآلية (14% عمولة)
+                profit = d.get('price', 0) * 0.14
+                db.collection("orders").document(order.id).update({"status": "delivered"})
+                user_ref.update({"balance": firestore.Increment(profit)})
+                st.toast(f"✅ مبروك! أضيفت {profit} EGP لمحفظتك.", icon='💰')
                 st.rerun()
+    if not found: st.info("لا توجد طلبات جارية لك حالياً.")
+
+# --- 7. عقل المنجز (الربط المباشر ببيانات المستخدم) ---
+elif app_mode == "🧠 عقل المنجز (AI)":
+    st.subheader("🧠 استشارة العقل الاستراتيجي")
+    q = st.chat_input("اسأل المنجز عن حسابك أو العمليات...")
+    if q:
+        # تغذية الموديل ببيانات حقيقية من Firestore
+        context = f"الاسم: {user_data.get('name')}, الرصيد: {user_data.get('balance')}."
+        try:
+            full_p = f"بناءً على بياناتك {context}. أجب على سؤال القائد: {q}"
+            res = model.generate_content(full_p)
+            st.markdown(res.text)
+        except Exception as e: st.error(f"⚠️ خطأ في المحرك: {e}")
+
+# --- 8. لوحة المدير العام (إضافة الطلبات وتوزيع المهام) ---
+elif app_mode == "🚀 لوحة المدير العام":
+    if user_data.get('role') == 'admin':
+        st.subheader("➕ إضافة وتعيين طلب جديد")
+        with st.form("admin_form"):
+            c1, c2 = st.columns(2)
+            with c1:
+                c_mail = st.text_input("بريد العميل")
+                c_desc = st.text_area("وصف الشحنة")
+            with c2:
+                c_price = st.number_input("القيمة الإجمالية", min_value=1.0)
+                # جلب المناديب من Firestore آلياً
+                agents = db.collection("users").where("role", "==", "agent").stream()
+                agent_map = {a.to_dict().get('name'): a.id for a in agents}
+                selected = st.selectbox("تعيين للمندوب:", list(agent_map.keys())) if agent_map else None
+            
+            if st.form_submit_button("إرسال الطلب للميدان"):
+                if selected:
+                    db.collection("orders").add({
+                        "customer_email": c_mail,
+                        "order_details": c_desc,
+                        "price": c_price,
+                        "assigned_to": agent_map[selected],
+                        "status": "processing",
+                        "timestamp": firestore.SERVER_TIMESTAMP
+                    })
+                    st.success(f"✅ تم توجيه الطلب إلى {selected}")
+    else:
+        st.error("⚠️ عذراً، هذه الصلاحية للمدير العام فقط.")
