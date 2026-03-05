@@ -1,78 +1,93 @@
 import streamlit as st
+import google.generativeai as genai
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
-import google.generativeai as genai
+import json
+import pytz
+from datetime import datetime
 
-# --- 1. الربط السحابي المحصن ---
-if not firebase_admin._apps:
+# --- 1. إعدادات النظام الأساسية (أمان أولاً) ---
+st.set_page_config(page_title="Mongez Cloud S9", page_icon="🛡️", layout="wide")
+Cairo_tz = pytz.timezone('Africa/Cairo')
+
+def get_now():
+    return datetime.now(Cairo_tz)
+
+# --- 2. الاتصال السحابي (Firebase) المحمي بالكاش ---
+@st.cache_resource
+def init_firebase():
+    if not firebase_admin._apps:
+        try:
+            # الربط الذكي من الـ Secrets كما في صورتك
+            if "firebase" in st.secrets:
+                cred = credentials.Certificate(dict(st.secrets["firebase"]))
+            elif "FIREBASE_SERVICE_ACCOUNT" in st.secrets:
+                secret_info = json.loads(st.secrets["FIREBASE_SERVICE_ACCOUNT"])
+                cred = credentials.Certificate(secret_info)
+            else:
+                cred = credentials.Certificate("serviceAccountKey.json")
+            
+            firebase_admin.initialize_app(cred)
+        except Exception as e:
+            st.error(f"⚠️ خطأ في بوابة السحاب: {e}")
+    return firestore.client()
+
+db = init_firebase()
+
+# --- 3. تهيئة الذكاء الاصطناعي (بشكل منعزل لتجنب الانهيار) ---
+def get_ai_response(prompt, context=""):
     try:
-        cred = credentials.Certificate(dict(st.secrets["firebase"]))
-        firebase_admin.initialize_app(cred)
-    except: st.error("⚠️ خطأ في اتصال السيرفر")
+        genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        full_prompt = f"سياق: {context}\nالسؤال: {prompt}"
+        response = model.generate_content(full_prompt)
+        return response.text
+    except Exception as e:
+        return f"⚠️ عقل المنجز غير متاح حالياً: {str(e)}"
 
-db = firestore.client()
-
-# حل مشكلة الـ 404 الظاهرة في صورتك
-try:
-    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-    # تأكد من كتابة الاسم هكذا بالضبط لتجنب خطأ 404
-    model = genai.GenerativeModel('gemini-1.5-flash') 
-except: model = None
-
-# --- 2. إدارة الهوية (بناءً على بياناتك في الصورة) ---
+# --- 4. إدارة حالة الدخول ---
 if 'logged_in' not in st.session_state:
-    st.session_state.update({'logged_in': False, 'uid': None})
+    st.session_state.update({'logged_in': False, 'uid': None, 'role': 'user'})
 
-# (هنا كود الدخول واستعادة الحساب المرتبط بـ SMTP في الـ Secrets)
+# --- 5. بوابة تسجيل الدخول (لن يظهر أي خطأ أحمر قبل تجاوزها) ---
+if not st.session_state['logged_in']:
+    st.title("🦅 بوابة المنجز S9")
+    email = st.text_input("البريد الإلكتروني")
+    pw = st.text_input("كلمة السر", type='password')
+    
+    if st.button("دخول آمن"):
+        try:
+            user = auth.get_user_by_email(email)
+            user_doc = db.collection("users").document(user.uid).get()
+            if user_doc.exists:
+                data = user_doc.to_dict()
+                st.session_state.update({
+                    'logged_in': True,
+                    'uid': user.uid,
+                    'role': data.get('role', 'user'),
+                    'user_email': email
+                })
+                st.rerun()
+            else:
+                st.error("❌ حسابك غير معرف في قاعدة البيانات (Firestore)")
+        except:
+            st.error("❌ بيانات الدخول خاطئة")
+    st.stop() # هذا السطر يمنع تنفيذ أي كود آخر قبل الدخول
 
-# --- 3. جلب بيانات "القائد الأعلى" ---
-user_ref = db.collection("users").document(st.session_state.uid)
-user_data = user_ref.get().to_dict() or {"name": "القائد الأعلى", "balance": 0, "role": "admin"}
-
-# --- 4. مركز القيادة (القائمة الجانبية) ---
+# --- 6. لوحة العمليات بعد الدخول ---
+role = st.session_state['role']
 with st.sidebar:
-    st.markdown(f"### 🦅 {user_data.get('name')}") # يظهر اسمك كما في الصورة
-    st.metric("💰 الرصيد الحالي", f"{user_data.get('balance'):,.2f} EGP")
-    st.divider()
-    mode = st.radio("🛰️ البرامج النشطة:", ["📊 لوحة العمليات", "🧠 عقل المنجز (AI)", "🚀 لوحة المدير العام"])
-    if st.button("🚪 خروج آمن"):
+    st.success(f"مرحباً: {st.session_state['user_email']}")
+    mode = st.radio("🚀 القائمة:", ["🧠 عقل المنجز", "📊 العمليات الميدانية"])
+    if st.button("🚪 خروج"):
         st.session_state.clear()
         st.rerun()
 
-# --- 5. وظيفة عقل المنجز (بعد حل الـ 404) ---
-if mode == "🧠 عقل المنجز (AI)":
-    st.header("🧠 استشارة العقل الاستراتيجي")
-    if model:
-        q = st.chat_input("اسأل المنجز عن حسابك أو العمليات...")
-        if q:
-            with st.spinner("جاري التحليل..."):
-                context = f"المستخدم: {user_data.get('name')}. الرصيد: {user_data.get('balance')}."
-                res = model.generate_content(f"سياق: {context}. سؤال: {q}")
-                st.markdown(res.text)
-    else:
-        st.error("⚠️ تأكد من الـ API Key في إعدادات التطبيق.")
-
-# --- 6. لوحة المدير العام (كما تظهر في صورتك) ---
-elif mode == "🚀 لوحة المدير العام":
-    st.title("➕ إضافة وتعيين طلب جديد")
-    with st.form("admin_form"):
-        col1, col2 = st.columns(2)
-        with col1:
-            c_mail = st.text_input("بريد العميل")
-            details = st.text_area("وصف الشحنة")
-        with col2:
-            price = st.number_input("القيمة الإجمالية", min_value=1.0)
-            # جلب المناديب النشطين من قاعدة البيانات
-            agents = db.collection("users").where("role", "==", "agent").stream()
-            agent_map = {a.to_dict().get('name'): a.id for a in agents}
-            selected = st.selectbox("تعيين للمندوب:", list(agent_map.keys())) if agent_map else None
-        
-        if st.form_submit_button("إرسال الطلب للميدان"):
-            db.collection("orders").add({
-                "customer_email": c_mail,
-                "order_details": details,
-                "price": price,
-                "assigned_to": agent_map[selected] if selected else st.session_state.uid,
-                "status": "processing"
-            })
-            st.success("✅ تم الإرسال للميدان بنجاح!")
+# --- 7. تشغيل البرامج ---
+if mode == "🧠 عقل المنجز":
+    st.subheader("استشارة العقل الاستراتيجي 🧠")
+    q = st.chat_input("اسأل المنجز...")
+    if q:
+        with st.spinner("جاري التفكير..."):
+            res = get_ai_response(q, context=f"مستخدم بدوره: {role}")
+            st.markdown(res)
