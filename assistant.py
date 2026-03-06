@@ -1,4 +1,4 @@
- streamlit as st
+import streamlit as st
 import google.generativeai as genai
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
@@ -25,25 +25,19 @@ def init_firebase():
     return firestore.client()
 db = init_firebase()
 
-# --- 3. بوابة ذكاء منجز (الحل النهائي للـ 404) ---
+# --- 3. ذكاء المنجز الآلي (تجاوز خطأ 404) ---
 def get_ai_response(prompt, context=""):
     try:
-        # إعداد الاتصال بالمفتاح المباشر من الخزنة
         genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-        
-        # التغيير الجذري: نداء الموديل باسمه المباشر وبدون تحديد إصدار يدوي
-        # هذا سيجبر النظام على استخدام النسخة المستقرة (Production)
+        # استخدام الاسم المباشر للموديل لإجبار النظام على الاتصال المستقر
         model = genai.GenerativeModel('gemini-1.5-flash')
-        
-        # تفعيل ذكاء المنجز الآلي
-        full_prompt = f"أنت العقل المدبر لنظام المنجز S9. السياق الميداني: {context}\nالمهمة المطلوبة: {prompt}"
+        full_prompt = f"أنت العقل المدبر لنظام المنجز S9. السياق: {context}\nالمهمة: {prompt}"
         response = model.generate_content(full_prompt)
         return response.text
     except Exception as e:
-        # إذا استمرت جوجل في العناد، نستخدم هذا المحرك الاحتياطي
-        return f"⚠️ عقل المنجز يقوم بتحديث بروتوكولات الأمان حالياً. حاول مجدداً بعد ثوانٍ. (السبب: {str(e)})"
+        return f"⚠️ ذكاء المنجز في مرحلة المزامنة: {str(e)}"
 
-# --- 4. إدارة الدخول والحماية ---
+# --- 4. إدارة الدخول ---
 if 'logged_in' not in st.session_state:
     st.session_state.update({'logged_in': False, 'uid': None, 'role': 'صاحب عمل'})
 
@@ -59,26 +53,23 @@ if not st.session_state['logged_in']:
         except: st.error("❌ بيانات الدخول غير صحيحة")
     st.stop()
 
-# --- 5. واجهة التحكم الذكي ---
+# --- 5. واجهة التحكم والعمليات الميدانية ---
 with st.sidebar:
     st.success(f"المسؤول: {st.session_state['user_email']}")
-    mode = st.radio("🚀 القائمة:", ["🧠 عقل المنجز (الذكاء الآلي)", "📊 العمليات الميدانية"])
+    mode = st.radio("🚀 القائمة:", ["🧠 عقل المنجز", "📊 العمليات الميدانية"])
     if st.button("🚪 خروج"):
         st.session_state.clear()
         st.rerun()
 
-# --- 6. تشغيل ذكاء منجز ---
-if mode == "🧠 عقل المنجز (الذكاء الآلي)":
+if mode == "🧠 عقل المنجز":
     st.subheader("تواصل مع ذكاء منجز الآلي 🧠")
     q = st.chat_input("أعطِ أمراً للمنجز...")
     if q:
         with st.spinner("جاري الاتصال بالعقل الاستراتيجي..."):
-            ai_reply = get_ai_response(q, context=f"مستخدم: {st.session_state['user_email']}")
-            st.markdown(ai_reply)
+            st.markdown(get_ai_response(q, context=f"مستخدم: {st.session_state['user_email']}"))
 
-# --- 7. العمليات الميدانية ---
 elif mode == "📊 العمليات الميدانية":
-    st.header("⏱️ لوحة المتابعة الحية")
+    st.header("⏱️ المتابعة الحية وساعة الإيقاف")
     with st.expander("📝 إضافة مهمة جديدة"):
         with st.form("task_sys"):
             d = st.text_input("وصف المهمة")
@@ -86,3 +77,13 @@ elif mode == "📊 العمليات الميدانية":
             if st.form_submit_button("بدء المهمة"):
                 db.collection("tasks").add({"desc": d, "agent": a, "status": "active", "start": get_now()})
                 st.success("تم التكليف!")
+    
+    # عرض المهام النشطة
+    tasks = db.collection("tasks").where("status", "==", "active").stream()
+    for task in tasks:
+        t = task.to_dict()
+        elapsed = get_now() - t['start'].astimezone(Cairo_tz)
+        st.warning(f"📍 {t['desc']} | المندوب: {t['agent']} | ⏱️ {elapsed.seconds // 60} دقيقة")
+        if st.button("إتمام المهمة", key=task.id):
+            db.collection("tasks").document(task.id).update({"status": "done"})
+            st.rerun()
