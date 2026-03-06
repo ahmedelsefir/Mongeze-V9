@@ -34,16 +34,24 @@ def init_firebase():
 
 db = init_firebase()
 
-# --- 3. تهيئة الذكاء الاصطناعي (بشكل منعزل لتجنب الانهيار) ---
+# تعديل دالة الذكاء لتعمل مع الإصدار المستقر وتتجنب خطأ 404
 def get_ai_response(prompt, context=""):
     try:
+        # تأكد من كتابة اسم الموديل بهذا الشكل الدقيق
         genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        full_prompt = f"سياق: {context}\nالسؤال: {prompt}"
+        model = genai.GenerativeModel('models/gemini-1.5-flash') 
+        
+        full_prompt = f"أنت مساعد نظام المنجز S9. سياق المستخدم: {context}\nالسؤال: {prompt}"
         response = model.generate_content(full_prompt)
         return response.text
     except Exception as e:
-        return f"⚠️ عقل المنجز غير متاح حالياً: {str(e)}"
+        # إذا فشل، جرب الموديل الاحتياطي آلياً
+        try:
+            model = genai.GenerativeModel('gemini-pro')
+            res = model.generate_content(prompt)
+            return res.text
+        except:
+            return "⚠️ عقل المنجز يحتاج لتفعيل مفتاح API صحيح في إعدادات Secrets."
 
 # --- 4. إدارة حالة الدخول ---
 if 'logged_in' not in st.session_state:
