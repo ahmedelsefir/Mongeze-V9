@@ -36,18 +36,19 @@ db = init_firebase()
 
 def get_ai_response(prompt, context=""):
     try:
-        # الربط المباشر بالمفتاح من الخزنة
-        api_key = st.secrets["GOOGLE_API_KEY"]
-        genai.configure(api_key=api_key)
+        # 1. ضبط الاتصال بالمفتاح الجديد
+        genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
         
-        # استخدام الموديل المستقر
+        # 2. تصحيح اسم الموديل (حذف كلمة models/ وإزالة v1beta آلياً)
         model = genai.GenerativeModel('gemini-1.5-flash')
         
+        # 3. إرسال الطلب
         full_prompt = f"أنت مساعد نظام المنجز S9. السياق: {context}\nالسؤال: {prompt}"
         response = model.generate_content(full_prompt)
         return response.text
     except Exception as e:
-        return f"⚠️ خطأ فني في العقل: {str(e)}"
+        # إظهار الخطأ الحقيقي للمساعدة في التشخيص
+        return f"⚠️ عقل المنجز يواجه تحديثاً من جوجل: {str(e)}"
 
 # --- 4. إدارة حالة الدخول ---
 if 'logged_in' not in st.session_state:
