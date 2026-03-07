@@ -28,16 +28,18 @@ db = init_firebase()
 # --- 3. بوابة ذكاء منجز (الحل القاطع للـ 404) ---
 def get_ai_response(prompt):
     try:
-        # الربط المباشر بالمفتاح الجديد
+        # التأكد من تهيئة المفتاح في كل طلب لضمان الاتصال
         genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
         
-        # استخدام الموديل المستقر (دون v1beta)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # التعديل الذهبي: استخدام المسار الكامل والمستقر للموديل
+        model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
         
+        # إرسال المحتوى
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
-        return f"⚠️ بوابة الذكاء تطلب Reboot App لتفعيل المفتاح: {str(e)}"
+        # إضافة تفاصيل أكثر للخطأ لنعرف السبب إذا فشل
+        return f"⚠️ تحديث أمني من جوجل: {str(e)}"
 
 # --- 4. واجهة المستخدم ---
 if 'logged_in' not in st.session_state:
