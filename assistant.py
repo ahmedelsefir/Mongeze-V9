@@ -7,7 +7,7 @@ import pytz
 from datetime import datetime
 
 # --- 1. الإعدادات ---
-st.set_page_config(page_title="Mongez S9", page_icon="🛡️")
+st.set_page_config(page_title="Mongez S9 Pro", page_icon="🛡️", layout="wide")
 Cairo_tz = pytz.timezone('Africa/Cairo')
 def get_now(): return datetime.now(Cairo_tz)
 
@@ -21,49 +21,66 @@ def init_firebase():
             else:
                 cred = credentials.Certificate(json.loads(st.secrets["FIREBASE_SERVICE_ACCOUNT"]))
             firebase_admin.initialize_app(cred)
-        except: pass
+        except Exception as e:
+            st.error(f"خطأ في ربط Firebase: {e}")
     return firestore.client()
+
 db = init_firebase()
 
 # --- 3. بوابة ذكاء منجز (الحل القاطع للـ 404) ---
 def get_ai_response(prompt):
     try:
-        # التأكد من تهيئة المفتاح في كل طلب لضمان الاتصال
-        genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+        # تهيئة المفتاح من Secrets
+        api_key = st.secrets["GOOGLE_API_KEY"]
+        genai.configure(api_key=api_key)
         
-        # التعديل الذهبي: استخدام المسار الكامل والمستقر للموديل
-        model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
+        # استخدام اسم الموديل المباشر (هذا يمنع التحويل التلقائي لـ v1beta)
+        # جربنا 'gemini-1.5-flash' بدون بادئات لضمان التوافق
+        model = genai.GenerativeModel('gemini-1.5-flash')
         
-        # إرسال المحتوى
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
-        # إضافة تفاصيل أكثر للخطأ لنعرف السبب إذا فشل
-        return f"⚠️ تحديث أمني من جوجل: {str(e)}"
+        # محرك احتياطي: إذا فشل 1.5، نستخدم 1.0 برو المستقر جداً
+        try:
+            backup_model = genai.GenerativeModel('gemini-pro')
+            res = backup_model.generate_content(prompt)
+            return res.text
+        except:
+            return f"⚠️ عذراً قائد، البوابة السحابية تطلب Reboot App. السبب: {str(e)}"
 
-# --- 4. واجهة المستخدم ---
+# --- 4. إدارة الدخول ---
 if 'logged_in' not in st.session_state:
     st.session_state.update({'logged_in': False, 'user_email': ""})
 
 if not st.session_state['logged_in']:
-    st.title("🦅 دخول المنجز S9")
-    email = st.text_input("البريد")
-    if st.button("دخول"):
+    st.title("🦅 بوابة دخول المنجز S9")
+    email = st.text_input("البريد الإلكتروني المعتمد")
+    if st.button("تفعيل الدخول الآمن"):
         try:
             user = auth.get_user_by_email(email)
             st.session_state.update({'logged_in': True, 'user_email': email})
+            st.success("تم التحقق.. جاري فتح الأنظمة")
             st.rerun()
-        except: st.error("❌ غير مسجل")
+        except:
+            st.error("❌ عذراً، هذا البريد غير مدرج في سجلاتنا")
     st.stop()
 
-# --- 5. تشغيل العقل الآلي ---
-st.sidebar.success(f"متصل: {st.session_state['user_email']}")
-if st.sidebar.button("🚪 خروج"):
+# --- 5. واجهة التحكم والذكاء ---
+st.sidebar.success(f"🟢 المتحدث الرسمي: {st.session_state['user_email']}")
+if st.sidebar.button("🚪 تسجيل الخروج"):
     st.session_state.clear()
     st.rerun()
 
-st.header("🧠 عقل المنجز الآلي")
-user_q = st.chat_input("تحدث مع المنجز...")
+st.header("🧠 عقل المنجز الآلي (S9)")
+st.info("النظام الآن يعمل بالنسخة المستقرة 1.5 Flash")
+
+user_q = st.chat_input("أصدر أوامرك للمنجز...")
 if user_q:
-    with st.spinner("جاري الاتصال بالسحاب..."):
-        st.markdown(get_ai_response(user_q))
+    with st.chat_message("user"):
+        st.write(user_q)
+    
+    with st.spinner("🚀 جاري معالجة البيانات بالسحاب..."):
+        reply = get_ai_response(user_q)
+        with st.chat_message("assistant"):
+            st.markdown(reply)
