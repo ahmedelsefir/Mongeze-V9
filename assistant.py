@@ -11,51 +11,38 @@ st.set_page_config(page_title="Mongez S9 Pro", page_icon="🛡️", layout="wide
 Cairo_tz = pytz.timezone('Africa/Cairo')
 def get_now(): return datetime.now(Cairo_tz)
 
-# --- 2. السحاب (Firebase) ---
+# --- 2. السحاب (Firebase) - وضعنا التعريف أولاً ---
 @st.cache_resource
+def init_firebase():
+    if not firebase_admin._apps:
+        try:
+            if "firebase" in st.secrets:
+                cred = credentials.Certificate(dict(st.secrets["firebase"]))
+            else:
+                cred = credentials.Certificate(json.loads(st.secrets["FIREBASE_SERVICE_ACCOUNT"]))
+            firebase_admin.initialize_app(cred)
+        except Exception as e:
+            st.error(f"خطأ في ربط Firebase: {e}")
+    return firestore.client()
+
+# الآن نستدعي الدالة بعد تعريفها مباشرة
+db = init_firebase()
+
+# --- 3. بوابة ذكاء منجز (الحل النهائي للـ 404) ---
 def get_ai_response(prompt):
     try:
         genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-        
-        # المحاولة الأولى: النداء المباشر (الأكثر استقراراً الآن)
+        # استخدام الاسم المباشر للموديل لضمان تخطي v1beta
         model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(prompt)
         return response.text
-        
     except Exception as e:
-        # المحاولة الثانية: إذا فشل الأول، نجبره على استخدام نسخة v1 المستقرة
-        try:
-            import google.generativeai.types as types
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            # نحدد الإصدار يدوياً في الطلب
-            response = model.generate_content(prompt)
-            return response.text
-        except:
-            return f"🛡️ القائد أحمد، النظام يتطلب إعادة تشغيل عميقة (Reboot) لتفعيل التحديث 0.8.3: {str(e)}"
-
-db = init_firebase()
-
-# --- 3. بوابة ذكاء منجز (الحل القاطع للـ 404) ---
-def get_ai_response(prompt):
-    try:
-        # تهيئة المفتاح من Secrets
-        api_key = st.secrets["GOOGLE_API_KEY"]
-        genai.configure(api_key=api_key)
-        
-        # استخدام اسم الموديل المباشر (هذا يمنع التحويل التلقائي لـ v1beta)
-        # جربنا 'gemini-1.5-flash' بدون بادئات لضمان التوافق
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        
-        response = model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        # محرك احتياطي: إذا فشل 1.5، نستخدم 1.0 برو المستقر جداً
+        # محرك احتياطي 1.0 برو في حال تعثر فلاش
         try:
             backup_model = genai.GenerativeModel('gemini-pro')
-            res = backup_model.generate_content(prompt)
-            return res.text
+            return backup_model.generate_content(prompt).text
         except:
-            return f"⚠️ عذراً قائد، البوابة السحابية تطلب Reboot App. السبب: {str(e)}"
+            return f"⚠️ بوابة الذكاء تتطلب Reboot App لتفعيل التحديث 0.8.3: {str(e)}"
 
 # --- 4. إدارة الدخول ---
 if 'logged_in' not in st.session_state:
@@ -68,10 +55,9 @@ if not st.session_state['logged_in']:
         try:
             user = auth.get_user_by_email(email)
             st.session_state.update({'logged_in': True, 'user_email': email})
-            st.success("تم التحقق.. جاري فتح الأنظمة")
             st.rerun()
         except:
-            st.error("❌ عذراً، هذا البريد غير مدرج في سجلاتنا")
+            st.error("❌ عذراً، هذا البريد غير مدرج")
     st.stop()
 
 # --- 5. واجهة التحكم والذكاء ---
@@ -81,14 +67,7 @@ if st.sidebar.button("🚪 تسجيل الخروج"):
     st.rerun()
 
 st.header("🧠 عقل المنجز الآلي (S9)")
-st.info("النظام الآن يعمل بالنسخة المستقرة 1.5 Flash")
-
 user_q = st.chat_input("أصدر أوامرك للمنجز...")
 if user_q:
-    with st.chat_message("user"):
-        st.write(user_q)
-    
-    with st.spinner("🚀 جاري معالجة البيانات بالسحاب..."):
-        reply = get_ai_response(user_q)
-        with st.chat_message("assistant"):
-            st.markdown(reply)
+    with st.spinner("🚀 جاري المعالجة..."):
+        st.markdown(get_ai_response(user_q))
