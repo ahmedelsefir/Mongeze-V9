@@ -29,24 +29,23 @@ def init_firebase():
 # --- 3. استدعاء Firebase بعد التعريف لضمان عدم وجود NameError ---
 db = init_firebase()
 
-# --- 4. بوابة ذكاء منجز (حل مشكلة الـ 404 نهائياً) ---
+# --- 4. بوابة ذكاء منجز (مُصلحة) ---
 def get_ai_response(prompt):
     try:
-        # تهيئة المفتاح
         genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
         
-        # استخدام الاسم المباشر للموديل لتجنب v1beta
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # ✅ نماذج تعمل في 2025
+        model = genai.GenerativeModel('gemini-2.0-flash')
         
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
-        # محرك احتياطي في حالة فشل الاتصال الأول
         try:
-            backup_model = genai.GenerativeModel('gemini-pro')
+            # ✅ نموذج احتياطي يعمل
+            backup_model = genai.GenerativeModel('gemini-2.0-flash-lite')
             return backup_model.generate_content(prompt).text
-        except:
-            return f"⚠️ عذراً قائد، البوابة تتطلب Reboot App لتحديث المكتبة: {str(e)}"
+        except Exception as e2:
+            return f"⚠️ عذراً قائد، خطأ في الاتصال: {str(e2)}"
 
 # --- 5. نظام إدارة الدخول ---
 if 'logged_in' not in st.session_state:
