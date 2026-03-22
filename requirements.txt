@@ -7,3 +7,4 @@ pycryptodome>=3.20.0
 honeybadger>=0.14.0
 streamlit-js-eval
 grpcio
+pyjwt>=2.12.0 # not directly required, pinned by Snyk to avoid a vulnerability
