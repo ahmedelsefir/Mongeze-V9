@@ -120,36 +120,32 @@ def main():
 
 if __name__ == "__main__":
     main()
-# --- بداية الإضافات التدريجية (المنجز V9) ---
+# --- وظائف المزامنة المطورة ---
 
 def sync_to_notion(task_name):
-    """دالة مخصصة لإرسال البيانات إلى Notion"""
+    """إرسال البيانات إلى Notion"""
     import requests
     try:
         token = st.secrets["notion"]["token"]
         database_id = st.secrets["notion"]["database_id"]
-        
         url = "https://api.notion.com/v1/pages"
         headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
             "Notion-Version": "2022-06-28"
         }
-        
         data = {
             "parent": {"database_id": database_id},
             "properties": {
                 "Name": {"title": [{"text": {"content": task_name}}]}
             }
         }
-        
         response = requests.post(url, headers=headers, json=data)
         return response.status_code == 200
     except Exception as e:
-        st.error(f"⚠️ خطأ في ربط Notion: {e}")
         return False
 
-# إعادة تعريف دالة التشغيل لتشمل المزامنة الثلاثية
+# --- الواجهة الرئيسية الموحدة (بدون تكرار) ---
 def main():
     st.title("🏠 Mongez Control Center")
     st.markdown("---")
@@ -159,8 +155,8 @@ def main():
 
     if not st.session_state.authenticated:
         st.subheader("🔑 Secure Partner Access")
-        email = st.text_input("Admin Email")
-        password = st.text_input("Access Key", type="password")
+        email = st.text_input("Admin Email", key="login_email") # مفتاح فريد لمنع التكرار
+        password = st.text_input("Access Key", type="password", key="login_pass")
 
         if st.button("Authorize"):
             if email == st.secrets["SMTP_USER"] and password != "":
@@ -177,25 +173,21 @@ def main():
 
         with tab1:
             st.subheader("Create New Operation")
-            task_input = st.text_input("Enter Task or Order Name", placeholder="e.g., New Delivery Request")
+            task_input = st.text_input("Enter Task Name", placeholder="e.g., New Order", key="task_in")
 
             if st.button("Run Sync & Notify"):
                 if task_input:
                     with st.spinner("Syncing systems..."):
-                        # 1. الحفظ في Firebase
+                        # استخدام الدوال المعرفة سابقاً في ملفك
                         saved = save_to_mongez_db(st.session_state.user_email, task_input)
-                        
-                        # 2. التنبيه في Slack
                         slack_res = send_slack_message(f"🚀 New Task: {task_input}")
-                        
-                        # 3. المزامنة مع Notion (الإضافة الجديدة)
                         notion_saved = sync_to_notion(task_input)
 
                         if saved and slack_res.get("ok") and notion_saved:
                             st.balloons()
-                            st.success("✅ Task Synced to Firebase, Slack & Notion!")
+                            st.success("✅ Triple Sync Success: Firebase, Slack & Notion!")
                         else:
-                            st.warning("⚠️ Task saved, but check Slack/Notion connection.")
+                            st.warning("⚠️ Partial Success. Check Notion/Slack settings.")
                 else:
                     st.error("Please enter a task name.")
 
@@ -203,6 +195,5 @@ def main():
             st.session_state.authenticated = False
             st.rerun()
 
-# تشغيل النسخة المطورة
 if __name__ == "__main__":
     main()
