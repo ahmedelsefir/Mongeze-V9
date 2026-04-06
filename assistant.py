@@ -120,3 +120,89 @@ def main():
 
 if __name__ == "__main__":
     main()
+# --- بداية الإضافات التدريجية (المنجز V9) ---
+
+def sync_to_notion(task_name):
+    """دالة مخصصة لإرسال البيانات إلى Notion"""
+    import requests
+    try:
+        token = st.secrets["notion"]["token"]
+        database_id = st.secrets["notion"]["database_id"]
+        
+        url = "https://api.notion.com/v1/pages"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Notion-Version": "2022-06-28"
+        }
+        
+        data = {
+            "parent": {"database_id": database_id},
+            "properties": {
+                "Name": {"title": [{"text": {"content": task_name}}]}
+            }
+        }
+        
+        response = requests.post(url, headers=headers, json=data)
+        return response.status_code == 200
+    except Exception as e:
+        st.error(f"⚠️ خطأ في ربط Notion: {e}")
+        return False
+
+# إعادة تعريف دالة التشغيل لتشمل المزامنة الثلاثية
+def main():
+    st.title("🏠 Mongez Control Center")
+    st.markdown("---")
+
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+
+    if not st.session_state.authenticated:
+        st.subheader("🔑 Secure Partner Access")
+        email = st.text_input("Admin Email")
+        password = st.text_input("Access Key", type="password")
+
+        if st.button("Authorize"):
+            if email == st.secrets["SMTP_USER"] and password != "":
+                st.session_state.authenticated = True
+                st.session_state.user_email = email
+                st.rerun()
+            else:
+                st.error("Access Denied.")
+    else:
+        st.sidebar.success("✔️ System Online")
+        st.sidebar.write(f"Logged in as: {st.session_state.user_email}")
+
+        tab1, tab2 = st.tabs(["🚀 Launch Automation", "📜 Database Logs"])
+
+        with tab1:
+            st.subheader("Create New Operation")
+            task_input = st.text_input("Enter Task or Order Name", placeholder="e.g., New Delivery Request")
+
+            if st.button("Run Sync & Notify"):
+                if task_input:
+                    with st.spinner("Syncing systems..."):
+                        # 1. الحفظ في Firebase
+                        saved = save_to_mongez_db(st.session_state.user_email, task_input)
+                        
+                        # 2. التنبيه في Slack
+                        slack_res = send_slack_message(f"🚀 New Task: {task_input}")
+                        
+                        # 3. المزامنة مع Notion (الإضافة الجديدة)
+                        notion_saved = sync_to_notion(task_input)
+
+                        if saved and slack_res.get("ok") and notion_saved:
+                            st.balloons()
+                            st.success("✅ Task Synced to Firebase, Slack & Notion!")
+                        else:
+                            st.warning("⚠️ Task saved, but check Slack/Notion connection.")
+                else:
+                    st.error("Please enter a task name.")
+
+        if st.sidebar.button("Secure Logout"):
+            st.session_state.authenticated = False
+            st.rerun()
+
+# تشغيل النسخة المطورة
+if __name__ == "__main__":
+    main()
