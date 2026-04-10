@@ -28,40 +28,40 @@ def initialize_system():
 
 db = initialize_system()
 
-# 3. Automation Functions (Slack & Firebase)
+# 3. Automation Functions (Firebase, Slack & Notion)
+
+def create_user_account(email, password, name, phone):
+    """إنشاء بروفايل للعميل في Firebase"""
+    try:
+        users_ref = db.collection("users").document(email)
+        if users_ref.get().exists:
+            return False, "⚠️ هذا البريد مسجل مسبقاً"
+        
+        users_ref.set({
+            "name": name,
+            "phone": phone,
+            "password": password, 
+            "role": "client",
+            "created_at": firestore.SERVER_TIMESTAMP
+        })
+        return True, "✅ تم إنشاء الحساب بنجاح!"
+    except Exception as e:
+        return False, str(e)
+
 def send_slack_message(message):
-    """Sends a notification to your Slack Workspace."""
+    """إرسال تنبيهات لـ Slack"""
     url = "https://slack.com/api/chat.postMessage"
     token = st.secrets["slack"]["bot_token"]
-    payload = {
-        "channel": "general", # You can change this to your specific channel name or ID
-        "text": message
-    }
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }
-    response = requests.post(url, headers=headers, data=json.dumps(payload))
-    return response.json()
+    payload = {"channel": "general", "text": message}
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    try:
+        response = requests.post(url, headers=headers, data=json.dumps(payload))
+        return response.json()
+    except:
+        return {"ok": False}
 
-def save_to_mongez_db(user_email, task_name):
-    """Saves the task and logs it in Firebase."""
-    if db:
-        doc_ref = db.collection("tasks").document()
-        doc_ref.set({
-            "user": user_email,
-            "task": task_name,
-            "status": "Completed",
-            "timestamp": firestore.SERVER_TIMESTAMP
-        })
-        return True
-    return False
-
-# 4. Main Application UI
- # --- القسم الموحد والمطور (المنجز V9) ---
-def sync_to_notion(task_name):
-    """دالة المزامنة مع Notion"""
-    import requests
+def sync_to_notion(name, phone, address, srv_type, amount):
+    """المزامنة المتقدمة مع Notion"""
     try:
         token = st.secrets["notion"]["token"]
         database_id = st.secrets["notion"]["database_id"]
@@ -74,14 +74,32 @@ def sync_to_notion(task_name):
         data = {
             "parent": {"database_id": database_id},
             "properties": {
-                "Name": {"title": [{"text": {"content": task_name}}]}
+                "العميل": {"title": [{"text": {"content": name}}]},
+                "رقم الهاتف": {"rich_text": [{"text": {"content": phone}}]},
+                "العنوان": {"rich_text": [{"text": {"content": address}}]},
+                "نوع الخدمة": {"select": {"name": srv_type}},
+                "المبلغ الإجمالي": {"number": float(amount)}
             }
         }
         response = requests.post(url, headers=headers, json=data)
         return response.status_code == 200
-    except Exception:
+    except:
         return False
 
+def save_to_mongez_db(user_email, task_name):
+    """حفظ السجلات في Firebase"""
+    if db:
+        doc_ref = db.collection("tasks").document()
+        doc_ref.set({
+            "user": user_email,
+            "task": task_name,
+            "status": "Completed",
+            "timestamp": firestore.SERVER_TIMESTAMP
+        })
+        return True
+    return False
+
+# 4. Main Application UI
 def main():
     st.title("🏠 Mongez Control Center")
     st.markdown("---")
@@ -90,47 +108,70 @@ def main():
         st.session_state.authenticated = False
 
     if not st.session_state.authenticated:
-        st.subheader("🔑 Secure Partner Access")
-        # استخدام key فريد لمنع التكرار
-        email = st.text_input("Admin Email", key="auth_email")
-        password = st.text_input("Access Key", type="password", key="auth_pass")
+        # نظام الدخول والتسجيل الجديد
+        auth_tab1, auth_tab2 = st.tabs(["🔑 تسجيل دخول", "📝 إنشاء حساب جديد"])
+        
+        with auth_tab1:
+            email = st.text_input("البريد الإلكتروني", key="login_email")
+            password = st.text_input("كلمة المرور", type="password", key="login_pass")
+            if st.button("دخول للمنصة", key="login_btn"):
+                user_doc = db.collection("users").document(email).get()
+                if user_doc.exists and user_doc.to_dict()["password"] == password:
+                    st.session_state.authenticated = True
+                    st.session_state.user_email = email
+                    st.session_state.user_name = user_doc.to_dict()["name"]
+                    st.rerun()
+                else:
+                    st.error("خطأ في بيانات الدخول")
 
-        if st.button("Authorize", key="auth_btn"):
-            if email == st.secrets["SMTP_USER"] and password != "":
-                st.session_state.authenticated = True
-                st.session_state.user_email = email
-                st.rerun()
-            else:
-                st.error("Access Denied.")
+        with auth_tab2:
+            new_name = st.text_input("الاسم بالكامل", key="reg_name")
+            new_email = st.text_input("البريد الإلكتروني", key="reg_email")
+            new_phone = st.text_input("رقم الهاتف", key="reg_phone")
+            new_pass = st.text_input("كلمة المرور", type="password", key="reg_pass")
+            if st.button("تأكيد التسجيل", key="reg_btn"):
+                if new_name and new_email and new_pass:
+                    ok, msg = create_user_account(new_email, new_pass, new_name, new_phone)
+                    if ok: st.success(msg)
+                    else: st.error(msg)
+                else: st.warning("يرجى ملء كافة الخانات")
     else:
         st.sidebar.success("✔️ System Online")
-        st.sidebar.write(f"Logged in as: {st.session_state.user_email}")
+        st.sidebar.write(f"Logged in as: {st.session_state.user_name}")
 
         tab1, tab2 = st.tabs(["🚀 Launch Automation", "📜 Database Logs"])
 
         with tab1:
-            st.subheader("Create New Operation")
-            task_input = st.text_input("Enter Task Name", placeholder="e.g., New Order", key="main_task_input")
+            st.subheader("تسجيل طلب (سوق متعدد / اطلب أي شيء)")
+            col1, col2 = st.columns(2)
+            with col1:
+                c_name = st.text_input("الاسم", value=st.session_state.user_name, key="c_name")
+                c_phone = st.text_input("رقم الهاتف", key="c_phone")
+            with col2:
+                srv_type = st.selectbox("نوع الخدمة", ["سوق المنجز", "اطلب أي شيء"], key="c_srv")
+                amount = st.number_input("المبلغ الإجمالي", min_value=0.0, key="c_amount")
+            
+            address = st.text_area("العنوان التفصيلي / تفاصيل الطلب", key="c_addr")
 
             if st.button("Run Sync & Notify", key="main_sync_btn"):
-                if task_input:
+                if c_name and address:
                     with st.spinner("Syncing systems..."):
-                        # المزامنة الثلاثية
-                        saved = save_to_mongez_db(st.session_state.user_email, task_input)
-                        slack_res = send_slack_message(f"🚀 New Task: {task_input}")
-                        notion_saved = sync_to_notion(task_input)
+                        # المزامنة الشاملة
+                        saved = save_to_mongez_db(st.session_state.user_email, f"{srv_type}: {c_name}")
+                        slack_res = send_slack_message(f"🚀 طلب جديد: {srv_type} للعميل {c_name}")
+                        notion_saved = sync_to_notion(c_name, c_phone, address, srv_type, amount)
 
-                        if saved and slack_res.get("ok") and notion_saved:
+                        if saved and notion_saved:
                             st.balloons()
-                            st.success("✅ Triple Sync Success: Firebase, Slack & Notion!")
+                            st.success("✅ تم المزامنة بنجاح مع Notion و Firebase!")
                         else:
-                            st.warning("⚠️ Partial Success. Check Notion/Slack settings.")
+                            st.warning("⚠️ نجاح جزئي. تأكد من إعدادات Notion.")
                 else:
-                    st.error("Please enter a task name.")
+                    st.error("يرجى إدخال البيانات الأساسية.")
 
         if st.sidebar.button("Secure Logout", key="logout_btn"):
             st.session_state.authenticated = False
             st.rerun()
 
 if __name__ == "__main__":
-    main()       
+    main()
