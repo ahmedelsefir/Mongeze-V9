@@ -31,20 +31,23 @@ db = initialize_system()
 # 3. Automation Functions (Firebase, Slack & Notion)
 
 def create_user_account(email, password, name, phone):
-    """إنشاء بروفايل للعميل في Firebase"""
+    """إنشاء بروفايل للعميل باستخدام البريد الإلكتروني كاسم للمستند لضمان سهولة الدخول"""
     try:
+        email = email.strip().lower() # توحيد شكل البريد الإلكتروني
         users_ref = db.collection("users").document(email)
+        
         if users_ref.get().exists:
             return False, "⚠️ هذا البريد مسجل مسبقاً"
         
         users_ref.set({
+            "email": email,
             "name": name,
             "phone": phone,
             "password": password, 
             "role": "client",
             "created_at": firestore.SERVER_TIMESTAMP
         })
-        return True, "✅ تم إنشاء الحساب بنجاح!"
+        return True, "✅ تم إنشاء الحساب بنجاح! جرب الدخول الآن."
     except Exception as e:
         return False, str(e)
 
@@ -108,7 +111,6 @@ def main():
         st.session_state.authenticated = False
 
     if not st.session_state.authenticated:
-        # نظام الدخول والتسجيل الجديد
         auth_tab1, auth_tab2 = st.tabs(["🔑 تسجيل دخول", "📝 إنشاء حساب جديد"])
         
         with auth_tab1:
@@ -116,21 +118,24 @@ def main():
             password = st.text_input("كلمة المرور", type="password", key="login_pass")
             
             if st.button("دخول للمنصة", key="login_btn"):
-                # التعديل الجوهري هنا: البحث عن البريد داخل المستندات
-                users_ref = db.collection("users")
-                query = users_ref.where("email", "==", email).limit(1).get()
-                
-                if query:
-                    user_data = query[0].to_dict()
-                    if str(user_data.get("password")) == str(password):
-                        st.session_state.authenticated = True
-                        st.session_state.user_email = email
-                        st.session_state.user_name = user_data.get("name", "مهندس المنجز")
-                        st.rerun()
+                if email and password:
+                    # البحث عن المستند باستخدام البريد الإلكتروني مباشرة كمعرف للمستند
+                    user_doc = db.collection("users").document(email).get()
+                    
+                    if user_doc.exists:
+                        user_data = user_doc.to_dict()
+                        # مطابقة كلمة المرور المخزنة
+                        if str(user_data.get("password")) == str(password):
+                            st.session_state.authenticated = True
+                            st.session_state.user_email = email
+                            st.session_state.user_name = user_data.get("name", "مهندس المنجز")
+                            st.rerun()
+                        else:
+                            st.error("❌ خطأ في كلمة المرور")
                     else:
-                        st.error("خطأ في كلمة المرور")
+                        st.error("❌ هذا الحساب غير مسجل في النظام")
                 else:
-                    st.error("هذا الحساب غير مسجل")
+                    st.warning("يرجى إدخال البريد وكلمة المرور")
 
         with auth_tab2:
             new_name = st.text_input("الاسم بالكامل", key="reg_name")
@@ -144,13 +149,15 @@ def main():
                     else: st.error(msg)
                 else: st.warning("يرجى ملء كافة الخانات")
     else:
+        # Sidebar Profile
         st.sidebar.success("✔️ System Online")
         st.sidebar.write(f"Logged in as: {st.session_state.user_name}")
+        st.sidebar.write(f"Email: {st.session_state.user_email}")
 
         tab1, tab2 = st.tabs(["🚀 Launch Automation", "📜 Database Logs"])
 
         with tab1:
-            st.subheader("تسجيل طلب (سوق متعدد / اطلب أي شيء)")
+            st.subheader("تسجيل طلب جديد")
             col1, col2 = st.columns(2)
             with col1:
                 c_name = st.text_input("الاسم", value=st.session_state.user_name, key="c_name")
@@ -163,19 +170,19 @@ def main():
 
             if st.button("Run Sync & Notify", key="main_sync_btn"):
                 if c_name and address:
-                    with st.spinner("Syncing systems..."):
-                        # المزامنة الشاملة
+                    with st.spinner("جاري المزامنة مع الأنظمة..."):
+                        # تنفيذ العمليات الثلاث
                         saved = save_to_mongez_db(st.session_state.user_email, f"{srv_type}: {c_name}")
-                        slack_res = send_slack_message(f"🚀 طلب جديد: {srv_type} للعميل {c_name}")
+                        slack_res = send_slack_message(f"🚀 طلب جديد من {c_name}: {srv_type}")
                         notion_saved = sync_to_notion(c_name, c_phone, address, srv_type, amount)
 
                         if saved and notion_saved:
                             st.balloons()
                             st.success("✅ تم المزامنة بنجاح مع Notion و Firebase!")
                         else:
-                            st.warning("⚠️ نجاح جزئي. تأكد من إعدادات Notion.")
+                            st.warning("⚠️ تم التنفيذ بنجاح جزئي. راجع إعدادات الربط.")
                 else:
-                    st.error("يرجى إدخال البيانات الأساسية.")
+                    st.error("يرجى إدخال البيانات الأساسية (الاسم والعنوان).")
 
         if st.sidebar.button("Secure Logout", key="logout_btn"):
             st.session_state.authenticated = False
