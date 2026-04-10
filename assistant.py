@@ -33,7 +33,7 @@ db = initialize_system()
 def create_user_account(email, password, name, phone):
     """إنشاء بروفايل للعميل باستخدام البريد الإلكتروني كاسم للمستند لضمان سهولة الدخول"""
     try:
-        email = email.strip().lower() # توحيد شكل البريد الإلكتروني
+        email = email.strip().lower() 
         users_ref = db.collection("users").document(email)
         
         if users_ref.get().exists:
@@ -119,12 +119,9 @@ def main():
             
             if st.button("دخول للمنصة", key="login_btn"):
                 if email and password:
-                    # البحث عن المستند باستخدام البريد الإلكتروني مباشرة كمعرف للمستند
                     user_doc = db.collection("users").document(email).get()
-                    
                     if user_doc.exists:
                         user_data = user_doc.to_dict()
-                        # مطابقة كلمة المرور المخزنة
                         if str(user_data.get("password")) == str(password):
                             st.session_state.authenticated = True
                             st.session_state.user_email = email
@@ -171,7 +168,6 @@ def main():
             if st.button("Run Sync & Notify", key="main_sync_btn"):
                 if c_name and address:
                     with st.spinner("جاري المزامنة مع الأنظمة..."):
-                        # تنفيذ العمليات الثلاث
                         saved = save_to_mongez_db(st.session_state.user_email, f"{srv_type}: {c_name}")
                         slack_res = send_slack_message(f"🚀 طلب جديد من {c_name}: {srv_type}")
                         notion_saved = sync_to_notion(c_name, c_phone, address, srv_type, amount)
@@ -182,11 +178,12 @@ def main():
                         else:
                             st.warning("⚠️ تم التنفيذ بنجاح جزئي. راجع إعدادات الربط.")
                 else:
-     
+                    st.error("يرجى إدخال البيانات الأساسية (الاسم والعنوان).")
+
         with tab2:
             st.subheader("📜 سجلات العمليات الأخيرة")
             try:
-                # جلب آخر 10 عمليات مسجلة في قاعدة البيانات
+                # جلب آخر 10 عمليات مسجلة في قاعدة البيانات وترتيبها بالأحدث
                 logs = db.collection("tasks").order_by("timestamp", direction=firestore.Query.DESCENDING).limit(10).get()
                 
                 if logs:
@@ -199,12 +196,11 @@ def main():
                             "الحالة": item.get("status"),
                             "التوقيت": item.get("timestamp")
                         })
-                    # عرض السجلات في جدول منظم
                     st.table(data_list)
                 else:
                     st.info("لا توجد سجلات حالياً.")
             except Exception as e:
-                st.error(f"حدث خطأ أثناء جلب البيانات: {e}")             st.error("يرجى إدخال البيانات الأساسية (الاسم والعنوان).")
+                st.error(f"حدث خطأ أثناء جلب البيانات: {e}")
 
         if st.sidebar.button("Secure Logout", key="logout_btn"):
             st.session_state.authenticated = False
