@@ -112,17 +112,25 @@ def main():
         auth_tab1, auth_tab2 = st.tabs(["🔑 تسجيل دخول", "📝 إنشاء حساب جديد"])
         
         with auth_tab1:
-            email = st.text_input("البريد الإلكتروني", key="login_email")
+            email = st.text_input("البريد الإلكتروني", key="login_email").strip().lower()
             password = st.text_input("كلمة المرور", type="password", key="login_pass")
+            
             if st.button("دخول للمنصة", key="login_btn"):
-                user_doc = db.collection("users").document(email).get()
-                if user_doc.exists and user_doc.to_dict()["password"] == password:
-                    st.session_state.authenticated = True
-                    st.session_state.user_email = email
-                    st.session_state.user_name = user_doc.to_dict()["name"]
-                    st.rerun()
+                # التعديل الجوهري هنا: البحث عن البريد داخل المستندات
+                users_ref = db.collection("users")
+                query = users_ref.where("email", "==", email).limit(1).get()
+                
+                if query:
+                    user_data = query[0].to_dict()
+                    if str(user_data.get("password")) == str(password):
+                        st.session_state.authenticated = True
+                        st.session_state.user_email = email
+                        st.session_state.user_name = user_data.get("name", "مهندس المنجز")
+                        st.rerun()
+                    else:
+                        st.error("خطأ في كلمة المرور")
                 else:
-                    st.error("خطأ في بيانات الدخول")
+                    st.error("هذا الحساب غير مسجل")
 
         with auth_tab2:
             new_name = st.text_input("الاسم بالكامل", key="reg_name")
