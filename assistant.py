@@ -182,7 +182,29 @@ def main():
                         else:
                             st.warning("⚠️ تم التنفيذ بنجاح جزئي. راجع إعدادات الربط.")
                 else:
-                    st.error("يرجى إدخال البيانات الأساسية (الاسم والعنوان).")
+     
+        with tab2:
+            st.subheader("📜 سجلات العمليات الأخيرة")
+            try:
+                # جلب آخر 10 عمليات مسجلة في قاعدة البيانات
+                logs = db.collection("tasks").order_by("timestamp", direction=firestore.Query.DESCENDING).limit(10).get()
+                
+                if logs:
+                    data_list = []
+                    for doc in logs:
+                        item = doc.to_dict()
+                        data_list.append({
+                            "المستخدم": item.get("user"),
+                            "الطلب": item.get("task"),
+                            "الحالة": item.get("status"),
+                            "التوقيت": item.get("timestamp")
+                        })
+                    # عرض السجلات في جدول منظم
+                    st.table(data_list)
+                else:
+                    st.info("لا توجد سجلات حالياً.")
+            except Exception as e:
+                st.error(f"حدث خطأ أثناء جلب البيانات: {e}")             st.error("يرجى إدخال البيانات الأساسية (الاسم والعنوان).")
 
         if st.sidebar.button("Secure Logout", key="logout_btn"):
             st.session_state.authenticated = False
