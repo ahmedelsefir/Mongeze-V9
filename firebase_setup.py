@@ -36,7 +36,7 @@ def update_user_role(uid, role):
 def display_users():
     users = auth.list_users().users
     for user in users:
-        print(f'User {user.email} - Role: {user.custom_claims.get("role", "No role assigned")}')
+        print(f'User {user.email} 
 
 # Example usage:
 # add_user('user@example.com', 'password123', 'client')
