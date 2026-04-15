@@ -119,13 +119,24 @@ def main():
             
             if st.button("دخول للمنصة", key="login_btn"):
                 if email and password:
+                    # التحقق من وجود المستخدم في قاعدة البيانات
                     user_doc = db.collection("users").document(email).get()
                     if user_doc.exists:
                         user_data = user_doc.to_dict()
                         if str(user_data.get("password")) == str(password):
                             st.session_state.authenticated = True
                             st.session_state.user_email = email
-                            st.session_state.user_name = user_data.get("name", "مهندس المنجز")
+                            
+                            # --- التعديل المطلوب: حق دخول المسؤول ---
+                            # إذا كان الإيميل هو إيميلك الشخصي، نمنحه لقب "القائد الأعلى" فوراً
+                            if email == "ahmedelsefir9@gmail.com":
+                                st.session_state.user_name = "القائد الأعلى أحمد مصطفى"
+                                st.session_state.user_role = "admin"
+                            else:
+                                st.session_state.user_name = user_data.get("name", "مهندس المنجز")
+                                st.session_state.user_role = user_data.get("role", "client")
+                            # --------------------------------------
+                            
                             st.rerun()
                         else:
                             st.error("❌ خطأ في كلمة المرور")
@@ -150,6 +161,9 @@ def main():
         st.sidebar.success("✔️ System Online")
         st.sidebar.write(f"Logged in as: {st.session_state.user_name}")
         st.sidebar.write(f"Email: {st.session_state.user_email}")
+        # عرض الرتبة للتأكد من نجاح التعديل
+        if "user_role" in st.session_state:
+            st.sidebar.info(f"Role: {st.session_state.user_role}")
 
         tab1, tab2 = st.tabs(["🚀 Launch Automation", "📜 Database Logs"])
 
