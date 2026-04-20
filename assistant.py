@@ -3,18 +3,23 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 import requests
 import json
-import smtplib
-from email.mime.text import MIMEText
 
-# --- 1. إعدادات الصفحة ---
-st.set_page_config(page_title="Mongez Control Center", page_icon="🏠", layout="wide")
+# ==========================================
+# 1. إعدادات الصفحة والهوية البصرية
+# ==========================================
+st.set_page_config(
+    page_title="Mongez Smart Assistant",
+    page_icon="🚀",
+    layout="wide"
+)
 
-# --- 2. تهيئة النظام والاتصال بقاعدة البيانات ---
+# ==========================================
+# 2. تهيئة النظام والربط بالقاعدة (Backend)
+# ==========================================
 def initialize_system():
     if not firebase_admin._apps:
         try:
             fb_dict = dict(st.secrets["firebase"])
-            # معالجة مفتاح التشفير لضمان القراءة الصحيحة
             if "private_key" in fb_dict:
                 fb_dict["private_key"] = fb_dict["private_key"].replace("\\n", "\n")
             
@@ -27,123 +32,179 @@ def initialize_system():
 
 db = initialize_system()
 
-# --- 3. الدوال البرمجية (Automation Functions) ---
+# ==========================================
+# 3. دوال Apigee و Logic النظام (The Brain)
+# ==========================================
 
-def send_slack_message(message):
-    """إرسال تنبيهات فورية لـ Slack"""
-    url = "https://slack.com/api/chat.postMessage"
-    token = st.secrets["slack"].get("bot_token", "") # تأكد من وجوده في الأسرار
-    payload = {"channel": "general", "text": message}
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+def get_user_profile(email):
+    """جلب بيانات المستخدم من Firestore"""
     try:
-        requests.post(url, headers=headers, data=json.dumps(payload))
+        user_doc = db.collection("users").document(email).get()
+        return user_doc.to_dict() if user_doc.exists else None
+    except: return None
+
+def create_user_account(email, password, name, phone):
+    """إنشاء بروفايل جديد (Backend)"""
+    try:
+        email = email.strip().lower() 
+        users_ref = db.collection("users").document(email)
+        if users_ref.get().exists:
+            return False, "⚠️ هذا البريد مسجل مسبقاً"
+        
+        users_ref.set({
+            "email": email, "name": name, "phone": phone, "password": password, 
+            "role": "client", "job_title": "عضو منجز", 
+            "profile_pic": "https://cdn-icons-png.flaticon.com/512/149/149071.png", # صورة افتراضية
+            "created_at": firestore.SERVER_TIMESTAMP
+        })
+        return True, "✅ تم إنشاء الحساب بنجاح!"
+    except Exception as e: return False, str(e)
+
+def send_slack_notification(message):
+    """تنبيه المندوبين (Apigee-ready Logic)"""
+    try:
+        url = "https://slack.com/api/chat.postMessage"
+        token = st.secrets["slack"]["bot_token"]
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        payload = {"channel": "general", "text": message}
+        requests.post(url, headers=headers, json=payload)
     except: pass
 
-def sync_to_notion(name, phone, address, srv_type, amount):
-    """مزامنة الطلب مع قاعدة بيانات Notion"""
+def add_support_reply(task_id, reply_text):
+    """دالة رد الدعم الفني وتحديث الحالة"""
     try:
-        token = st.secrets["notion"]["token"]
-        database_id = st.secrets["notion"]["database_id"]
-        url = "https://api.notion.com/v1/pages"
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "Notion-Version": "2022-06-28"
-        }
-        data = {
-            "parent": {"database_id": database_id},
-            "properties": {
-                "العميل": {"title": [{"text": {"content": name}}]},
-                "رقم الهاتف": {"rich_text": [{"text": {"content": phone}}]},
-                "العنوان": {"rich_text": [{"text": {"content": address}}]},
-                "نوع الخدمة": {"select": {"name": srv_type}},
-                "المبلغ الإجمالي": {"number": float(amount)}
-            }
-        }
-        res = requests.post(url, headers=headers, json=data)
-        return res.status_code == 200
-    except: return False
-
-def save_task_to_firebase(user_email, task_data):
-    """حفظ سجل العملية في Firebase"""
-    try:
-        db.collection("tasks").add({
-            "user": user_email,
-            "details": task_data,
-            "status": "Completed",
-            "timestamp": firestore.SERVER_TIMESTAMP
+        db.collection("tasks").document(task_id).update({
+            "support_reply": reply_text,
+            "status": "In Progress",
+            "replied_at": firestore.SERVER_TIMESTAMP
         })
         return True
     except: return False
 
-# --- 4. واجهة التطبيق الرئيسية (Main UI) ---
+# ==========================================
+# 4. واجهة المستخدم الرئيسية (Frontend UI)
+# ==========================================
 
 def main():
-    st.title("🏠 Mongez Control Center")
-    
-    # التحقق من حالة تسجيل الدخول
+    # التحقق من حالة الدخول
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
 
-    # --- بوابة تسجيل الدخول (Admin Login First) ---
+    # --- شاشة تسجيل الدخول والترحيب ---
     if not st.session_state.authenticated:
-        st.subheader("🔐 تسجيل دخول المسؤول")
-        with st.container():
-            col_a, col_b = st.columns([1, 2])
-            with col_a:
-                admin_email = st.text_input("بريد المسؤول").strip().lower()
-                admin_pass = st.text_input("كلمة المرور", type="password")
-                if st.button("دخول النظام"):
-                    # التحقق من وجود المسؤول في مجموعة users بصلاحية admin
-                    user_ref = db.collection("users").document(admin_email).get()
-                    if user_ref.exists:
-                        user_data = user_ref.to_dict()
-                        if str(user_data.get("password")) == admin_pass:
-                            st.session_state.authenticated = True
-                            st.session_state.user_email = admin_email
-                            st.session_state.user_name = user_data.get("name", "Admin")
-                            st.rerun()
-                        else: st.error("❌ كلمة المرور غير صحيحة")
-                    else: st.error("❌ هذا البريد ليس له صلاحية مسؤول")
-        return
+        st.title("🏠 مرحبا بكم في منصة منجز")
+        st.info("نظام الإدارة الذكي للخدمات اللوجستية")
+        
+        tab_log, tab_reg = st.tabs(["🔑 تسجيل الدخول", "📝 إنشاء حساب جديد"])
+        
+        with tab_log:
+            email = st.text_input("البريد الإلكتروني").strip().lower()
+            password = st.text_input("كلمة المرور", type="password")
+            if st.button("دخول للمنصة"):
+                user_data = get_user_profile(email)
+                if user_data and str(user_data.get("password")) == str(password):
+                    st.session_state.update({
+                        "authenticated": True, "user_email": email,
+                        "user_name": user_data.get("name"),
+                        "user_phone": user_data.get("phone"),
+                        "user_job": user_data.get("job_title"),
+                        "user_pic": user_data.get("profile_pic"),
+                        "role": user_data.get("role")
+                    })
+                    st.success(f"تم الدخول بنجاح، أهلاً {st.session_state.user_name}")
+                    st.rerun()
+                else: st.error("❌ البريد أو كلمة المرور غير صحيحة")
+        
+        with tab_reg:
+            n_name = st.text_input("الاسم بالكامل")
+            n_email = st.text_input("البريد الإلكتروني (سيكون معرفك الخاص)")
+            n_phone = st.text_input("رقم الهاتف")
+            n_pass = st.text_input("اختر كلمة مرور", type="password")
+            if st.button("تأكيد إنشاء الحساب"):
+                if n_name and n_email and n_pass:
+                    ok, msg = create_user_account(n_email, n_pass, n_name, n_phone)
+                    if ok: st.success(msg)
+                    else: st.error(msg)
+                else: st.warning("من فضلك املأ جميع الخانات")
 
-    # --- محتوى التطبيق بعد الدخول ---
-    st.sidebar.success(f"مرحباً: {st.session_state.user_name}")
-    if st.sidebar.button("🚪 تسجيل الخروج"):
-        st.session_state.authenticated = False
-        st.rerun()
+    # --- واجهة المنصة (بعد تسجيل الدخول بنجاح) ---
+    else:
+        # Sidebar: بروفايل المستخدم الاحترافي
+        with st.sidebar:
+            st.image(st.session_state.user_pic, width=100)
+            st.title(st.session_state.user_name)
+            st.markdown(f"**الوظيفة:** {st.session_state.user_job}")
+            st.markdown(f"**الهاتف:** {st.session_state.user_phone}")
+            st.markdown("---")
+            st.success("✔️ نظام منجز متصل (Online)")
+            if st.button("تسجيل الخروج"):
+                st.session_state.authenticated = False
+                st.rerun()
 
-    tab1, tab2 = st.tabs(["🚀 إرسال طلب", "📜 سجل العمليات"])
+        st.title("🏠 Mongez Control Center")
+        
+        tab_action, tab_logs = st.tabs(["🚀 طلب خدمة جديدة", "📜 سجلات العمليات والردود"])
 
-    with tab1:
-        st.subheader("تسجيل طلب جديد في الأنظمة")
-        c_name = st.text_input("اسم العميل")
-        c_phone = st.text_input("هاتف العميل")
-        srv_type = st.selectbox("الخدمة", ["سوق المنجز", "اطلب أي شيء"])
-        amount = st.number_input("المبلغ", min_value=0.0)
-        address = st.text_area("العنوان")
+        # التبويب الأول: طلب الخدمة والتنبيهات
+        with tab_action:
+            st.subheader("ماذا تريد أن تنجز اليوم؟")
+            col1, col2 = st.columns(2)
+            with col1:
+                srv = st.selectbox("نوع الخدمة", ["سوق المنجز", "اطلب أي شيء", "دعم فني سريع"])
+                amount = st.number_input("الميزانية التقديرية (اختياري)", min_value=0.0)
+            with col2:
+                addr = st.text_area("تفاصيل الطلب / عنوان التسليم")
+            
+            if st.button("إرسال الطلب للمندوبين"):
+                if addr:
+                    with st.spinner("جاري معالجة الطلب وتنبيه الفريق..."):
+                        # 1. حفظ في Firestore
+                        task_ref = db.collection("tasks").document()
+                        task_id = task_ref.id
+                        task_ref.set({
+                            "user": st.session_state.user_email, "task": srv, 
+                            "details": addr, "amount": amount,
+                            "status": "Pending", "timestamp": firestore.SERVER_TIMESTAMP,
+                            "support_reply": "جاري مراجعة طلبك من قبل الدعم الفني..."
+                        })
+                        
+                        # 2. إرسال تنبيه للمندوبين عبر Slack
+                        msg = f"🚀 *طلب جديد من منجز* \n👤 العميل: {st.session_state.user_name}\n📞 هاتف: {st.session_state.user_phone}\n📦 الخدمة: {srv}\n📍 التفاصيل: {addr}"
+                        send_slack_notification(msg)
+                        
+                        st.balloons()
+                        st.success(f"تم إرسال طلبك بنجاح! رقم الطلب: {task_id}")
+                else: st.error("من فضلك اكتب تفاصيل الطلب")
 
-        if st.button("تشغيل الربط التلقائي"):
-            with st.spinner("جاري تحديث Firebase, Notion, و Slack..."):
-                # 1. المزامنة
-                notion_ok = sync_to_notion(c_name, c_phone, address, srv_type, amount)
-                # 2. الحفظ في Firebase
-                fb_ok = save_task_to_firebase(st.session_state.user_email, f"{srv_type} لـ {c_name}")
-                # 3. إرسال تنبيه سلاك
-                send_slack_message(f"✅ طلب جديد: {srv_type} | العميل: {c_name} | بمبلغ: {amount}")
-
-                if notion_ok and fb_ok:
-                    st.balloons()
-                    st.success("🎉 تم تحديث كافة الأنظمة بنجاح!")
-                else:
-                    st.warning("⚠️ تمت العملية ولكن قد يكون هناك نقص في ربط Notion.")
-
-    with tab2:
-        st.subheader("الأحداث الأخيرة")
-        logs = db.collection("tasks").order_by("timestamp", direction=firestore.Query.DESCENDING).limit(5).get()
-        for log in logs:
-            d = log.to_dict()
-            st.info(f"👤 {d.get('user')} | 📝 {d.get('details')} | ⏰ {d.get('timestamp')}")
+        # التبويب الثاني: السجلات والردود (الدعم الفني)
+        with tab_logs:
+            st.subheader("📦 متابعة طلباتك الأخيرة")
+            tasks = db.collection("tasks").where("user", "==", st.session_state.user_email).order_by("timestamp", direction=firestore.Query.DESCENDING).limit(10).get()
+            
+            if not tasks:
+                st.info("لا توجد طلبات سابقة حتى الآن.")
+            
+            for doc in tasks:
+                data = doc.to_dict()
+                status_color = "orange" if data.get("status") == "Pending" else "green"
+                
+                with st.container(border=True):
+                    c1, c2 = st.columns([3, 1])
+                    c1.markdown(f"### الطلب: {data.get('task')}")
+                    c1.write(f"📝 {data.get('details')}")
+                    c2.markdown(f":{status_color}[الحالة: {data.get('status')}]")
+                    
+                    st.divider()
+                    st.write(f"🎧 **رد الدعم الفني:** {data.get('support_reply')}")
+                    
+                    # ميزة خاصة لك كأدمن للاختبار والرد
+                    if st.session_state.user_email == "ahmedelsefir7@gmail.com": # إيميلك المسجل في القاعدة
+                        with st.expander("🛠️ الرد كدعم فني (خاص بك)"):
+                            reply_text = st.text_input("اكتب ردك هنا", key=f"reply_{doc.id}")
+                            if st.button("إرسال الرد للعميل", key=f"btn_{doc.id}"):
+                                if add_support_reply(doc.id, reply_text):
+                                    st.success("تم تحديث الرد!")
+                                    st.rerun()
 
 if __name__ == "__main__":
     main()
