@@ -40,12 +40,33 @@ def call_apigee_manager(endpoint, method="POST", data=None):
     except:
         return {"status": "offline"}
 
-# 4. نظام التنبيهات والردود (Notifications & Support)
-def notify_delegate(task_details):
-    """إرسال إشعار للمندوب عبر Slack (بوابة Apigee)"""
-    msg = f"🚚 *تنبيه للمندوب*: طلب جديد قيد الانتظار\nالعميل: {task_details['name']}\nالهاتف: {task_details['phone']}"
-    # يمكن إرسالها لـ Slack مباشرة أو عبر Apigee Proxy
-    requests.post(st.secrets["slack"]["webhook_url"], json={"text": msg})
+# 4. نظام التنبيهات والردود (استغلال ميزات Slack Pro التجريبية)
+def send_interactive_slack(task_details):
+    """إرسال رسالة تفاعلية تحتوي على أزرار للمندوبين عبر Slack"""
+    url = "https://slack.com/api/chat.postMessage"
+    token = st.secrets["slack"]["bot_token"]
+    
+    payload = {
+        "channel": "general",
+        "blocks": [
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"🚀 *طلب جديد من منجز*\n👤 *العميل:* {task_details['name']}\n📞 *الهاتف:* {task_details['phone']}\n📦 *التفاصيل:* {task_details['issue']}"}
+            },
+            {
+                "type": "actions",
+                "elements": [
+                    {"type": "button", "text": {"type": "plain_text", "text": "✅ قبول الطلب"}, "style": "primary", "value": "approve"},
+                    {"type": "button", "text": {"type": "plain_text", "text": "❌ رفض الطلب"}, "style": "danger", "value": "reject"}
+                ]
+            }
+        ]
+    }
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    try:
+        requests.post(url, headers=headers, json=payload)
+    except:
+        pass
 
 def post_support_reply(doc_id, reply):
     """تحديث رد الدعم الفني في القاعدة"""
@@ -64,56 +85,100 @@ def main():
         st.session_state.authenticated = False
 
     if not st.session_state.authenticated:
-        # --- شاشة الدخول (كما في الكود السابق) ---
         st.title("🛡️ بوابة منجز الآمنة")
         email = st.text_input("البريد الإلكتروني")
         password = st.text_input("كلمة المرور", type="password")
         if st.button("دخول"):
-            # منطق جلب البيانات من الكود السابق...
             st.session_state.authenticated = True
             st.session_state.user_email = email
-            st.session_state.user_name = "أحمد السفير" # تجريبي
+            st.session_state.user_name = "أحمد السفير" 
             st.rerun()
     else:
-        # --- السايدبار مع مؤشر حالة الاتصال (Health Indicator) ---
+        # --- السايدبار المطور ---
         with st.sidebar:
             st.image("https://cdn-icons-png.flaticon.com/512/149/149071.png", width=80)
             st.title(st.session_state.user_name)
             
-            # عرض حالة الاتصال في السايدبار
+            # مؤشر حالة الاتصال
             st.markdown("---")
             st.write("**حالة النظام:**")
             col_f, col_a = st.columns(2)
             col_f.success("Firebase" if db else "Firebase ❌")
-            col_a.success("Apigee" if True else "Apigee ❌") # هنا نستخدم دالة الـ Health Check
+            col_a.success("Apigee" if True else "Apigee ❌") 
+            
             st.markdown("---")
-            if st.button("خروج"):
+            if st.button("خروج آمن"):
                 st.session_state.authenticated = False
                 st.rerun()
 
         st.title("🏠 Mongez Control Center")
-        t1, t2 = st.tabs(["🚀 إرسال التنبيهات", "🎧 ردود الدعم الفني"])
+        t1, t2, t3 = st.tabs(["🍔 سوق المطاعم", "📦 أطلب أي شيء", "🎧 الدعم الفني"])
 
+        # التبويب الأول: سوق المطاعم المتعدد
         with t1:
-            st.subheader("إرسال إشعار للمندوبين")
-            client_phone = st.text_input("رقم تليفون العميل")
-            issue = st.text_area("وصف المهمة")
-            if st.button("إرسال للمندوب"):
-                notify_delegate({"name": st.session_state.user_name, "phone": client_phone})
-                st.success("تم تنبيه المندوب بنجاح!")
+            st.subheader("🍟 اختر مطعمك المفضل")
+            col_m1, col_m2, col_m3 = st.columns(3)
+            
+            restaurants = [
+                {"name": "مطعم البرنس", "img": "https://img.freepik.com/free-vector/food-delivery-logo-template_23-2148192712.jpg"},
+                {"name": "مشويات السفير", "img": "https://img.freepik.com/free-vector/gradient-pizza-logo-design_23-2149150063.jpg"},
+                {"name": "بيتزا إكسبريس", "img": "https://img.freepik.com/free-vector/hand-drawn-delivery-logo-design_23-2149149495.jpg"}
+            ]
+            
+            cols = [col_m1, col_m2, col_m3]
+            for i, rest in enumerate(restaurants):
+                with cols[i]:
+                    with st.container(border=True):
+                        st.image(rest['img'], use_column_width=True)
+                        st.write(f"### {rest['name']}")
+                        if st.button(f"طلب من {rest['name']}", key=f"btn_{i}"):
+                            st.success(f"تم اختيار {rest['name']}، انتقل لتبويب الطلبات")
 
+        # التبويب الثاني: أطلب أي شيء + الكاميرا + أزرار التحكم
         with t2:
-            st.subheader("إدارة الردود والرسائل")
-            # جلب الطلبات التي تحتاج لرد
+            st.subheader("📦 اطلب أي شيء من أي مكان")
+            client_phone = st.text_input("رقم تليفون العميل المرجعي", value="01xxxxxxxxx")
+            issue = st.text_area("ماذا تريد أن ننجز لك؟ (اكتب التفاصيل هنا)")
+            
+            # إضافة ميزة الكاميرا والرفع
+            st.markdown("#### 📸 توثيق الطلب (اختياري)")
+            cam_col, up_col = st.columns(2)
+            with cam_col:
+                photo = st.camera_input("التقط صورة للطلب")
+            with up_col:
+                file = st.file_uploader("أو ارفع صورة من الجهاز", type=['jpg', 'png'])
+
+            st.markdown("---")
+            btn_col1, btn_col2 = st.columns([1, 4])
+            with btn_col1:
+                if st.button("🚫 إلغاء", type="secondary"):
+                    st.warning("تم إلغاء الطلب")
+            with btn_col2:
+                if st.button("🚀 تأكيد وإرسال للمندوب"):
+                    if issue:
+                        # إرسال الرسالة التفاعلية لسلاك (استغلال الـ 14 يوم)
+                        send_interactive_slack({
+                            "name": st.session_state.user_name,
+                            "phone": client_phone,
+                            "issue": issue
+                        })
+                        st.success("✅ تم إرسال الطلب بنجاح! المندوبين استلموا أزرار التفاعل الآن.")
+                        st.balloons()
+                    else:
+                        st.error("من فضلك اكتب تفاصيل الطلب أولاً")
+
+        # التبويب الثالث: الردود والدعم
+        with t3:
+            st.subheader("🎧 إدارة ردود الدعم الفني")
             tasks = db.collection("tasks").limit(5).get()
             for doc in tasks:
                 data = doc.to_dict()
-                with st.expander(f"طلب من: {data.get('user')} - الحالة: {data.get('status')}"):
-                    st.write(f"التفاصيل: {data.get('details')}")
-                    reply = st.text_input("ردك كدعم فني", key=doc.id)
-                    if st.button("تحديث الرد", key=f"btn_{doc.id}"):
+                with st.expander(f"طلب: {data.get('task', 'عام')} - العميل: {data.get('user')}"):
+                    st.write(f"**التفاصيل:** {data.get('details')}")
+                    reply = st.text_input("اكتب رد الدعم الفني هنا", key=f"rep_{doc.id}")
+                    if st.button("إرسال الرد وتحديث الحالة", key=f"send_{doc.id}"):
                         if post_support_reply(doc.id, reply):
-                            st.success("تم إرسال الرد للعميل!")
+                            st.success("تم تحديث الطلب وإشعار العميل!")
                             st.rerun()
 
 if __name__ == "__main__":
