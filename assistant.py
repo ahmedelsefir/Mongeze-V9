@@ -3,45 +3,47 @@ import os
 import google.generativeai as genai
 from PIL import Image
 
-# 1. إعدادات الخصوصية والأمان (المفتاح السري)
-#
+# تأمين المفتاح السري (GitHub Secrets)
 api_key = os.getenv("GEMINI_API_KEY")
 genai.configure(api_key=api_key)
 
-# 2. تصميم القائمة الجانبية (نظام الفروع)
-st.sidebar.title("🚀 نظام منجز الذكي")
-menu = ["الرئيسية", "واجهة المناديب (Backend)", "لوحة التحكم (Admin)"]
-choice = st.sidebar.selectbox("انتقل إلى الفرع:", menu)
+# القائمة الجانبية للتنقل (زي تطبيقات الشركات الكبيرة)
+st.sidebar.title("🚀 منظومة منجز")
+choice = st.sidebar.radio("انتقل إلى:", ["الرئيسية", "واجهة المندوب (Backend)", "لوحة التحكم"])
 
-# --- الفرع الأول: واجهة المناديب (هنا يتم سحر الذكاء الاصطناعي) ---
-if choice == "واجهة المناديب (Backend)":
-    st.title("📲 واجهة المندوب الذكية")
-    st.write("ارفع صورة الفاتورة لتدقيقها وحساب العمولة فوراً.")
+# --- فرع واجهة المندوب (الذي سألت عنه) ---
+if choice == "واجهة المندوب (Backend)":
+    # تصميم الواجهة الاحترافية
+    st.title("📲 لوحة تحكم المندوب")
     
-    uploaded_file = st.file_uploader("التقط صورة الفاتورة", type=['jpg', 'jpeg', 'png'])
+    # إحصائيات المندوب
+    col1, col2 = st.columns(2)
+    col1.metric("إجمالي الدخل", "341.69 ج.م")
+    col2.metric("طلبات اليوم", "5")
+    
+    st.divider()
+    
+    # ميزة الذكاء الاصطناعي لمعالجة الفاتورة
+    st.subheader("📸 تصوير وفحص الفاتورة")
+    uploaded_file = st.file_uploader("ارفع صورة الفاتورة هنا", type=['jpg', 'png', 'jpeg'])
     
     if uploaded_file:
         img = Image.open(uploaded_file)
         st.image(img, caption="الفاتورة المرفوعة", use_column_width=True)
         
-        if st.button("تحليل الفاتورة بالذكاء الاصطناعي"):
-            # استدعاء Gemini AI لقراءة البيانات
+        if st.button("تحليل المبلغ والعمولة"):
             model = genai.GenerativeModel('gemini-1.5-flash')
-            prompt = "استخرج المبلغ الإجمالي من هذه الفاتورة واحسب عمولة 10% والمجموع النهائي."
-            
-            with st.spinner("جاري التحليل..."):
-                response = model.generate_content([prompt, img])
+            with st.spinner("جاري معالجة البيانات..."):
+                # الذكاء الاصطناعي بيقرأ الصورة ويحسب حسب القواعد المالية [cite: 2026-01-18]
+                response = model.generate_content(["استخرج إجمالي المبلغ واحسب عمولة 10%", img])
                 st.success("تم التحليل بنجاح!")
-                st.info(response.text)
+                st.write(response.text)
 
-# --- الفرع الثاني: لوحة الإدارة (لمتابعة العمولات) ---
-elif choice == "لوحة التحكم (Admin)":
-    st.title("📊 إدارة نظام منجز")
-    st.write("هنا تظهر تقارير الأرباح والعمولات المسجلة في Firebase.")
-    # هنا سنربط لاحقاً بـ Firebase Database اللي فعلناها
-    #
+# --- باقي الفروع (الرئيسية ولوحة التحكم) ---
+elif choice == "الرئيسية":
+    st.title("🏠 شاشة العميل")
+    st.write("أهلاً بك في منجز، اطلب وسنصلك فوراً.")
 
-# --- الصفحة الرئيسية ---
-else:
-    st.title("🏠 مرحبا بك في منجز")
-    st.write("مشروعك الآن مدعوم بأقوى تقنيات الذكاء الاصطناعي في العالم.")
+elif choice == "لوحة التحكم":
+    st.title("📊 الإدارة")
+    st.write("متابعة المناديب والعمليات المالية.")
