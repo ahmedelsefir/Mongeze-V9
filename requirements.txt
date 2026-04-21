@@ -8,3 +8,4 @@ honeybadger>=0.14.0
 streamlit-js-eval
 grpcio
 pytz
+google-cloud-storage
