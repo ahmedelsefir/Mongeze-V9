@@ -9,3 +9,4 @@ streamlit-js-eval
 grpcio
 pytz
 google-cloud-storage
+Pillow
