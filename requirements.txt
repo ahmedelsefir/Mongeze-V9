@@ -10,3 +10,5 @@ grpcio
 pytz
 google-cloud-storage
 Pillow
+streamlit
+google-generativeai
