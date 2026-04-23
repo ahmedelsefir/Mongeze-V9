@@ -1,6 +1,6 @@
- streamlit>=1.31.1
+streamlit>=1.31.1
 firebase-admin>=6.4.0
-google-generativeai >= 0.8.3
+google-genai
 pandas>=2.2.1
 python-dotenv>=1.0.1
 pycryptodome>=3.20.0
@@ -10,5 +10,3 @@ grpcio
 pytz
 google-cloud-storage
 Pillow
-streamlit
-google-generativeai
