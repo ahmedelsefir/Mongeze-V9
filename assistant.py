@@ -38,7 +38,7 @@ if choice == "واجهة المندوب (Backend)":
             with st.spinner("جاري معالجة البيانات بالذكاء الاصطناعي..."):
                 try:
                     # استخدمنا gemini-1.5-flash لسرعته في معالجة الصور
-                    model = genai.GenerativeModel('gemini-1.5-flash-latest')
+                    model = genai.GenerativeModel('models/gemini-1.5-flash')
                     
                     # الـ Prompt المصمم خصيصاً لمشروع منجز [cite: 2026-01-18]
                     prompt = """
