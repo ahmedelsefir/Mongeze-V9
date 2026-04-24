@@ -1,13 +1,23 @@
-streamlit>=1.31.1
+# الأساسيات (إصدارات ثابتة لضمان عمل الواجهة)
+streamlit==1.31.1
+protobuf==3.20.3
+Pillow
+numpy
+
+# الذكاء الاصطناعي (العقل المحلل للفواتير)
+google-generativeai==0.5.2
+
+# قاعدة البيانات (العمود الفقري للمشروع)
 firebase-admin>=6.4.0
-google-generativeai==0.7.2
+google-cloud-storage
+
+# أدوات البيانات والحماية
 pandas>=2.2.1
 python-dotenv>=1.0.1
 pycryptodome>=3.20.0
-honeybadger>=0.14.0
-streamlit-js-eval
-grpcio
 pytz
-google-cloud-storage
-Pillow
-numpy
+
+# أدوات الواجهة المتقدمة
+streamlit-js-eval
+honeybadger>=0.14.0
+grpcio
