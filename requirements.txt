@@ -1,23 +1,6 @@
-# الأساسيات وواجهة المستخدم
-streamlit>=1.31.1
+streamlit==1.31.1
+google-generativeai==0.5.2
+firebase-admin
 Pillow
-pandas>=2.2.1
-numpy
-
-# قاعدة البيانات والتخزين (Firebase)
-firebase-admin>=6.4.0
-google-cloud-storage
-grpcio
-
-# الذكاء الاصطناعي (Gemini)
-google-generativeai
-
-# الحماية والأدوات الإضافية
-python-dotenv>=1.0.1
-pycryptodome>=3.20.0
-honeybadger>=0.14.0
-streamlit-js-eval
-pytz
-
-# السطر المنقذ من الشاشة السوداء (هام جداً)
+pandas
 protobuf==3.20.3
