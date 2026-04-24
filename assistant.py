@@ -37,8 +37,10 @@ if choice == "واجهة المندوب (Backend)":
         if st.button("تحليل المبلغ والعمولة"):
             with st.spinner("جاري معالجة البيانات بالذكاء الاصطناعي..."):
                 try:
-                    # استخدمنا gemini-1.5-flash لسرعته في معالجة الصور
-                    model = genai.GenerativeModel('models/gemini-1.5-flash')
+                    # التعديل الذهبي لإنهاء مشكلة الـ 404
+model = genai.GenerativeModel(
+    model_name="gemini-1.5-flash"
+)
                     
                     # الـ Prompt المصمم خصيصاً لمشروع منجز [cite: 2026-01-18]
                     prompt = """
