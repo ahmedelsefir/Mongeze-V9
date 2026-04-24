@@ -1,23 +1,23 @@
-# الأساسيات (إصدارات ثابتة لضمان عمل الواجهة)
-streamlit==1.31.1
-protobuf==3.20.3
+# الأساسيات وواجهة المستخدم
+streamlit>=1.31.1
 Pillow
+pandas>=2.2.1
 numpy
 
-# الذكاء الاصطناعي (العقل المحلل للفواتير)
-google-generativeai==0.5.2
-
-# قاعدة البيانات (العمود الفقري للمشروع)
+# قاعدة البيانات والتخزين (Firebase)
 firebase-admin>=6.4.0
 google-cloud-storage
+grpcio
 
-# أدوات البيانات والحماية
-pandas>=2.2.1
+# الذكاء الاصطناعي (Gemini)
+google-generativeai
+
+# الحماية والأدوات الإضافية
 python-dotenv>=1.0.1
 pycryptodome>=3.20.0
+honeybadger>=0.14.0
+streamlit-js-eval
 pytz
 
-# أدوات الواجهة المتقدمة
-streamlit-js-eval
-honeybadger>=0.14.0
-grpcio
+# السطر المنقذ من الشاشة السوداء (هام جداً)
+protobuf==3.20.3
