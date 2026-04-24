@@ -10,4 +10,4 @@ grpcio
 pytz
 google-cloud-storage
 numpy>=1.26.4
-
+numpy>=2.1.0
