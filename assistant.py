@@ -3,7 +3,6 @@ import google.generativeai as genai
 from PIL import Image
 
 # 1. تأمين الاتصال (القراءة من Streamlit Secrets مباشرة)
-#
 if "GEMINI_API_KEY" in st.secrets:
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
@@ -31,18 +30,16 @@ if choice == "واجهة المندوب (Backend)":
     
     if uploaded_file:
         img = Image.open(uploaded_file)
-        # استخدام المعيار الجديد لعرض الصور في ستريم ليت
+        # استخدام المعيار الجديد لعرض الصور
         st.image(img, caption="الفاتورة المرفوعة", use_container_width=True)
         
         if st.button("تحليل المبلغ والعمولة"):
             with st.spinner("جاري معالجة البيانات بالذكاء الاصطناعي..."):
                 try:
-                    # التعديل الذهبي لإنهاء مشكلة الـ 404
-model = genai.GenerativeModel(
-    model_name="gemini-1.5-flash"
-)
+                    # التعديل الذهبي: تحديد الموديل والنسخة المستقرة
+                    model = genai.GenerativeModel(model_name="gemini-1.5-flash")
                     
-                    # الـ Prompt المصمم خصيصاً لمشروع منجز [cite: 2026-01-18]
+                    # الـ Prompt المصمم خصيصاً لمشروع منجز
                     prompt = """
                     أنت مساعد مالي لمشروع 'منجز'. 
                     قم بتحليل الصورة واستخرج:
@@ -58,19 +55,17 @@ model = genai.GenerativeModel(
                     st.write(response.text)
                     
                 except Exception as e:
-                    # لمعالجة خطأ NotFound أو مشاكل الـ API
+                    # معالجة الأخطاء بشكل احترافي
                     st.error(f"حدثت مشكلة تقنية: {e}")
-                    st.info("نصيحة: تأكد من تحديث مكتبة google-generativeai في ملف requirements.txt")
+                    st.info("نصيحة: تأكد من استخدام google-generativeai>=0.7.2 في ملف requirements.txt")
 
 # --- فرع الرئيسية ---
 elif choice == "الرئيسية":
     st.title("🏠 شاشة العميل")
     st.write("أهلاً بك في **منجز**، اطلب وسنصلك فوراً.")
-    st.info("هذه الواجهة مخصصة لاستقبال طلبات العملاء قريباً.")
 
 # --- فرع لوحة التحكم ---
 elif choice == "لوحة التحكم":
     st.title("📊 لوحة الإدارة")
     st.write("متابعة العمليات والمناديب.")
-    # هنا سيتم ربط Firebase لاحقاً لعرض البيانات الحقيقية
     st.warning("هذه المنطقة تحت التطوير لربطها بقاعدة بيانات Firebase.")
