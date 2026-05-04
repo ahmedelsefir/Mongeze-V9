@@ -4,7 +4,7 @@ import random
 
 # إعدادات الصفحة
 st.set_page_config(
-    page_title="تطبيق الطلبات",
+    page_title="تطبيق الخدمات",
     page_icon="💚",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -59,6 +59,39 @@ st.markdown("""
         line-height: 1.5;
     }
     
+    /* Filter Buttons */
+    .filter-container {
+        display: flex;
+        gap: 0.8rem;
+        padding: 1rem;
+        background-color: white;
+        margin-bottom: 1rem;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    
+    .filter-btn {
+        padding: 0.6rem 1.2rem;
+        border: 2px solid #ddd;
+        background-color: white;
+        border-radius: 20px;
+        cursor: pointer;
+        font-weight: 500;
+        transition: all 0.3s;
+        font-size: 0.9rem;
+    }
+    
+    .filter-btn:hover {
+        border-color: #00b894;
+        color: #00b894;
+    }
+    
+    .filter-btn.active {
+        background-color: #00b894;
+        color: white;
+        border-color: #00b894;
+    }
+    
     /* بطاقة الطلب */
     .order-card {
         background-color: white;
@@ -86,6 +119,7 @@ st.markdown("""
         color: white;
         font-size: 1.5rem;
         font-weight: bold;
+        position: relative;
     }
     
     .order-title {
@@ -105,6 +139,17 @@ st.markdown("""
         font-size: 0.9rem;
         color: #666;
         margin-bottom: 0.5rem;
+    }
+    
+    .service-type-badge {
+        display: inline-block;
+        background-color: #e8f5e9;
+        color: #00b894;
+        padding: 0.3rem 0.8rem;
+        border-radius: 15px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        margin-bottom: 0.8rem;
     }
     
     /* معلومات المسافة والسعر */
@@ -239,8 +284,14 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# البيانات المتاحة
-orders_data = [
+# Initialize session state
+if 'current_page' not in st.session_state:
+    st.session_state.current_page = 'home'
+if 'selected_service_type' not in st.session_state:
+    st.session_state.selected_service_type = 'الكل'
+
+# البيانات المتاحة - مع أنواع الخدمات
+services_data = [
     {
         "id": 1,
         "title": "3 طلبات \"جميع الخدمات\"",
@@ -251,11 +302,12 @@ orders_data = [
         "price": "25.00",
         "price_range": "من 25 جنيه إلى 35 جنيه",
         "request_id": "#352896514",
-        "user": "أطلب أي حاجة"
+        "service_type": "توصيل طعام",
+        "icon": "🍔"
     },
     {
         "id": 2,
-        "title": "طلب توصيل",
+        "title": "طلب توصيل عاجل",
         "details": "2سيناريون شوكولاون",
         "location": "شاهين (حي)",
         "current_location": "11.4 كم",
@@ -263,11 +315,12 @@ orders_data = [
         "price": "118.00",
         "price_range": "من 118 جنيه إلى 165 جنيه",
         "request_id": "#352896514",
-        "user": "عرض آخر"
+        "service_type": "توصيل سريع",
+        "icon": "⚡"
     },
     {
         "id": 3,
-        "title": "طلب جديد",
+        "title": "خدمة تصليح",
         "details": "قطعة دجاج مع بطاطا",
         "location": "حي النيل",
         "current_location": "8.5 كم",
@@ -275,16 +328,59 @@ orders_data = [
         "price": "45.50",
         "price_range": "من 40 جنيه إلى 50 جنيه",
         "request_id": "#352896515",
-        "user": "توصيل سريع"
+        "service_type": "تصليح",
+        "icon": "🔧"
+    },
+    {
+        "id": 4,
+        "title": "توصيل أغراض منزلية",
+        "details": "أسطوانة غاز + تنظيفات",
+        "location": "الزيتون",
+        "current_location": "6.3 كم",
+        "delivery_location": "1.5 كم",
+        "price": "35.00",
+        "price_range": "من 30 جنيه إلى 40 جنيه",
+        "request_id": "#352896516",
+        "service_type": "توصيل عام",
+        "icon": "📦"
+    },
+    {
+        "id": 5,
+        "title": "خدمة تنظيف",
+        "details": "تنظيف شقة كاملة",
+        "location": "مدينة نصر",
+        "current_location": "9.2 كم",
+        "delivery_location": "2.8 كم",
+        "price": "80.00",
+        "price_range": "من 75 جنيه إلى 85 جنيه",
+        "request_id": "#352896517",
+        "service_type": "تنظيف",
+        "icon": "🧹"
+    },
+    {
+        "id": 6,
+        "title": "توصيل طعام من مطعم",
+        "details": "ساندوتشات + عصيرات",
+        "location": "الهرم",
+        "current_location": "15.1 كم",
+        "delivery_location": "3.5 كم",
+        "price": "55.00",
+        "price_range": "من 50 جنيه إلى 60 جنيه",
+        "request_id": "#352896518",
+        "service_type": "توصيل طعام",
+        "icon": "🍔"
     }
 ]
+
+# الحصول على أنواع الخدمات المتاحة
+service_types = list(set([s['service_type'] for s in services_data]))
 
 # Header
 header_col1, header_col2, header_col3 = st.columns([1, 3, 1])
 
 with header_col1:
-    if st.button("< إيقاف إرسال الطلبات", key="back_btn", use_container_width=True):
-        st.session_state.show_main = False
+    if st.button("< إيقاف", key="back_btn", use_container_width=True):
+        st.session_state.current_page = 'menu'
 
 with header_col2:
     st.markdown('<div class="header-title">الرئيسية</div>', unsafe_allow_html=True)
@@ -298,69 +394,100 @@ st.markdown("""
 <div class="yellow-banner">
     <span style="font-size: 1.5rem;">◄</span>
     <div class="yellow-banner-text">
-        <strong>جرب نظام إسناد الطلبات الجديد</strong> للحصول على الطلبات بسرعة وسهولة. انقر هنا للبدء
+        <strong>جرب نظام إسناد الخدمات الجديد</strong> للحصول على الطلبات بسرعة وسهولة. انقر هنا للبدء
     </div>
 </div>
 """, unsafe_allow_html=True)
 
+# Filter Section
+st.markdown("""
+<div class="filter-container">
+""", unsafe_allow_html=True)
+
+# Create filter buttons
+col = st.columns(5)
+filter_options = ['الكل'] + sorted(service_types)
+
+for idx, service in enumerate(filter_options):
+    with col[idx % 5]:
+        if st.button(
+            service,
+            key=f"filter_{service}",
+            use_container_width=True
+        ):
+            st.session_state.selected_service_type = service
+
+st.markdown("</div>", unsafe_allow_html=True)
+
 # Main Content
 st.markdown('<div class="main-content">', unsafe_allow_html=True)
 
-# عرض الطلبات
-for order in orders_data:
-    st.markdown(f"""
-    <div class="order-card">
-        <div class="order-header">
-            <div style="flex: 1;">
-                <div class="order-title">{order['title']}</div>
-                <div class="order-subtitle">طلبات مفعلة</div>
-            </div>
-            <div class="order-avatar">
-                {order['id']}
-                <span style="position: absolute; width: 12px; height: 12px; background-color: #ff4444; border-radius: 50%; top: 0; right: 0; border: 2px solid white;"></span>
-            </div>
-        </div>
-        
-        <div class="order-detail">
-            {order['details']}
-        </div>
-        
-        <div style="font-size: 0.9rem; color: #00d4a4; margin: 0.5rem 0; font-weight: 500;">
-            {order['location']}
-        </div>
-        
-        <div class="distance-info">
-            <div class="info-item">
-                <span>🚗</span>
-                <div>
-                    <div class="info-value">{order['current_location']}</div>
-                    <div class="info-label">قطع الحالي</div>
+# Filter the services
+if st.session_state.selected_service_type == 'الكل':
+    filtered_services = services_data
+else:
+    filtered_services = [s for s in services_data if s['service_type'] == st.session_state.selected_service_type]
+
+# عرض الخدمات
+if filtered_services:
+    for service in filtered_services:
+        st.markdown(f"""
+        <div class="order-card">
+            <div class="order-header">
+                <div style="flex: 1;">
+                    <div class="order-title">{service['icon']} {service['title']}</div>
+                    <div class="order-subtitle">خدمة مفعلة</div>
+                </div>
+                <div class="order-avatar">
+                    {service['id']}
+                    <span style="position: absolute; width: 12px; height: 12px; background-color: #ff4444; border-radius: 50%; top: 0; right: 0; border: 2px solid white;"></span>
                 </div>
             </div>
-            <div class="info-item">
-                <span>📦</span>
-                <div>
-                    <div class="info-value">{order['delivery_location']}</div>
-                    <div class="info-label">موقع الاستلام</div>
+            
+            <div class="service-type-badge">{service['service_type']}</div>
+            
+            <div class="order-detail">
+                {service['details']}
+            </div>
+            
+            <div style="font-size: 0.9rem; color: #00d4a4; margin: 0.5rem 0; font-weight: 500;">
+                📍 {service['location']}
+            </div>
+            
+            <div class="distance-info">
+                <div class="info-item">
+                    <span>🚗</span>
+                    <div>
+                        <div class="info-value">{service['current_location']}</div>
+                        <div class="info-label">قطع الحالي</div>
+                    </div>
+                </div>
+                <div class="info-item">
+                    <span>📦</span>
+                    <div>
+                        <div class="info-value">{service['delivery_location']}</div>
+                        <div class="info-label">موقع الالتقاط</div>
+                    </div>
+                </div>
+                <div class="info-item">
+                    <span>🚩</span>
+                    <div>
+                        <div class="info-value">{service['delivery_location']}</div>
+                        <div class="info-label">موقع التسليم</div>
+                    </div>
                 </div>
             </div>
-            <div class="info-item">
-                <span>🚩</span>
-                <div>
-                    <div class="info-value">{order['delivery_location']}</div>
-                    <div class="info-label">موقع التسليم</div>
-                </div>
+            
+            <div class="buttons-container">
+                <button class="btn-accept">اريح {service['price']} جنيه</button>
+                <button class="btn-other">عرض آخر</button>
             </div>
+            
+            <div class="price-range">{service['price_range']}</div>
         </div>
-        
-        <div class="buttons-container">
-            <button class="btn-accept">اريح {order['price']} جنيه</button>
-            <button class="btn-other">عرض آخر</button>
-        </div>
-        
-        <div class="price-range">{order['price_range']}</div>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
+else:
+    st.info("❌ لا توجد خدمات متاحة في هذه الفئة حالياً")
 
 st.markdown('</div>', unsafe_allow_html=True)
 
@@ -372,8 +499,8 @@ st.markdown("""
         <div class="nav-item-label">الرئيسية</div>
     </div>
     <div class="nav-item">
-        <div class="nav-item-icon">🚚</div>
-        <div class="nav-item-label">الطلبات</div>
+        <div class="nav-item-icon">🔧</div>
+        <div class="nav-item-label">الخدمات</div>
     </div>
     <div class="nav-item">
         <div class="nav-item-icon">🏠</div>
