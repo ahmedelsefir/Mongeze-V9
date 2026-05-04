@@ -5,8 +5,8 @@ from pathlib import Path
 
 # إعدادات الصفحة
 st.set_page_config(
-    page_title="مركز المهندس - طلب خدمة",
-    page_icon="⚙️",
+    page_title="فودي - تطبيق توصيل الطلبات",
+    page_icon="🍔",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -22,7 +22,7 @@ st.markdown("""
     .main-title {
         font-size: 2.5rem;
         font-weight: bold;
-        color: #1f77e4;
+        color: #FF6B35;
         margin-bottom: 0.5rem;
         text-align: center;
     }
@@ -35,7 +35,7 @@ st.markdown("""
     }
     
     .service-container {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, #FF6B35 0%, #F7931E 100%);
         padding: 2rem;
         border-radius: 15px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.1);
@@ -69,86 +69,101 @@ st.markdown("""
 # العنوان الرئيسي
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
-    st.markdown('<div class="main-title">⚙️ مركز المهندس للتركيبات</div>', unsafe_allow_html=True)
-    st.markdown('<div class="subtitle">نموذج طلب خدمة احترافي</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-title">🍔 فودي</div>', unsafe_allow_html=True)
+    st.markdown('<div class="subtitle">توصيل الطلبات في دقائق</div>', unsafe_allow_html=True)
 
 # خط فاصل
 st.markdown("---")
 
-# معلومات الخدمات المتاحة
-st.markdown("### 📋 الخدمات المتاحة")
+# معلومات المطاعم المتاحة
+st.markdown("### 🏪 المطاعم المتاحة")
 col1, col2, col3, col4 = st.columns(4)
 
-services_info = [
-    ("📹", "تركيب كاميرات", "تركيب كاميرات مراقبة"),
-    ("🔧", "صيانة كاميرات", "صيانة كاميرات"),
-    ("📡", "تركيب دش", "تركيب طبق دش"),
-    ("🛠️", "صيانة دش", "صيانة دش")
+restaurants_info = [
+    ("🍔", "برجر كنج", "برجر وفرايز"),
+    ("🍕", "بيتزا هت", "بيتزا شهية"),
+    ("🍗", "تشكن الذيذ", "دجاج مشوي"),
+    ("🍜", "شاورما الشام", "شاورما ولحمة")
 ]
 
 with col1:
-    st.info(f"{services_info[0][0]} **{services_info[0][1]}**")
+    st.info(f"{restaurants_info[0][0]} **{restaurants_info[0][1]}**\n{restaurants_info[0][2]}")
 with col2:
-    st.info(f"{services_info[1][0]} **{services_info[1][1]}**")
+    st.info(f"{restaurants_info[1][0]} **{restaurants_info[1][1]}**\n{restaurants_info[1][2]}")
 with col3:
-    st.info(f"{services_info[2][0]} **{services_info[2][1]}**")
+    st.info(f"{restaurants_info[2][0]} **{restaurants_info[2][1]}**\n{restaurants_info[2][2]}")
 with col4:
-    st.info(f"{services_info[3][0]} **{services_info[3][1]}**")
+    st.info(f"{restaurants_info[3][0]} **{restaurants_info[3][1]}**\n{restaurants_info[3][2]}")
 
 st.markdown("---")
 
 # النموذج الرئيسي
 st.markdown("### ✍️ نموذج الطلب")
 
-with st.form("service_request", clear_on_submit=True):
+with st.form("delivery_order", clear_on_submit=True):
     
     # الصف الأول
     col1, col2 = st.columns(2)
     with col1:
-        client_name = st.text_input(
+        customer_name = st.text_input(
             "👤 الأسم بالكامل",
             placeholder="أدخل اسمك الكامل",
             key="name"
         )
     with col2:
         phone_number = st.text_input(
-            "📱 رقم الواتساب",
-            placeholder="أدخل رقم الواتساب (مثال: 201012345678)",
+            "📱 رقم الهاتف",
+            placeholder="أدخل رقم الهاتف (مثال: 201012345678)",
             key="phone"
         )
     
     # الصف الثاني
     col1, col2 = st.columns(2)
     with col1:
-        service_type = st.selectbox(
-            "🔍 نوع الخدمة المطلوبة",
+        restaurant = st.selectbox(
+            "🏪 اختر المطعم",
             [
-                "تركيب كاميرات مراقبة 📹",
-                "صيانة كاميرات 🔧",
-                "تركيب طبق دش 📡",
-                "صيانة دش 🛠️"
+                "برجر كنج 🍔",
+                "بيتزا هت 🍕",
+                "تشكن الذيذ 🍗",
+                "شاورما الشام 🍜"
             ],
-            key="service"
+            key="restaurant"
         )
     with col2:
-        preferred_date = st.date_input(
-            "📅 موعد المعاينة المفضل",
-            key="date"
+        delivery_time = st.selectbox(
+            "⏱️ وقت التوصيل المفضل",
+            [
+                "في أسرع وقت ممكن ⚡",
+                "بعد 30 دقيقة",
+                "بعد 1 ساعة",
+                "بعد 2 ساعة"
+            ],
+            key="time"
         )
     
-    # العنوان
-    address = st.text_area(
-        "🏠 العنوان بالتفصيل",
-        placeholder="أدخل العنوان كاملاً (المحافظة - المدينة - الشارع - الحي)",
-        height=100,
-        key="address"
-    )
+    # الصف الثالث
+    col1, col2 = st.columns(2)
+    with col1:
+        order_items = st.text_area(
+            "🍽️ قائمة الطلب",
+            placeholder="مثال:\n- برجر بيج 2x\n- فرايز وسط 1x\n- كولا 2x\n- موتزاريلا استيك",
+            height=100,
+            key="items"
+        )
+    with col2:
+        delivery_address = st.text_area(
+            "📍 عنوان التوصيل",
+            placeholder="أدخل العنوان كاملاً:\n- المحافظة\n- المدينة\n- الشارع\n- رقم العمارة/البيت\n- نقطة مرجعية",
+            height=100,
+            key="address"
+        )
     
     # الملاحظات الإضافية
     notes = st.text_area(
-        "📝 ملاحظات إضافية",
-        placeholder="أي تفاصيل إضافية مهمة...",
-        height=80,
+        "📝 ملاحظات إضافية (اختيارية)",
+        placeholder="مثال: بدون بصل، إضافة صلصة حارة...",
+        height=70,
         key="notes"
     )
     
@@ -157,19 +172,19 @@ with st.form("service_request", clear_on_submit=True):
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         submit_button = st.form_submit_button(
-            "✅ إرسال الطلب",
+            "✅ تأكيد الطلب",
             use_container_width=True
         )
 
 # معالجة الطلب
 if submit_button:
     # التحقق من البيانات
-    if not client_name or not client_name.strip():
-        st.error("❌ برجاء إدخال الأسم بالكامل")
+    if not customer_name or not customer_name.strip():
+        st.error("❌ برجاء إدخال اسمك الكامل")
         st.stop()
     
     if not phone_number or not phone_number.strip():
-        st.error("❌ برجاء إدخال رقم الواتساب")
+        st.error("❌ برجاء إدخال رقم الهاتف")
         st.stop()
     
     # التحقق من صيغة رقم الهاتف
@@ -178,40 +193,46 @@ if submit_button:
         st.error("❌ رقم الهاتف غير صحيح. يجب أن يكون رقماً بـ 10 أرقام على الأقل")
         st.stop()
     
-    if not address or not address.strip():
-        st.error("❌ برجاء إدخال العنوان بالتفصيل")
+    if not delivery_address or not delivery_address.strip():
+        st.error("❌ برجاء إدخال عنوان التوصيل بالتفصيل")
+        st.stop()
+    
+    if not order_items or not order_items.strip():
+        st.error("❌ برجاء إدخال الطلبات")
         st.stop()
     
     # إذا كانت جميع البيانات صحيحة
-    request_data = {
-        "name": client_name.strip(),
+    order_data = {
+        "customer_name": customer_name.strip(),
         "phone": phone_number.strip(),
-        "service": service_type.split()[0],  # إزالة الإيموجي
-        "address": address.strip(),
-        "date": str(preferred_date),
+        "restaurant": restaurant.split()[0],  # إزالة الإيموجي
+        "items": order_items.strip(),
+        "delivery_address": delivery_address.strip(),
+        "delivery_time": delivery_time,
         "notes": notes.strip(),
+        "status": "تم استقبال الطلب ✅",
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
     
-    # حفظ البيانات (يمكن تطويرها لـ Firebase لاحقاً)
+    # حفظ البيانات
     try:
-        requests_file = Path("service_requests.json")
-        requests_list = []
+        orders_file = Path("delivery_orders.json")
+        orders_list = []
         
-        if requests_file.exists():
-            with open(requests_file, 'r', encoding='utf-8') as f:
-                requests_list = json.load(f)
+        if orders_file.exists():
+            with open(orders_file, 'r', encoding='utf-8') as f:
+                orders_list = json.load(f)
         
-        requests_list.append(request_data)
+        orders_list.append(order_data)
         
-        with open(requests_file, 'w', encoding='utf-8') as f:
-            json.dump(requests_list, f, ensure_ascii=False, indent=2)
+        with open(orders_file, 'w', encoding='utf-8') as f:
+            json.dump(orders_list, f, ensure_ascii=False, indent=2)
     except Exception as e:
         st.warning(f"⚠️ تم استلام طلبك لكن حدثت مشكلة في الحفظ: {str(e)}")
     
     # رسالة النجاح
-    st.success(f"✅ تم استلام طلبك بنجاح يا {client_name}!")
-    st.info(f"📞 سنتواصل معك عبر واتساب على الرقم: {phone_number}")
+    st.success(f"✅ تم استقبال طلبك بنجاح يا {customer_name}!")
+    st.info(f"📞 سيتم التوصيل خلال وقت قصير على الرقم: {phone_number}")
     st.balloons()
     
     # عرض ملخص الطلب
@@ -219,22 +240,26 @@ if submit_button:
     summary_col1, summary_col2 = st.columns(2)
     
     with summary_col1:
-        st.write(f"**👤 الأسم:** {client_name}")
-        st.write(f"**📱 الواتساب:** {phone_number}")
-        st.write(f"**🔍 الخدمة:** {service_type}")
+        st.write(f"**👤 الأسم:** {customer_name}")
+        st.write(f"**📱 الهاتف:** {phone_number}")
+        st.write(f"**🏪 المطعم:** {restaurant}")
     
     with summary_col2:
-        st.write(f"**🏠 العنوان:** {address}")
-        st.write(f"**📅 الموعد:** {preferred_date}")
-        if notes:
-            st.write(f"**📝 ملاحظات:** {notes}")
+        st.write(f"**⏱️ وقت التوصيل:** {delivery_time}")
+        st.write(f"**🍽️ الطلب:**")
+        st.code(order_items)
+    
+    st.write(f"**📍 العنوان:** {delivery_address}")
+    if notes:
+        st.write(f"**📝 ملاحظات:** {notes}")
 
 # Footer
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #999; font-size: 0.9rem; margin-top: 2rem;">
-    <p>⚙️ <b>مركز المهندس للتركيبات</b></p>
-    <p>متخصصون في تركيب وصيانة كاميرات المراقبة والأطباق الدشية</p>
-    <p>جودة عالية • أسعار منافسة • خدمة عملاء ممتازة</p>
+    <p>🍔 <b>فودي - تطبيق توصيل الطلبات</b></p>
+    <p>اطلب من أفضل المطاعم وسيصل إليك بسرعة</p>
+    <p>سرعة التوصيل • أسعار منخفضة • جودة عالية</p>
+    <p style="font-size: 0.8rem; margin-top: 1rem;">استخدم فودي الآن واستمتع بتجربة توصيل رائعة</p>
 </div>
 """, unsafe_allow_html=True)
