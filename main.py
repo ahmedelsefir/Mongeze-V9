@@ -15,19 +15,19 @@ st.markdown("---")
 st.markdown("<h3 style='text-align: center; color: #1E3A8A;'>اختر القسم الذي تود الدخول إليه:</h3>", unsafe_allow_html=True)
 st.write("\n")
 
-# 3. أزرار الانتقال (استدعاء مباشر للملفات بأسمائها العربية الحالية داخل المجلد المتاح)
+# 3. أزرار الانتقال القياسية (الآن السيرفر سيتعرف عليها تلقائياً فوراً)
 if st.button("🛒 دخول بوابة العميل", use_container_width=True):
-    st.switch_page(" : pages /1_العميل.py")
+    st.switch_page("pages/1_Client.py")
 
 st.write("\n")
 
 if st.button("🚖 دخول بوابة السائق", use_container_width=True):
-    st.switch_page(" : pages /2_السائق.py")
+    st.switch_page("pages/2_Driver.py")
 
 st.write("\n")
 
 if st.button("📊 دخول بوابة المسؤول", use_container_width=True):
-    st.switch_page(" : pages /3_المسؤول.py")
+    st.switch_page("pages/3_Admin.py")
 
 # 4. تذييل الصفحة
 st.markdown("---")
