@@ -13,23 +13,14 @@ st.markdown("<p style='text-align: center; font-size: 1.2rem;'>نظام الإد
 st.markdown("---")
 
 # تقسيم الشاشة لأزرار دخول سريعة
-st.subheader("اختر القسم الذي تود الدخول إليه:")
-col1, col2, col3 = st.columns(3)
+if st.button("🛒 دخول العميل", use_container_width=True):
+    st.switch_page("pages/1_Client.py")
 
-with col1:
-    st.info("### 🛒 بوابة العميل")
-    if st.button("دخول العميل"):
-        st.switch_page("pages/1_العميل.py")
+if st.button("🚖 دخول السائق", use_container_width=True):
+    st.switch_page("pages/2_Driver.py")
 
-with col2:
-    st.success("### 🚕 بوابة السائق")
-    if st.button("دخول السائق"):
-        st.switch_page("pages/2_السائق.py")
-
-with col3:
-    st.warning("### 🏛️ لوحة المسؤول")
-    if st.button("دخول المسؤول"):
-        st.switch_page("pages/3_المسؤول.py")
+if st.button("📊 بوابة المسؤول", use_container_width=True):
+    st.switch_page("pages/3_Admin.py")
 
 st.markdown("---")
 st.caption("تم التصميم بواسطة فريق مُنجز التقني")
