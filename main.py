@@ -1,4 +1,5 @@
 import streamlit as st
+import os
 
 # 1. إعدادات الصفحة الأساسية للمنصة
 st.set_page_config(
@@ -15,19 +16,25 @@ st.markdown("---")
 st.markdown("<h3 style='text-align: center; color: #1E3A8A;'>اختر القسم الذي تود الدخول إليه:</h3>", unsafe_allow_html=True)
 st.write("\n")
 
-# 3. أزرار الانتقال بين الصفحات (تم تعديل المسار ليتوافق مع نظام السيرفر)
+# الحصول على المسار الحالي للمشروع لضمان التوجيه الصحيح بنسبة 100%
+current_dir = os.path.dirname(__file__)
+
+# 3. أزرار الانتقال الذكية باستخدام المسار المباشر المستقر
 if st.button("🛒 دخول بوابة العميل", use_container_width=True):
-    st.switch_page("1_العميل")
+    target_page = os.path.join(current_dir, "pages", "1_العميل.py")
+    st.switch_page(target_page)
 
 st.write("\n")
 
 if st.button("🚖 دخول بوابة السائق", use_container_width=True):
-    st.switch_page("2_السائق")
+    target_page = os.path.join(current_dir, "pages", "2_السائق.py")
+    st.switch_page(target_page)
 
 st.write("\n")
 
 if st.button("📊 دخول بوابة المسؤول", use_container_width=True):
-    st.switch_page("3_المسؤول")
+    target_page = os.path.join(current_dir, "pages", "3_المسؤول.py")
+    st.switch_page(target_page)
 
 # 4. تذييل الصفحة
 st.markdown("---")
