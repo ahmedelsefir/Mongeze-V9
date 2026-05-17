@@ -1,46 +1,45 @@
 import streamlit as st
-import pandas as pd
-from datetime import datetime
+from firebase_admin import firestore
 
-# إعدادات الصفحة لتبدو احترافية
-st.set_page_config(page_title="واجهة السائق - منجز", layout="wide")
+# التأكد من الاتصال بقاعدة البيانات
+try:
+    db = firestore.client()
+except Exception:
+    st.error("فشل الاتصال بقاعدة البيانات")
 
-st.markdown("<h1 style='text-align: center; color: #2E86C1;'>🚀 لوحة تحكم السائق</h1>", unsafe_allow_html=True)
+st.set_page_config(page_title="بوابة السائق - منجز", layout="wide")
 
-# الجزء العلوي: حالة السائق
-col1, col2 = st.columns([3, 1])
-with col2:
-    status = st.toggle("الحالة: متصل الآن", value=True)
-    if status:
-        st.success("أنت متاح لاستلام الطلبات")
-    else:
-        st.error("أنت الآن أوفلاين")
+st.markdown("<h1 style='text-align: center; color: #00A86B;'>🚖 بوابة السائق الذكية</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center;'>الطلبات المتاحة حالياً في النظام</p>", unsafe_allow_html=True)
+st.markdown("---")
 
-# تبويبات لمتابعة العمل
-tab1, tab2, tab3 = st.tabs(["📥 الطلبات المتاحة", "🛣️ رحلة جارية", "💰 أرباحي"])
+st.subheader("📥 طلبات العملاء الواردة حالياً:")
 
-with tab1:
-    st.subheader("الطلبات القريبة منك")
-    # محاكاة لبيانات قادمة من العميل
-    mock_orders = {
-        "العميل": ["أحمد محمد", "سارة علي"],
-        "الموقع": ["الدقي - شارع التحرير", "مدينة نصر - عباس العقاد"],
-        "نوع الطلب": ["تاكسي 🚕", "توصيل طعام 🍔"],
-        "المسافة": ["2.5 كم", "4.2 كم"]
-    }
-    df = pd.DataFrame(mock_orders)
-    st.table(df)
+try:
+    # جلب جميع الطلبات من Firebase وترتيبها من الأحدث للأقدم
+    orders_ref = db.collection("orders").order_by("timestamp", direction=firestore.Query.DESCENDING).stream()
     
-    order_id = st.selectbox("اختر رقم الطلب لقبوله:", [1, 2])
-    if st.button("✅ قبول الطلب والتحرك الآن", use_container_width=True):
-        st.info(f"تم قبول الطلب رقم {order_id}. يرجى التوجه لموقع العميل.")
+    has_orders = False
+    for order in orders_ref:
+        has_orders = True
+        order_data = order.to_dict()
+        
+        # تصميم كارت احترافي لكل طلب يظهر للسائق
+        with st.container():
+            st.markdown(f"""
+            <div style='background-color: #f0f2f6; padding: 15px; border-radius: 10px; margin-bottom: 10px; border-right: 5px solid #00A86B;'>
+                <h4>👤 العميل: {order_data.get('client_name')}</h4>
+                <p>📦 <b>تفاصيل الطلب:</b> {order_data.get('order_details')}</p>
+                <p>🚨 <b>حالة الطلب:</b> <span style='color: #FF6B35;'>{order_data.get('status')}</span></p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # زر إضافي للسائق لقبول الشحنة
+            if st.button(f"قبول طلب {order_data.get('client_name')}", key=order.id):
+                st.success("تم قبول الطلب وجاري توجيهك للعميل!")
 
-with tab2:
-    st.subheader("تفاصيل الرحلة الحالية")
-    st.warning("لا توجد رحلة نشطة حالياً. اذهب لتبويب الطلبات المتاحة.")
+    if not has_orders:
+        st.info("لا توجد طلبات جديدة حالياً. ابقَ مستعداً!")
 
-with tab3:
-    st.subheader("ملخص الأرباح اليومية")
-    c1, c2 = st.columns(2)
-    c1.metric("إجمالي الدخل", "450 EGP")
-    c2.metric("عدد الرحلات", "8")
+except Exception as e:
+    st.error(f"تعذر جلب البيانات: {e}")
