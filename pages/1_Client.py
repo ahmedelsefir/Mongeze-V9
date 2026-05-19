@@ -3,8 +3,9 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 import json
 
-st.set_page_config(page_title="بوابة العميل الذكية - منجز", layout="wide")
+st.set_page_config(page_title="بوابة العميل - منجز", layout="wide")
 
+# --- تفعيل الفايربيز ---
 try:
     if not firebase_admin._apps:
         key_dict = json.loads(st.secrets["textkey"])
@@ -12,97 +13,74 @@ try:
         firebase_admin.initialize_app(cred)
     db = firestore.client()
 except Exception as e:
-    st.error(f"❌ فشل الاتصال بقاعدة البيانات: {e}")
+    st.error(f"❌ اتصال قاعدة البيانات مقطوع: {e}")
     db = None
 
-col_main, col_settings = st.columns([2, 1])
+# --- الهيكل الجانبي (طبق الأصل من واجهة دي دي المرفقة) ---
+st.sidebar.markdown("""
+<div style='text-align: center; padding: 10px;'>
+    <img src='https://cdn-icons-png.flaticon.com/512/3135/3135715.png' style='width: 80px; border-radius: 50%;'>
+    <h3 style='margin: 10px 0 5px 0;'>AHMED mostafa</h3>
+    <p style='color: #888; font-size: 14px;'>تعديل المعلومات الشخصية ✏️</p>
+</div>
+""", unsafe_allow_html=True)
 
-with col_main:
-    st.markdown("<h2 style='color: #1E3A8A; text-align: right;'>🛒 إنشاء طلب خدمة توصيل ومزايدة</h2>", unsafe_allow_html=True)
+menu = st.sidebar.radio("🗺️ قائمة العميل الرئيسية", [
+    "🚖 طلب مشوار / توصيل طرد", 
+    "📜 مشاويري (سجل الرحلات)", 
+    "💳 الدفع والمحفظة", 
+    "🛡️ مركز السلامة والطوارئ",
+    "⚙️ الإعدادات والخصومات"
+])
+
+# --- تشغيل الخصائص بناءً على القائمة ---
+if menu == "🚖 طلب مشوار / توصيل طرد":
+    st.markdown("<h3 style='color: #1E3A8A;'>🛒 طلب خدمة توصيل ومزايدة حية</h3>", unsafe_allow_html=True)
     
-    with st.form("order_bidding_form"):
-        client_name = st.text_input("👤 اسم العميل بالكامل")
-        order_details = st.text_area("📝 تفاصيل ومحتويات الشحنة بدقة")
+    with st.form("order_form"):
+        client_name = st.text_input("👤 اسم العميل بالكامل", value="أحمد مصطفى")
+        order_details = st.text_area("📝 تفاصيل الشحنة أو وجهة المشوار بدقة")
         suggested_price = st.number_input("💰 ميزانيتك المقترحة للطلب (جنيه)", min_value=10, value=30)
-        submit_btn = st.form_submit_button("🚀 نشر الطلب لاستقبال عروض الأسعار")
+        phone = st.text_input("📱 رقم هاتف التواصل", value="+20 1000000000")
         
-        if submit_btn and client_name and order_details:
-            if db is not None:
-                db.collection("orders").add({
-                    "client_name": client_name,
-                    "order_details": order_details,
-                    "suggested_price": suggested_price,
-                    "status": "processing",
-                    "timestamp": firestore.SERVER_TIMESTAMP
-                })
-                st.success("🎯 تم نشر طلبك بنجاح على خريطة المزايدة الحية للسائقين!")
+        submit = st.form_submit_button("🚀 نشر الطلب لاستقبال عروض السائقين")
+        if submit and db:
+            db.collection("orders").add({
+                "client_name": client_name,
+                "order_details": order_details,
+                "suggested_price": suggested_price,
+                "phone": phone,
+                "status": "processing",
+                "timestamp": firestore.SERVER_TIMESTAMP
+            })
+            st.success("🎯 تم نشر طلبك بنجاح وفي انتظار مزايدات الكباتن!")
 
+    # مراقبة وتتبع الطلبات الحالية (التي ظهرت في صورتك الأخيرة)
     st.markdown("---")
-    st.markdown("<h3 style='color: #00A86B; text-align: right;'>📋 لوحة متابعة وتتبع طلباتك الحالية</h3>", unsafe_allow_html=True)
-    
-    if db is not None:
-        try:
-            # جلب كافة الحالات النشطة بما فيها حالات الانتظار والتقييم لمنع اختفاء الطلبات فجأة
-            all_my_orders = db.collection("orders").where("status", "in", ["processing", "🚖 جاري الاستلام", "🚚 جاري التوصيل", "✅ في انتظار تقييم الطرفين"]).stream()
-            has_data = False
-            
-            for order in all_my_orders:
-                has_data = True
-                order_info = order.to_dict()
-                order_id = order.id
-                status = order_info.get("status")
-                
-                if status == "processing":
-                    st.markdown(f"📦 طلبك لـ **({order_info.get('order_details')[:25]}...)** يتلقى عروضاً الآن:")
-                    bids = db.collection("orders").document(order_id).collection("bids").stream()
-                    has_bids = False
-                    for bid in bids:
-                        has_bids = True
-                        bid_data = bid.to_dict()
-                        
-                        col_text, col_action = st.columns([2, 1])
-                        with col_text:
-                            st.info(f"🚖 عرض من {bid_data.get('driver_name')}: السعر المقترح {bid_data.get('proposed_price')} جنيه")
-                        with col_action:
-                            if st.button("🤝 قبول السعر", key=f"accept_action_{order_id}_{bid_data.get('driver_name')}"):
-                                db.collection("orders").document(order_id).update({
-                                    "status": "🚖 جاري الاستلام",
-                                    "final_price": bid_data.get('proposed_price'),
-                                    "driver_assigned": bid_data.get('driver_name')
-                                })
-                                st.rerun()
-                    if not has_bids:
-                        st.caption("⏳ في انتظار تقديم أول عرض مالي من المناديب...")
-                        
-                elif status in ["🚖 جاري الاستلام", "🚚 جاري التوصيل"]:
-                    # صوت تنبيه فوري وبث حي يعلم العميل بتحرك السائق الحقيقي
-                    st.markdown('<audio autoplay><source src="https://assets.mixkit.co/active_storage/sfx/911/911-600.wav" type="audio/wav"></audio>', unsafe_allow_html=True)
-                    st.markdown(f"""
-                    <div style='background-color: #EFF6FF; padding: 15px; border-radius: 8px; border-left: 5px solid #3B82F6; color:#333; text-align: right;'>
-                        <h4>✅ تم قبول طلبك وبدأ التنفيذ على الأرض!</h4>
-                        <p>👤 <b>المندوب المسؤول:</b> {order_info.get('driver_assigned')}</p>
-                        <p>💰 <b>تكلفة التوصيل المتفق عليها:</b> {order_info.get('final_price')} جنيه</p>
-                        <p style='font-size:16px;'>🚨 <b>الحالة اللوجستية الحية الآن:</b> <span style='color:#3B82F6; font-weight:bold;'>{status}</span></p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                elif status == "✅ في انتظار تقييم الطرفين":
-                    st.success(f"🎉 لقد أعلن كابتن {order_info.get('driver_assigned')} عن وصول وتسليم الشحنة بنجاح!")
-                    
-                    # نموذج التقييم الحقيقي بالنجوم للعميل واجهة احترافية
-                    client_rating = st.selectbox("⭐ يرجى تقييم أداء وأمانة المندوب:", [5, 4, 3, 2, 1], key=f"client_rate_box_{order_id}")
-                    if st.button("💾 تأكيد واستلام الشحنة وإرسال التقييم", key=f"btn_confirm_delivery_{order_id}", use_container_width=True):
-                        db.collection("orders").document(order_id).update({
-                            "client_rating_to_driver": client_rating
-                        })
-                        st.success("❤️ شكرًا لك! تم إغلاق وتوثيق الرحلة بالكامل بنجاح.")
-            
-            if not has_data:
-                st.info("💡 لا توجد طلبات نشطة أو شحنات جاري تتبعها لك حالياً.")
-        except Exception as e:
-            st.error(f"خطأ: {e}")
+    st.markdown("#### 📋 مراقبة وتتبع طلباتك الحالية")
+    if db:
+        my_orders = db.collection("orders").where("client_name", "==", "أحمد مصطفى").stream()
+        for o in my_orders:
+            o_data = o.to_dict()
+            status = o_data.get("status")
+            if status != "⭐ تم الإغلاق والتقييم بالكامل":
+                st.info(f"📍 طلبك: {o_data.get('order_details')[:20]}... | الحالة: {status} | السائق المعين: {o_data.get('driver_assigned', 'جاري البحث...')}")
 
-with col_settings:
-    st.markdown("<h3 style='text-align: right;'>⚙️ الملف الشخصي للعميل</h3>", unsafe_allow_html=True)
-    st.text_input("📱 رقم الهاتف", value="+20 1000000000")
-    st.toggle("🔔 إشعارات صوتية حية فورية", value=True)
+elif menu == "📜 مشاويري (سجل الرحلات)":
+    st.subheader("📜 سجل مشاويرك السابقة")
+    st.info("هنا تظهر قائمة بكافة الرحلات التي قمت بها مع تفاصيل السائقين والأسعار لتسهيل الرجوع إليها.")
+
+elif menu == "💳 الدفع والمحفظة":
+    st.subheader("💳 الإدارة المالية للمحفظة")
+    col1, col2 = st.columns(2)
+    col1.metric("الرصيد الحالي", "0.00 جنيه")
+    col2.selectbox("طريقة الدفع الافتراضية", ["نقداً (Cash)", "بطاقة ائتمان (Visa/Mastercard)", "محفظة إلكترونية"])
+
+elif menu == "🛡️ مركز السلامة والطوارئ":
+    st.subheader("🛡️ مركز السلامة والحماية")
+    st.error("🚨 زر الطوارئ (SOS): اضغط هنا لمشاركة موقعك فوراً مع الإدارة وجهات الاتصال في حالة أي تجاوز أو خطر.")
+
+elif menu == "⚙️ الإعدادات والخصومات":
+    st.subheader("⚙️ إعدادات التطبيق والخصومات")
+    st.text_input("إضافة كود الخصم (كوبون)", placeholder="ادخل رمز الكوبون هنا")
+    st.toggle("تفعيل التنبيهات الفورية الفويس للطلبات")
