@@ -5,7 +5,7 @@ import json
 
 st.set_page_config(page_title="بوابة السائق - منجز", layout="wide")
 
-# --- تفعيل قاعدة البيانات ---
+# --- تفعيل الفايربيز ---
 try:
     if not firebase_admin._apps:
         key_dict = json.loads(st.secrets["textkey"])
@@ -13,52 +13,49 @@ try:
         firebase_admin.initialize_app(cred)
     db = firestore.client()
 except Exception as e:
-    st.error(f"❌ فشل الاتصال بقاعدة البيانات: {e}")
+    st.error(f"❌ اتصال الفايربيز مقطوع: {e}")
     db = None
 
-DRIVER_NAME = "الكابتن أحمد"
+DRIVER_NAME = "ahmed mostafa mohammed"
 
-# ==========================================
-# 🛑 رادار الأمان والحماية الفوري (رؤيتك العبقرية للحماية من النصب)
-# ==========================================
-is_banned = False
-if db is not None:
-    try:
-        # فحص هل اسم هذا السائق مدرج في القائمة السوداء بالفايربيز أم لا
-        ban_check = db.collection("banned_users").document(DRIVER_NAME).get()
-        if ban_check.exists:
-            is_banned = True
-            ban_info = ban_check.to_dict()
-    except Exception as e:
-        pass
+# --- رادار الحظر التلقائي والأمان (منع التجاوزات) ---
+if db:
+    ban_check = db.collection("banned_users").document(DRIVER_NAME).get()
+    if ban_check.exists:
+        st.error("🚫 هذا الحساب مجمد مؤقتاً لتجاوز السياسات المالية. يرجى التواصل مع الدعم الفني لفك الحظر.")
+        st.stop()
 
-# لو الحساب محظور، اقطع الشاشة والاتصال تماماً واقفل التطبيق في وجهه
-if is_banned:
-    st.markdown(f"""
-    <div style='background-color: #000000; padding: 40px; border-radius: 15px; border: 4px solid #DC2626; text-align: center; color: white; margin-top: 50px;'>
-        <h1 style='color: #DC2626;'>🚫 حسابك مجمد ومحظور مؤقتاً!</h1>
-        <h3 style='color: #FFF;'>عذراً يا كابتن أحمد، تم رصد تجاوز للسياسات أو بلاغ معلق ضدك.</h3>
-        <p style='background-color: #1E1E1E; padding: 15px; border-radius: 8px; color: #FFA500;'>
-            <b>⚠️ سبب الحظر المرصود بالسيستم:</b> {ban_info.get('reason', 'تجاوز شروط وقوانين الأمان للمنصة')}
-        </p>
-        <p style='color: #AAA; font-size: 14px;'>🛡️ تم اتخاذ هذا الإجراء بواسطة: {ban_info.get('banned_by', 'غرفة العمليات المركزية')}</p>
-        <h4 style='color: #38BDF8;'>📞 يرجى التواصل فوراً مع إدارة الدعم الفني لمنصة مُنجز لحل النزاع.</h4>
-    </div>
-    """, unsafe_allow_html=True)
-    st.stop() # أمر برمجي صارم يوقف قراءة بقية الملف والأزرار نهائياً!
+# --- واجهة المندوب الاحترافية (محاكاة دقيقة للصورة المرفقة) ---
+st.markdown(f"""
+<div style='background-color: #FFF; padding: 20px; border-radius: 12px; border: 1px solid #E5E7EB; text-align: center; color: #333;'>
+    <img src='https://cdn-icons-png.flaticon.com/512/4128/4128176.png' style='width: 70px; border-radius: 50%;'>
+    <h2 style='margin: 5px 0;'>{DRIVER_NAME} ⭐⭐⭐⭐⭐</h2>
+    <span style='background-color: #10B981; color: white; padding: 3px 10px; border-radius: 20px; font-size: 12px;'>🆔 مظهر هوية المرسول موثق</span>
+</div>
+""", unsafe_allow_html=True)
 
-# ==========================================
-# 🟢 الكود الطبيعي وبقية الواجهة تفتح فقط لو الحساب سليم وآمن
-# ==========================================
-st.markdown("<h2 style='margin:0;'>🚖 بوابة الكابتن أحمد</h2>", unsafe_allow_html=True)
+# العدادات الضخمة الحقيقية المأخوذة من صورتك الحية بالملي
+st.markdown("###")
+col_stat1, col_stat2 = st.columns(2)
+with col_stat1:
+    st.metric(label="📊 الطلبات الموصلة الكلية", value="3,536 طلب")
+with col_stat2:
+    st.metric(label="💰 إجمالي الإيرادات المحققة", value="340,904.74 ج.م")
+
 st.markdown("---")
 
-tab_offers, tab_active_order, tab_settings = st.tabs(["📋 طلبات المزايدة الحية", "📍 الشحنة الحالية والتنفيذ", "⚙️ الإعدادات"])
+# القائمة التفاعلية للمندوب
+driver_menu = st.selectbox("🗂️ تصفح شاشات المندوب والعمليات", [
+    "📥 استلام الطلبات والمزايدات الحية",
+    "💳 رصيد الحساب والمحفظة",
+    "💬 ملاحظات وشكاوى المستخدمين",
+    "⚙️ الدعم الفني والإعدادات"
+])
 
-# تبويب المزايدات
-with tab_offers:
-    st.subheader("📥 الطلبات المتاحة للمزايدة حالياً:")
-    if db is not None:
+if driver_menu == "📥 استلام الطلبات والمزايدات الحية":
+    st.subheader("📥 الطلبات الحرة المتاحة في الميدان")
+    
+    if db:
         orders_ref = db.collection("orders").where("status", "==", "processing").stream()
         has_orders = False
         for order in orders_ref:
@@ -66,55 +63,44 @@ with tab_offers:
             order_data = order.to_dict()
             order_id = order.id
             
-            st.markdown(f"<b>📍 طلب توصيل من: {order_data.get('client_name')}</b>", unsafe_allow_html=True)
-            col_p, col_b = st.columns([1, 1])
-            with col_p:
-                driver_bid = st.number_input("عرض السعر الخاص بك (جنيه)", min_value=10, value=int(order_data.get('suggested_price', 30)), key=f"bid_in_{order_id}")
-            with col_b:
-                st.write("#")
-                if st.button("🚀 إرسال العرض المالي", key=f"sub_btn_{order_id}", use_container_width=True):
-                    db.collection("orders").document(order_id).collection("bids").document(DRIVER_NAME).set({
-                        "driver_name": DRIVER_NAME, "proposed_price": driver_bid, "timestamp": firestore.SERVER_TIMESTAMP
-                    })
-                    st.success("🟢 تم إرسال العرض!")
-        if not has_orders:
-            st.info("📭 لا توجد طلبات جديدة.")
-
-# تبويب الشحنة الحالية والتنفيذ
-with tab_active_order:
-    st.subheader("📍 شاشة التنفيذ الحية")
-    if db is not None:
-        running_orders = db.collection("orders").where("driver_assigned", "==", DRIVER_NAME).where("status", "in", ["🚖 جاري الاستلام", "🚚 جاري التوصيل"]).stream()
-        has_running = False
-        for order in running_orders:
-            has_running = True
-            order_data = order.to_dict()
-            order_id = order.id
-            current_status = order_data.get("status")
+            st.markdown(f"""
+            <div style='background-color: #F9FAFB; padding: 15px; border-radius: 8px; border-right: 4px solid #10B981; margin-bottom:10px;'>
+                <b>📍 طلب من: {order_data.get('client_name')}</b><br>
+                <small>📦 التفاصيل: {order_data.get('order_details')}</small><br>
+                <b>💵 ميزانية العميل المقترحة: {order_data.get('suggested_price')} ج.م</b>
+            </div>
+            """, unsafe_allow_html=True)
             
-            st.info(f"📋 طلب نشط للعميل: {order_data.get('client_name')} | الحالة: {current_status}")
-            if current_status == "🚖 جاري الاستلام":
-                if st.button("📦 تم استلام الشحنة", key=f"pck_{order_id}", use_container_width=True):
-                    db.collection("orders").document(order_id).update({"status": "🚚 جاري التوصيل"})\
-                    ; st.rerun()
-            elif current_status == "🚚 جاري التوصيل":
-                if st.button("🏁 إنهاء وتوصيل الطلب بنجاح", key=f"dlv_{order_id}", use_container_width=True):
-                    db.collection("orders").document(order_id).update({"status": "✅ في انتظار تقييم الطرفين"})\
-                    ; st.rerun()
-                    
-        # لقطة تقييم الطرفين المتبادل
-        rating_orders = db.collection("orders").where("driver_assigned", "==", DRIVER_NAME).where("status", "==", "✅ في انتظار تقييم الطرفين").stream()
-        for r_order in rating_orders:
-            has_running = True
-            st.warning(f"🏁 يرجى تقييم العميل لإغلاق الطلب الكلي:")
-            driver_eval = st.slider("⭐ تقييم سلوك العميل:", 1, 5, 5, key=f"sld_{r_order.id}")
-            if st.button("💾 إرسال التقييم وحفظ الرحلة", key=f"sv_rt_{r_order.id}", use_container_width=True):
-                db.collection("orders").document(r_order.id).update({"status": "⭐ تم الإغلاق والتقييم بالكامل", "driver_rating_to_client": driver_eval})\
-                ; st.rerun()
-                
-        if not has_running:
-            st.info("🚖 لا توجد شحنات نشطة جاري تنفيذها حالياً.")
+            # منع تكرار الأزرار بإعطاء مفتاح فريد (Key) لكل زرار عبر الـ ID الخاص بالطلب
+            bid_price = st.number_input("اكتب عرض السعر الخاص بك (جنيه)", min_value=10, value=int(order_data.get('suggested_price')), key=f"price_{order_id}")
+            if st.button("🚀 إرسال العرض المالي للعميل", key=f"btn_{order_id}"):
+                db.collection("orders").document(order_id).collection("bids").document(DRIVER_NAME).set({
+                    "driver_name": DRIVER_NAME,
+                    "proposed_price": bid_price,
+                    "timestamp": firestore.SERVER_TIMESTAMP
+                })
+                st.success("✅ تم إرسال عرضك بنجاح! بانتظار موافقة العميل.")
+        if not has_orders:
+            st.info("📭 لا توجد طلبات جديدة معروضة في منطقتك حالياً.")
 
-# تبويب الإعدادات
-with tab_settings:
-    st.text_input("📱 رقم الهاتف", value="+20 123 456 789")
+elif driver_menu == "💳 رصيد الحساب والمحفظة":
+    st.subheader("💳 كشف حساب المحفظة للمندوب")
+    # مأخوذ من الصورة الرقمية الخاصة بك بالملي ليعلم المندوب مديونيته للمنصة
+    st.error("📉 رصيد الحساب الحالي بالمنصة: -160.96 ج.م")
+    st.warning("⚠️ رصيدك الحالي بالسالب نتيجة لخصم عمولات الرحلات الكاش الفائتة. يرجى شحن المحفظة لتجنب إيقاف الحساب تلقائياً.")
+    if st.button("➕ سداد المديونية وشحن الحساب"):
+        st.success("💳 جاري توجيهك لبوابة الدفع السريع لفودافون كاش / فيزا...")
+
+elif driver_menu == "💬 ملاحظات وشكاوى المستخدمين":
+    st.subheader("💬 ملاحظات المستهلكين والعملاء")
+    st.metric("عدد التقييمات الإيجابية والتعليقات", "1,182 تعليق")
+    st.markdown("""
+    * 🟢 *عميل مجهول:* "مندوب محترم وسريع جداً في التوصيل وأنصح بالتعامل معه."
+    * 🟢 *عميل مجهول:* "وصل الأكل سخن وبحالة ممتازة ملتزم بالوقت."
+    """)
+
+elif driver_menu == "⚙️ الدعم الفني والإعدادات":
+    st.subheader("📞 مركز دعم المناديب الفوري")
+    st.markdown("🔧 إذا واجهت مشكلة في التحصيل، أو تهرب العميل من الدفع، اضغط على الأيقونة الخضراء العائمة لفتح محادثة مباشرة مع مشرف الدعم الفني لحل النزاع فوراً.")
+    if st.button("📞 فتح خط اتصال مباشر بالطوارئ"):
+        st.info("جاري الاتصال بغرفة عمليات منجز...")
