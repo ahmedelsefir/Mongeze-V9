@@ -10,3 +10,5 @@ grpcio
 pytz
 google-cloud-storage
 numpy>=2.1.0
+idna>=3.15 # not directly required, pinned by Snyk to avoid a vulnerability
+pyjwt>=2.11.0 # not directly required, pinned by Snyk to avoid a vulnerability
