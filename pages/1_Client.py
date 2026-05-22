@@ -3,9 +3,9 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 import json
 
-st.set_page_config(page_title="بوابة العميل - منجز", layout="wide")
+st.set_page_config(page_title="منصة مُنجز - بوابة العميل", layout="wide", initial_sidebar_state="expanded")
 
-# --- تفعيل الفايربيز ---
+# --- الاتصال الآمن بالفايربيز ---
 try:
     if not firebase_admin._apps:
         key_dict = json.loads(st.secrets["textkey"])
@@ -13,74 +13,95 @@ try:
         firebase_admin.initialize_app(cred)
     db = firestore.client()
 except Exception as e:
-    st.error(f"❌ اتصال قاعدة البيانات مقطوع: {e}")
+    st.error(f"❌ اتصال السيرفر معطل: {e}")
     db = None
 
-# --- الهيكل الجانبي (طبق الأصل من واجهة دي دي المرفقة) ---
+# --- بروفايل العميل الجانبي (DiDi Style) ---
 st.sidebar.markdown("""
-<div style='text-align: center; padding: 10px;'>
-    <img src='https://cdn-icons-png.flaticon.com/512/3135/3135715.png' style='width: 80px; border-radius: 50%;'>
-    <h3 style='margin: 10px 0 5px 0;'>AHMED mostafa</h3>
-    <p style='color: #888; font-size: 14px;'>تعديل المعلومات الشخصية ✏️</p>
+<div style='text-align: center; background-color: #F3F4F6; padding: 15px; border-radius: 10px; margin-bottom: 20px;'>
+    <img src='https://cdn-icons-png.flaticon.com/512/3135/3135715.png' style='width: 75px; border-radius: 50%; border: 2px solid #1E3A8A;'>
+    <h3 style='margin: 10px 0 2px 0; color: #1E3A8A;'>AHMED mostafa</h3>
+    <a href='#' style='text-decoration: none; color: #6B7280; font-size: 13px;'>تعديل المعلومات الشخصية ✏️</a>
 </div>
 """, unsafe_allow_html=True)
 
-menu = st.sidebar.radio("🗺️ قائمة العميل الرئيسية", [
-    "🚖 طلب مشوار / توصيل طرد", 
-    "📜 مشاويري (سجل الرحلات)", 
-    "💳 الدفع والمحفظة", 
+# قائمة التحكم المتطابقة مع الصورة
+client_menu = st.sidebar.radio("📌 انتقل إلى:", [
+    "🚖 اطلب مشوار / توصيل الآن", 
+    "📜 مشاويري السابقة", 
+    "💳 محفظة الدفع الإلكتروني", 
     "🛡️ مركز السلامة والطوارئ",
-    "⚙️ الإعدادات والخصومات"
+    "⚙️ إعدادات التطبيق"
 ])
 
-# --- تشغيل الخصائص بناءً على القائمة ---
-if menu == "🚖 طلب مشوار / توصيل طرد":
-    st.markdown("<h3 style='color: #1E3A8A;'>🛒 طلب خدمة توصيل ومزايدة حية</h3>", unsafe_allow_html=True)
+if client_menu == "🚖 اطلب مشوار / توصيل الآن":
+    st.markdown("<h2 style='color: #1E3A8A; text-align: right;'>🛒 طلب خدمة توصيل ومزايدة حية</h2>", unsafe_allow_html=True)
     
-    with st.form("order_form"):
-        client_name = st.text_input("👤 اسم العميل بالكامل", value="أحمد مصطفى")
-        order_details = st.text_area("📝 تفاصيل الشحنة أو وجهة المشوار بدقة")
-        suggested_price = st.number_input("💰 ميزانيتك المقترحة للطلب (جنيه)", min_value=10, value=30)
-        phone = st.text_input("📱 رقم هاتف التواصل", value="+20 1000000000")
+    # واجهة إدخال الطلب المحدثة
+    with st.form("new_order_form", clear_on_submit=True):
+        c_name = st.text_input("👤 اسم العميل الافتراضي", value="أحمد مصطفى")
+        o_details = st.text_area("📝 ما الذي تريد توصيله؟ (اكتب تفاصيل الوجهة والشحنة بدقة)", placeholder="مثال: مطلوب استلام طرد من ماكدونالدز فرع الزمالك وتوصيله إلى المهندسين...")
+        s_price = st.number_input("💰 ميزانيتك المقترحة للطلب (جنيه)", min_value=10, value=30, step=5)
+        c_phone = st.text_input("📱 رقم هاتف التواصل الحركي", value="+20 1000000000")
         
-        submit = st.form_submit_button("🚀 نشر الطلب لاستقبال عروض السائقين")
-        if submit and db:
-            db.collection("orders").add({
-                "client_name": client_name,
-                "order_details": order_details,
-                "suggested_price": suggested_price,
-                "phone": phone,
-                "status": "processing",
-                "timestamp": firestore.SERVER_TIMESTAMP
-            })
-            st.success("🎯 تم نشر طلبك بنجاح وفي انتظار مزايدات الكباتن!")
+        submit_btn = st.form_submit_button("🚀 نشر الطلب لاستقبال عروض السائقين")
+        
+        if submit_btn and db:
+            if o_details.strip() == "":
+                st.warning("⚠️ يرجى كتابة تفاصيل الشحنة أولاً قبل النشر!")
+            else:
+                db.collection("orders").add({
+                    "client_name": c_name,
+                    "order_details": o_details,
+                    "suggested_price": s_price,
+                    "phone": c_phone,
+                    "status": "processing",
+                    "driver_assigned": "",
+                    "timestamp": firestore.SERVER_TIMESTAMP
+                })
+                st.success("🎯 عظيم يا هندسة! تم قيد ونشر طلبك في الميدان بنجاح.")
 
-    # مراقبة وتتبع الطلبات الحالية (التي ظهرت في صورتك الأخيرة)
+    # رادار تتبع الحالات النشطة (يمنع التكرار نهائياً)
     st.markdown("---")
-    st.markdown("#### 📋 مراقبة وتتبع طلباتك الحالية")
+    st.markdown("<h3 style='color: #10B981; text-align: right;'>📋 مراقبة وتتبع طلباتك الحالية</h3>", unsafe_allow_html=True)
+    
     if db:
-        my_orders = db.collection("orders").where("client_name", "==", "أحمد مصطفى").stream()
-        for o in my_orders:
-            o_data = o.to_dict()
-            status = o_data.get("status")
+        orders_stream = db.collection("orders").where("client_name", "==", "أحمد مصطفى").stream()
+        active_found = False
+        
+        for doc in orders_stream:
+            data = doc.to_dict()
+            status = data.get("status")
+            
+            # نعرض فقط الطلبات المفتوحة والنشطة
             if status != "⭐ تم الإغلاق والتقييم بالكامل":
-                st.info(f"📍 طلبك: {o_data.get('order_details')[:20]}... | الحالة: {status} | السائق المعين: {o_data.get('driver_assigned', 'جاري البحث...')}")
+                active_found = True
+                driver = data.get("driver_assigned", "جاري البحث عن كابتن...")
+                price = data.get("suggested_price", 30)
+                
+                st.markdown(f"""
+                <div style='background-color: #EFF6FF; padding: 15px; border-radius: 8px; border-right: 5px solid #3B82F6; margin-bottom: 10px; text-align: right;'>
+                    <b style='color: #1E3A8A; font-size: 16px;'>✔️ تم قبول طلبك وبدأ التنفيذ الحقيقي!</b><br>
+                    <span style='color: #333;'>👤 الكابتن المسؤول: {driver if driver else 'جاري الاستلام'}</span><br>
+                    <span style='color: #333;'>💰 السعر المتفق عليه: {price} جنيه</span><br>
+                    <span style='color: #DC2626;'>🚨 حالة التحرك الحية الآن: 🚖 {status}</span>
+                </div>
+                """, unsafe_allow_html=True)
+                
+        if not active_found:
+            st.info("💡 لا توجد لديك طلبات نشطة في الوقت الحالي. رحلاتك القادمة ستظهر هنا فورا.")
 
-elif menu == "📜 مشاويري (سجل الرحلات)":
-    st.subheader("📜 سجل مشاويرك السابقة")
-    st.info("هنا تظهر قائمة بكافة الرحلات التي قمت بها مع تفاصيل السائقين والأسعار لتسهيل الرجوع إليها.")
+elif client_menu == "📜 مشاويري السابقة":
+    st.subheader("📜 دفتر سجل رحلاتك")
+    st.caption("يتيح لك مراجعة الأماكن والأسعار السابقة لرحلاتك مع منجز.")
 
-elif menu == "💳 الدفع والمحفظة":
-    st.subheader("💳 الإدارة المالية للمحفظة")
-    col1, col2 = st.columns(2)
-    col1.metric("الرصيد الحالي", "0.00 جنيه")
-    col2.selectbox("طريقة الدفع الافتراضية", ["نقداً (Cash)", "بطاقة ائتمان (Visa/Mastercard)", "محفظة إلكترونية"])
+elif client_menu == "💳 محفظة الدفع الإلكتروني":
+    st.subheader("💳 رصيد حسابك الذكي")
+    st.metric("الرصيد المتاح للعميل", "0.00 ج.م")
 
-elif menu == "🛡️ مركز السلامة والطوارئ":
-    st.subheader("🛡️ مركز السلامة والحماية")
-    st.error("🚨 زر الطوارئ (SOS): اضغط هنا لمشاركة موقعك فوراً مع الإدارة وجهات الاتصال في حالة أي تجاوز أو خطر.")
+elif client_menu == "🛡️ مركز السلامة والطوارئ":
+    st.subheader("🛡️ نظام الأمان والسلامة")
+    st.error("🚨 زر الاستغاثة (SOS): بمجرد الضغط عليه، يتم إرسال موقعك الجغرافي الحي فوراً لغرفة عمليات وموظفي منجز للتدخل الصارم لحمايتك.")
 
-elif menu == "⚙️ الإعدادات والخصومات":
-    st.subheader("⚙️ إعدادات التطبيق والخصومات")
-    st.text_input("إضافة كود الخصم (كوبون)", placeholder="ادخل رمز الكوبون هنا")
-    st.toggle("تفعيل التنبيهات الفورية الفويس للطلبات")
+elif client_menu == "⚙️ إعدادات التطبيق":
+    st.subheader("⚙️ تفضيلات المستخدم والخصومات")
