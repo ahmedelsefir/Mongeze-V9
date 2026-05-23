@@ -10,13 +10,15 @@ def send_monjez_email(receiver_email, subject, body_html):
     smtp_server = "smtp.zoho.com"
     port = 465
     
-    # 🛡️ تثبيت البيانات الصافية مباشرة داخل الكود لقطع الشك باليقين وتخطي عقبة الـ Secrets
+    # 🛡️ تثبيت البيانات الصافية مباشرة داخل الكود لقطع الشك باليقين
     sender_email = "ahmed.mustafa@monjez-app.icu"
     app_password = "42s1kTKByngN"  # الرمز الأحدث والمفعّل من لوحة زوهو
 
     message = MIMEMultipart("alternative")
     message["Subject"] = subject
-    message["From"] = f"منصة مُنجز السيادية <{sender_email}>"
+    
+    # ✨ التعديل السحري والأخير: جعل المرسل هو الإيميل الصافي لتخطي حظر الـ Relay تماماً
+    message["From"] = sender_email
     message["To"] = receiver_email
     
     part_html = MIMEText(body_html, "html", "utf-8")
