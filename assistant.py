@@ -8,13 +8,12 @@ from email.mime.multipart import MIMEMultipart
 # ========================================================
 # 🔗 جلب الإعدادات الحساسة بأمان من بيئة العمل (Secrets)
 # ========================================================
-# بدلاً من كتابة الروابط والباسوردات نصاً، يتم استدعاؤها من سيرفر الاستضافة مباشرة لحمايتها
 try:
     FIREBASE_URL = st.secrets["FIREBASE_URL"]
     ZOHO_EMAIL = st.secrets["ZOHO_EMAIL"]
     ZOHO_PASSWORD = st.secrets["ZOHO_PASSWORD"]
 except Exception:
-    # قيم احتياطية للتشغيل المحلي في حالة عدم إعداد الملف السري بعد
+    # قيم احتياطية آمنة للتشغيل التجريبي المحلي
     FIREBASE_URL = "https://gen-lang-client-03099029-937be-default-rtdb.firebaseio.com"
     ZOHO_EMAIL = "ahmed.mustafa@monjez-app.icu"
     ZOHO_PASSWORD = "42s1kTKByngN"
@@ -46,10 +45,10 @@ def load_from_firebase(node):
 if "current_page" not in st.session_state:
     st.session_state["current_page"] = "الرئيسية"
 
-# جلب البيانات المالية الحية مباشرة من Firebase بدلاً من الذاكرة المؤقتة
+# جلب البيانات المالية الحية مباشرة من Firebase
 financial_records = load_from_firebase("financial_records")
 
-# إذا كانت قاعدة البيانات السحابية فارغة، نضع عينات تجريبية مؤقتة لضمان تشغيل النظام
+# إذا كانت قاعدة البيانات السحابية فارغة، نضع عينات مستقرة لضمان البناء المحاسبي
 if not financial_records:
     financial_records = [
         {"الرحلة": "TR-101", "العميل": "شركة الأمل للتجارة", "الكابتن": "أحمد محمود", "القيمة الأساسية (ج.م)": 1500.0, "الحالة": "مكتملة"},
@@ -87,7 +86,7 @@ def send_monjez_email(receiver_email, subject, body_html):
 # 3. شريط التحكم والتنقل العلوي المستقر
 # ========================================================
 st.title("🤖 مساعد منصة مُنجز الذكي")
-st.write("لوحة القيادة المركزية الفاعلة - النظام المالي ونظام المزايدات المحمي أمنياً.")
+st.write("لوحة القيادة المركزية الفاعلة - إدارة العمليات والدورة المالية اللوجستية.")
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
@@ -112,7 +111,6 @@ st.write("---")
 # --- أ: بوابة العملاء (نظام المزايدات الحية الفعال والمربوط بـ Firebase) ---
 if st.session_state["current_page"] == "العملاء":
     st.markdown("<h2 style='color: #1E88E5;'>🛒 بوابة طلب الشحنات ونظام المزايدة الحي</h2>", unsafe_allow_html=True)
-    st.info("هنا يطلب العميل الرحلة ويستقبل عروض الأسعار الحية، وعند قبول العرض ترحل البيانات فوراً للسحاب.")
     
     customer_name = st.text_input("اسم العميل أو الشركة طالبة الشحن:")
     delivery_address = st.text_input("عنوان التوصيل (من وإلى):")
@@ -151,9 +149,9 @@ if st.session_state["current_page"] == "العملاء":
                     st.success(f"☁️ تم ربط وحفظ شحنة كابتن مصطفى بنجاح!")
                     st.rerun()
     else:
-        st.warning("⚠️ يرجى إدخال البيانات لتشغيل لوحة التفاعل الحية ومقترحات الأسعار.")
+        st.warning("⚠️ يرجى إدخال اسم العميل وعنوان التوصيل لتشغيل لوحة التفاعل الحية ومقترحات الأسعار.")
 
-# --- ب: بوابة الكباتن وتوثيق المستندات كاملة ---
+# --- ب: بوابة الكباتن وتوثيق المستندات كاملة (بطاقة، رخص قيادة، رخص مركبات) ---
 elif st.session_state["current_page"] == "الكباتن":
     st.markdown("<h2 style='color: #4CAF50;'>🚖 مركز توثيق الفحص الأمني للمستندات (الكباتن)</h2>", unsafe_allow_html=True)
     
@@ -191,9 +189,9 @@ elif st.session_state["current_page"] == "الكباتن":
             if save_to_firebase("verified_drivers", driver_profile):
                 st.success(f"🎉 تم اعتماد الكابتن [{driver_name}] وحفظ ملفه الرقمي في سحابة Firebase بنجاح!")
         else:
-            st.error("❌ يرجى ملء كافة البيانات ورفع كافة المستندات المطلوبة (وجه وظهر).")
+            st.error("❌ تعذر التوثيق! يرجى رفع كافة المستندات المطلوبة (وجه وظهر لجميع البطاقات والرخص).")
 
-# --- ج: النظام الإداري والمالي المحاسبي ---
+# --- ج: النظام الإداري والمالي المحاسبي (بناء الفاتورة الحية المكتملة وإرسالها) ---
 elif st.session_state["current_page"] == "المالي":
     st.markdown("<h2 style='color: #9C27B0;'>📊 الهيكل المحاسبي والتقرير الضريبي وعوائد المزايدات السحابية</h2>", unsafe_allow_html=True)
     
@@ -222,10 +220,33 @@ elif st.session_state["current_page"] == "المالي":
     
     if st.button("إغلاق الدورة المستندية الضريبية وشحن التقرير للإدارة", use_container_width=True):
         if admin_audit_email:
-            report_html = f"<h2>📊 تقرير المحاسبة المعتمد لشحنات منصة منجز</h2>" # سيتم توليد التقرير المعتمد للإدارة
-            with st.spinner("جاري شحن وثيقة الإغلاق المالي..."):
+            # 📜 بناء قالب الفاتورة التفاعلي المكتمل وشحن الأرقام الحقيقية بداخل الهيكل
+            report_html = f"""
+            <div style="direction: rtl; text-align: right; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; border: 2px solid #9C27B0; padding: 25px; border-radius: 15px; max-width: 600px; margin: auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
+                <div style="text-align: center; margin-bottom: 20px;">
+                    <h2 style="color: #9C27B0; margin-bottom: 5px;">📊 تقرير المحاسبة والإقرار الضريبي المعتمد</h2>
+                    <strong style="color: #555;">منصة مُنجز السيادية اللوجستية</strong>
+                </div>
+                <hr style="border: 0; border-top: 2px dashed #9C27B0; margin-bottom: 20px;">
+                
+                <div style="background-color: #f3e5f5; padding: 20px; border-radius: 10px; color: #4a148c; font-size: 16px; line-height: 2;">
+                    • وعاء حركة الشحن الأساسي المعتمد: <b style="float: left;">{total_base_revenue:,.2f} ج.م</b><br>
+                    • قيمة ضريبة القيمة المضافة الإلزامية (14%): <b style="float: left; color: #d32f2f;">{total_vat_pool:,.2f} ج.م</b><br>
+                    <div style="border-top: 1px solid #ce93d8; margin: 10px 0;"></div>
+                    • 🏢 <b>إجمالي التحصيل المالي الشامل بالضريبة: <b style="float: left; font-size: 18px;">{grand_collected:,.2f} ج.م</b></b><br>
+                    <div style="border-top: 1px solid #ce93d8; margin: 10px 0;"></div>
+                    • مستحقات أسطول كباتن منجز (80%): <b style="float: left;">{drivers_share:,.2f} ج.م</b><br>
+                    • 💰 <b>صافي أرباح وعمولة منصة منجز (20%): <b style="float: left; color: #2e7d32;">{monjez_net_profit:,.2f} ج.م</b></b>
+                </div>
+                
+                <div style="text-align: center; margin-top: 25px; font-size: 12px; color: #777;">
+                    تم توليد هذا البيان المالي وتأمينه سحابياً من خوادم منجز المعتمدة تلقائياً.
+                </div>
+            </div>
+            """
+            with st.spinner("جاري شحن وثيقة الإغلاق المالي بقيم الفاتورة الحية..."):
                 if send_monjez_email(admin_audit_email, "⚠️ إشعار وعزل كشف الحساب الضريبي المالي - منصة مُنجز", report_html):
-                    st.success("✅ تم عزل الضرائب وإرسال التقرير بنجاح!")
+                    st.success("✅ تم عزل الضرائب وحساب الأرقام بدقة، وأُرسلت الفاتورة المكتملة إلى بريد الإدارة!")
 
 # --- د: الصفحة الرئيسية ---
 else:
