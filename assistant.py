@@ -18,7 +18,7 @@ except Exception:
     FIREBASE_URL = "https://gen-lang-client-03099029-937be-default-rtdb.firebaseio.com"
     ZOHO_EMAIL = "ahmed.mustafa@monjez-app.icu"
     ZOHO_PASSWORD = "42s1kTKByngN"
-    ZOHO_WEBHOOK_URL = """https://flow.zoho.com/925590557/flow/webhook/incoming?zapikey=1001.75117eafd3bfacda9a022b78f8cb0806.945cb0677134fbfebbaaa92da61b0ea1&isdebug=false"""
+    ZOHO_WEBHOOK_URL = """https://flow.zoho.com/925590557/flow/webhook/incoming?zapikey=1001.75117eafd3bfa3fdfdb995b579271db5.78450badb7fc8219cb67a6213ae24197&isdebug=false"""
 
 # دالة مخصصة لشحن (حفظ) البيانات في Firebase
 def save_to_firebase(node, data):
