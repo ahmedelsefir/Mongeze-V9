@@ -2,7 +2,7 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import pandas as pd
-import requests  # المكتبة المسؤولة عن شحن واستقبال البيانات سحابياً من Firebase و Zoho Flow
+import requests  # المكتبة المسؤول عن شحن واستقبال البيانات سحابياً من Firebase و Zoho Flow
 import streamlit as st
 
 # ========================================================
@@ -13,11 +13,11 @@ try:
     ZOHO_EMAIL = st.secrets["ZOHO_EMAIL"]
     ZOHO_WEBHOOK_URL = st.secrets["ZOHO_WEBHOOK_URL"]
 except Exception:
-    # قيم احتياطية آمنة للتشغيل التجريبي المحلي والربط السحابي
+    # قيم احتياطية آمنة للتشغيل التجريبي المحلي والربط السحابي المباشر
     FIREBASE_URL = "https://gen-lang-client-03099029-937be-default-rtdb.firebaseio.com"
     ZOHO_EMAIL = "ahmed.mustafa@monjez-app.icu"
-    # تم تصحيح الرابط وعزل السيرفر لحل مشكلة حظر الـ IP
-    ZOHO_WEBHOOK_URL = "https://flow.zoho.com/925590557/flow/webhook/incoming?zapikey=1001.4ed049f1059832abea2dd6e71726f3e3.69dca4e9d8e0a43901c4761e7ab37b56&isdebug=False"
+    # تم تصحيح الرابط (false صغير تماماً) ليتوافق مية مية مع سيرفر Zoho
+    ZOHO_WEBHOOK_URL = "https://flow.zoho.com/925590557/flow/webhook/incoming?zapikey=1001.4ed049f1059832abea2dd6e71726f3e3.69dca4e9d8e0a43901c4761e7ab37b56&isdebug=false"
 
 
 # دالة مخصصة لشحن (حفظ) البيانات في Firebase
