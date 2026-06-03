@@ -5,9 +5,11 @@ import pandas as pd
 import requests
 import streamlit as st
 import json
+import firebase_admin
+from firebase_admin import credentials
 
 # ========================================================
-# 🔗 جلب الإعدادات الحساسة من الأقسام السيادية المركزية
+# 🔗 جلب الإعدادات الحساسة ومعالجة الشهادة الأمنية برمجياً
 # ========================================================
 try:
     # 1. جلب رابط الـ Firebase وقراءة الـ JSON الأساسي من جذر الـ Secrets
@@ -15,6 +17,15 @@ try:
     raw_json_str = st.secrets["textkey"]
     firebase_credentials = json.loads(raw_json_str)
     
+    # 🔥 الحل السحري: إجبار البايثون على ترجمة الـ \n لسطور حقيقية لتفادي أخطاء نسخ الموبايل
+    if "private_key" in firebase_credentials:
+        firebase_credentials["private_key"] = firebase_credentials["private_key"].replace("\\n", "\n")
+    
+    # تهيئة قاعدة بيانات Firebase بأمان تام وبدون تكرار التطبيقات
+    if not firebase_admin._apps:
+        cred = credentials.Certificate(firebase_credentials)
+        firebase_admin.initialize_app(cred, {'databaseURL': FIREBASE_URL})
+        
     # 2. جلب إعدادات Zoho من قسم [zoho]
     ZOHO_WEBHOOK_URL = st.secrets["zoho"]["ZOHO_WEBHOOK_URL"]
     ZOHO_EMAIL = st.secrets["zoho"]["ZOHO_EMAIL"]
@@ -27,7 +38,7 @@ try:
     SYSTEM_SMTP_PASS = st.secrets["smtp"]["pass"].replace(" ", "")
     
 except Exception as e:
-    st.error(f"⚠️ خطأ في قراءة ملف الإعدادات الحساسة Secrets: {e}")
+    st.error(f"⚠️ خطأ في قراءة ملف الإعدادات الحساسة Secrets أو تهيئة قاعدة البيانات: {e}")
     # قيم احتياطية للطوارئ
     FIREBASE_URL = "https://gen-lang-client-03099029-937be-default-rtdb.firebaseio.com"
     ZOHO_WEBHOOK_URL = "https://flow.zoho.com/925590557/flow/webhook/incoming?zapikey=1001.4ed049f1059832abea2dd6e71726f3e3.69dca4e9d8e0a43901c4761e7ab37b56&isdebug=false"
@@ -51,7 +62,7 @@ def send_system_notification(notification_subject, message_html, to_email=None):
         part = MIMEText(message_html, 'html', 'utf-8')
         msg.attach(part)
         
-        # الاتصال الفوري عبر القناة الآمنة TLS
+        # Wi-Fi أو السيرفر التلقائي للربط
         server = smtplib.SMTP(SYSTEM_SMTP_SERVER, SYSTEM_SMTP_PORT)
         server.starttls()
         server.login(SYSTEM_SMTP_USER, SYSTEM_SMTP_PASS)
@@ -134,7 +145,7 @@ if st.session_state["current_page"] == "الرئيسية":
             if send_system_notification("فاتورة تجريبية لايف", test_html, test_email):
                 st.success("🎉 تم إرسال البريد التجريبي بنجاح! تفقد صندوق بريدك الوارد الصادر الآن.")
             else:
-                st.error("❌ وبدون مسافات App Password في الـ Secrets فشل الإرسال، تأكد من صحة الـ")
+                st.error("❌ فشل الإرسال، تأكد من صحة الـ App Password في الـ Secrets وبدون مسافات.")
 
 # 2️⃣ شاشة تتبع طلبات العملاء والمزايدات الحية
 elif st.session_state["current_page"] == "العملاء":
@@ -144,7 +155,16 @@ elif st.session_state["current_page"] == "العملاء":
     suggested_price = st.number_input("ميزانيتك المقترحة للطلب (جنيه):", min_value=0.0, step=10.0, value=30.0)
     
     if st.button("🚀 نشر الطلب لاستقبال عروض السائقين الفورية", use_container_width=True):
-        st.success("🔒 تم بث الطلب ونشره سحابياً بنجاح وجاري استقبال عروض المزايدة الحية!")
+        new_order = {
+            "customer_name": customer_name,
+            "details": delivery_details,
+            "price": suggested_price,
+            "status": "Pending"
+        }
+        if save_to_firebase("delivery_orders", new_order):
+            st.success("🔒 تم بث الطلب ونشره سحابياً بنجاح وجاري استقبال عروض المزايدة الحية!")
+        else:
+            st.error("❌ عذراً، فشل النشر السحابي، تحقق من اتصال قاعدة البيانات.")
 
 # 3️⃣ شاشة مركز توثيق واعتماد الكباتن
 elif st.session_state["current_page"] == "الكباتن":
