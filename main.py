@@ -8,47 +8,57 @@ import json
 import firebase_admin
 from firebase_admin import credentials
 
+st.set_page_config(page_title="منصة منجز الذكية", page_icon="🤖", layout="wide")
+
 # ========================================================
-# 🔗 جلب الإعدادات الحساسة ومعالجة الشهادة الأمنية برمجياً
+# 🔗 المَعالِج الهندسي المطور لتفكيك وبناء الشهادات الأمنية
 # ========================================================
 try:
-    # 1. جلب رابط الـ Firebase وقراءة الـ JSON الأساسي من جذر الـ Secrets
-    FIREBASE_URL = st.secrets["FIREBASE_URL"]
-    raw_json_str = st.secrets["textkey"]
+    FIREBASE_URL = st.secrets.get("FIREBASE_URL", "https://gen-lang-client-03099029-937be-default-rtdb.firebaseio.com")
+    
+    # 1. استخراج الـ textkey ومعالجته برمجياً
+    raw_json_str = st.secrets["textkey"].strip()
     firebase_credentials = json.loads(raw_json_str)
     
-    # 🔥 الحل السحري: إجبار البايثون على ترجمة الـ \n لسطور حقيقية لتفادي أخطاء نسخ الموبايل
+    # 🔥 الحل السحري لتجاوز عقبة الـ PEM file: إعادة بناء المفتاح الخاص ميكانيكياً بأسطر حقيقية
     if "private_key" in firebase_credentials:
-        firebase_credentials["private_key"] = firebase_credentials["private_key"].replace("\\n", "\n")
-    
-    # تهيئة قاعدة بيانات Firebase بأمان تام وبدون تكرار التطبيقات
+        raw_key = firebase_credentials["private_key"]
+        # تنظيف الرموز النصية المدمجة وتحويلها إلى كتل حقيقية
+        cleaned_key = raw_key.replace("\\n", "\n")
+        # التأكد من إغلاق الترويسة والتذييل بشكل سليم لـ OpenSSL
+        if "-----BEGIN PRIVATE KEY-----" not in cleaned_key:
+            cleaned_key = "-----BEGIN PRIVATE KEY-----\n" + cleaned_key
+        if "-----END PRIVATE KEY-----" not in cleaned_key:
+            cleaned_key = cleaned_key + "\n-----END PRIVATE KEY-----"
+        
+        firebase_credentials["private_key"] = cleaned_key
+
+    # تهيئة Firebase بشكل مستقر يمنع تكرار القنوات
     if not firebase_admin._apps:
         cred = credentials.Certificate(firebase_credentials)
         firebase_admin.initialize_app(cred, {'databaseURL': FIREBASE_URL})
-        
-    # 2. جلب إعدادات Zoho من قسم [zoho]
+        st.sidebar.success("⚡ تم ربط الـ Firebase والشهادة الأمنية بنجاح!")
+
+    # 2. جلب إعدادات السيرفر الناقل والـ Webhook
     ZOHO_WEBHOOK_URL = st.secrets["zoho"]["ZOHO_WEBHOOK_URL"]
-    ZOHO_EMAIL = st.secrets["zoho"]["ZOHO_EMAIL"]
-    
-    # 3. جلب إعدادات السيرفر الناقل والميكانيكي من قسم [smtp]
     SYSTEM_SMTP_SERVER = st.secrets["smtp"]["server"]
     SYSTEM_SMTP_PORT = int(st.secrets["smtp"]["port"])
     SYSTEM_SMTP_USER = st.secrets["smtp"]["user"]
-    # تنظيف باسوورد التطبيق ميكانيكياً من أي مسافات فارغة بالخطأ لضمان قبول السيرفر
-    SYSTEM_SMTP_PASS = st.secrets["smtp"]["pass"].replace(" ", "")
-    
+    # تنظيف الباسوورد أوتوماتيكياً من أي مسافات عشوائية ناتجة عن الموبايل
+    SYSTEM_SMTP_PASS = st.secrets["smtp"]["pass"].replace(" ", "").strip()
+
 except Exception as e:
-    st.error(f"⚠️ خطأ في قراءة ملف الإعدادات الحساسة Secrets أو تهيئة قاعدة البيانات: {e}")
-    # قيم احتياطية للطوارئ
+    st.error(f"🚨 خطأ في قراءة ملف الإعدادات الحساسة أو الشهادة الأمنية: {e}")
+    # قيم طوارئ احتياطية لمنع الانهيار الكامل للواجهة
     FIREBASE_URL = "https://gen-lang-client-03099029-937be-default-rtdb.firebaseio.com"
-    ZOHO_WEBHOOK_URL = "https://flow.zoho.com/925590557/flow/webhook/incoming?zapikey=1001.4ed049f1059832abea2dd6e71726f3e3.69dca4e9d8e0a43901c4761e7ab37b56&isdebug=false"
+    ZOHO_WEBHOOK_URL = "https://flow.zoho.com/925590557/flow/webhook/incoming?zapikey=1001.afe5e461181fb88191e4af169069cff2.093a2e408d7ea462bc548bbfa7197403&isdebug=false"
     SYSTEM_SMTP_SERVER = "smtp.gmail.com"
     SYSTEM_SMTP_PORT = 587
     SYSTEM_SMTP_USER = "ahmedelsefir9@gmail.com"
-    SYSTEM_SMTP_PASS = "nvoiuacshsqzpoba"
+    SYSTEM_SMTP_PASS = "pawpeeztahxrpbet"
 
 # ========================================================
-# ⚙️ المحرك الميكانيكي الحركي لإرسال نظام البريد والإشعارات
+# ⚙️ المحرك الحركي لإرسال نظام البريد والإشعارات (SMTP)
 # ========================================================
 def send_system_notification(notification_subject, message_html, to_email=None):
     if to_email is None:
@@ -62,9 +72,11 @@ def send_system_notification(notification_subject, message_html, to_email=None):
         part = MIMEText(message_html, 'html', 'utf-8')
         msg.attach(part)
         
-        # Wi-Fi أو السيرفر التلقائي للربط
+        # ربط بروتوكولي محكم ومتوافق مع تحديثات الحماية لـ Google 2026
         server = smtplib.SMTP(SYSTEM_SMTP_SERVER, SYSTEM_SMTP_PORT)
+        server.ehlo()
         server.starttls()
+        server.ehlo()
         server.login(SYSTEM_SMTP_USER, SYSTEM_SMTP_PASS)
         server.sendmail(SYSTEM_SMTP_USER, to_email, msg.as_string())
         server.quit()
@@ -74,13 +86,13 @@ def send_system_notification(notification_subject, message_html, to_email=None):
         return False
 
 # ========================================================
-# ☁️ دوال معالجة وبث البيانات السحابية لـ Firebase
+# ☁️ دوال المزامنة والبث الفوري لقاعدة البيانات
 # ========================================================
 def save_to_firebase(node, data):
     try:
         response = requests.post(f"{FIREBASE_URL}/{node}.json", json=data)
         return response.ok
-    except Exception as e:
+    except Exception:
         return False
 
 def load_from_firebase(node):
@@ -97,7 +109,7 @@ def load_from_firebase(node):
         return []
 
 # ========================================================
-# 📱 إدارة دورة حياة التطبيق والتحكم والتنقل المركزي
+# 📱 إدارة التحكم المركزي والتنقل بين قنوات المنصة
 # ========================================================
 if "current_page" not in st.session_state:
     st.session_state["current_page"] = "الرئيسية"
@@ -109,13 +121,13 @@ if not financial_records:
 def navigate_to(page_name):
     st.session_state["current_page"] = page_name
 
-# --- الهيكل الخارجي لواجهة المستخدم العليا ---
-st.title("🤖 مساعد منصة مُنجز الذكي")
-st.write("لوحة القيادة المركزية الموحدة لتتبع الدورة اللوجستية والحسابات.")
+# الهيكل الخارجي للوحة القيادة الموحدة
+st.title("🤖 مركز الرقابة وغرفة العمليات المركزية")
+st.write("نظام إدارة المشرفين، الموظفين، وبلاغات الدعم الفني والربط الأمني.")
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    if st.button("🏠 الرئيسية", use_container_width=True): navigate_to("الرئيسية")
+    if st.button("🏠 الشاشة الرئيسية", use_container_width=True): navigate_to("الرئيسية")
 with col2:
     if st.button("🛒 بوابة العملاء", use_container_width=True): navigate_to("العملاء")
 with col3:
@@ -125,11 +137,7 @@ with col4:
 
 st.write("---")
 
-# ========================================================
-# 📑 استعراض الشاشات والتحقق من قنوات الاتصال
-# ========================================================
-
-# 1️⃣ شاشة التحكم الرئيسية ومركز الاختبار الميكانيكي
+# 1️⃣ الشاشة الرئيسية واختبار شبكة القنوات
 if st.session_state["current_page"] == "الرئيسية":
     st.markdown("<h3 style='color: #FF5733;'>🧪 مركز اختبار الإشعارات والربط السحابي والـ VPN</h3>", unsafe_allow_html=True)
     
@@ -143,11 +151,11 @@ if st.session_state["current_page"] == "الرئيسية":
         """
         with st.spinner("جاري بث الإشعار الفوري..."):
             if send_system_notification("فاتورة تجريبية لايف", test_html, test_email):
-                st.success("🎉 تم إرسال البريد التجريبي بنجاح! تفقد صندوق بريدك الوارد الصادر الآن.")
+                st.success("🎉 تم إرسال البريد التجريبي بنجاح! تفقد صندوق بريدك الوارد الآن.")
             else:
-                st.error("❌ فشل الإرسال، تأكد من صحة الـ App Password في الـ Secrets وبدون مسافات.")
+                st.error("❌ فشل الإرسال، تأكد من صحة الـ App Password الحالية.")
 
-# 2️⃣ شاشة تتبع طلبات العملاء والمزايدات الحية
+# 2️⃣ بوابة العملاء والمزايدات الحية
 elif st.session_state["current_page"] == "العملاء":
     st.markdown("<h2 style='color: #1E88E5;'>🛒 طلب خدمة توصيل ومزايدة حية</h2>", unsafe_allow_html=True)
     customer_name = st.text_input("اسم العميل الافتراضي:", value="أحمد مصطفى")
@@ -166,12 +174,12 @@ elif st.session_state["current_page"] == "العملاء":
         else:
             st.error("❌ عذراً، فشل النشر السحابي، تحقق من اتصال قاعدة البيانات.")
 
-# 3️⃣ شاشة مركز توثيق واعتماد الكباتن
+# 3️⃣ بوابة الكباتن وتوثيق الهوية
 elif st.session_state["current_page"] == "الكباتن":
     st.markdown("<h2 style='color: #4CAF50;'>🚖 مركز توثيق واعتماد الكباتن</h2>", unsafe_allow_html=True)
     st.info("حالة النظام الميكانيكي لتوثيق الكباتن: نشط وموثق بنجاح بنسبة 100%.")
 
-# 4️⃣ شاشة النظام المالي وإغلاق الدورة المستندية الضريبية والـ Webhook
+# 4️⃣ النظام المالي وبث تقارير خطاف الويب لقنوات المحاسبة
 elif st.session_state["current_page"] == "المالي":
     st.markdown("<h2 style='color: #9C27B0;'>📊 الهيكل المحاسبي والتقرير الضريبي وعوائد المزايدات السحابية</h2>", unsafe_allow_html=True)
     
@@ -213,12 +221,11 @@ elif st.session_state["current_page"] == "المالي":
                 <h2 style="color: #9C27B0;">📊 تقرير النظام المالي الفوري والختامي لمنصة مُنجز</h2>
                 <p>إجمالي المحصل بالضريبة الإجمالية: {grand_collected:,.2f} ج.م</p>
                 <p>صافي عمولة منصة مُنجز المرحّلة: {monjez_net_profit:,.2f} ج.م</p>
-                <p>حالة الاتصال والترحيل عبر القنوات: آمنة ومستقرة تماماً.</p>
             </div>
             """
-            system_email_success = send_system_notification("تقرير إغلاق الحسابات والدورة المالية للشركة", report_html)
+            send_system_notification("تقرير إغلاق الحسابات والدورة المالية للشركة", report_html)
             
             if flow_success:
-                st.success("🔒 تم ترحيل واحتساب البيانات الختامية إلى Zoho Webhook بنجاح ميكانيكي كامل وبدون معوقات!")
+                st.success("🔒 تم ترحيل واحتساب البيانات الختامية بنجاح ميكانيكي كامل!")
             else:
-                st.error("❌ فشل الإرسال، يرجى التحقق من صحة رابط الـ Webhook الفعال في ملف الإعدادات الحالية.")
+                st.error("❌ فشل الإرسال الفوري لـ Webhook، يرجى التحقق من مسار الترحيل الحالي في الـ Secrets.")
