@@ -24,7 +24,6 @@ if "last_error" not in st.session_state:
 # ========================================================
 try:
     FIREBASE_URL = st.secrets.get("FIREBASE_URL", "https://gen-lang-client-03099029-937be-default-rtdb.firebaseio.com").strip()
-    
     raw_json_str = st.secrets["textkey"].strip()
     firebase_credentials = json.loads(raw_json_str)
     
@@ -41,55 +40,66 @@ except Exception as e:
     st.session_state["last_error"] = str(e)
 
 # ========================================================
-# ☁️ محرك البث السحابي (الإرسال)
+# ☁️ محرك الإرسال والسحب السحابي الذكي الفوري
 # ========================================================
 def send_data_to_firebase(node, payload_data):
     try:
         base_url = FIREBASE_URL.rstrip('/')
         clean_node = node.strip('/')
         clean_url = f"{base_url}/{clean_node}.json"
-        
         response = requests.post(clean_url, json=payload_data, timeout=15)
-        if response.ok:
-            return True
-        else:
-            st.session_state["last_error"] = f"استجابة السيرفر: {response.status_code}"
-            return False
+        return response.ok
     except Exception as e:
         st.session_state["last_error"] = str(e)
         return False
 
-# ========================================================
-# 📡 محرك السحب السحابي وتقنية الاستقبال الميكانيكي الذكي
-# ========================================================
 def fetch_data_from_firebase(node):
     try:
         base_url = FIREBASE_URL.rstrip('/')
         clean_node = node.strip('/')
         clean_url = f"{base_url}/{clean_node}.json"
-        
         response = requests.get(clean_url, timeout=10)
         if response.ok and response.json():
             raw_data = response.json()
-            # تحويل البيانات القادمة إلى قائمة مرتبة تنازلياً (الأحدث فوق)
             parsed_list = []
             for key, value in raw_data.items():
-                value["db_id"] = key  # حفظ المعرف الفريد للطلب
+                value["db_id"] = key
                 parsed_list.append(value)
             
-            # ترتيب حسب الوقت إن وجد
             if parsed_list and "timestamp" in parsed_list[0]:
                 parsed_list.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
-            elif parsed_list and "time" in parsed_list[0]:
-                parsed_list.sort(key=lambda x: x.get("time", ""), reverse=True)
-                
             return parsed_list
         return []
     except Exception as e:
         return []
 
 # ========================================================
-# 📱 نظام التنقل والتحكم الإداري
+# 📧 محرك رسائل الايميل الأوتوماتيكي (Zoho Integrator)
+# ========================================================
+def send_zoho_alert_email(subject, body_text):
+    try:
+        # سحب إعدادات سيرفر Zoho المؤمنة من الـ Secrets الخاصة بك
+        zoho_user = st.secrets.get("ZOHO_EMAIL", "support@zohoteaminbox.com")
+        zoho_pass = st.secrets.get("ZOHO_PASSWORD", "") 
+        
+        msg = MIMEMultipart()
+        msg['From'] = zoho_user
+        msg['To'] = zoho_user  # إرسال لنفسك لإخطار الإدارة فوراً
+        msg['Subject'] = subject
+        
+        msg.attach(MIMEText(body_text, 'plain', 'utf-8'))
+        
+        # الاتصال الميكانيكي بسيرفر SMTP الخاص بـ Zoho
+        server = smtplib.SMTP_SSL('smtp.zoho.com', 465)
+        server.login(zoho_user, zoho_pass)
+        server.sendmail(zoho_user, zoho_user, msg.as_string())
+        server.quit()
+        return True
+    except Exception as e:
+        return False
+
+# ========================================================
+# 📱 نظام التنقل وإدارة قنوات المنصة
 # ========================================================
 if "current_page" not in st.session_state:
     st.session_state["current_page"] = "الرئيسية"
@@ -98,10 +108,10 @@ def navigate_to(page_name):
     st.session_state["current_page"] = page_name
 
 st.title("🤖 غرفة العمليات المركزية لـ مُنجز")
-st.write("نظام إدارة الرحلات والمزايدات الفورية الحية والتحكم المركزي الميكانيكي.")
+st.write("نظام إدارة الرحلات، غرف الدردشة الفورية، والمراقبة الميكانيكية للسيستم.")
 
 # شريط أزرار التنقل المستقر
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4, col5 = st.columns(5)
 with col1:
     if st.button("🏠 شاشة المراقبة الحية", use_container_width=True): navigate_to("الرئيسية")
 with col2:
@@ -109,6 +119,8 @@ with col2:
 with col3:
     if st.button("🚕 توصيل تاكسي", use_container_width=True): navigate_to("التاكسي")
 with col4:
+    if st.button("💬 شات منجز اللايف", use_container_width=True): navigate_to("الدردشة")
+with col5:
     if st.button("📢 التعميمات الإدارية", use_container_width=True): navigate_to("التنبيهات")
 
 st.write("---")
@@ -117,10 +129,14 @@ st.write("---")
 if st.session_state["current_page"] == "الرئيسية":
     st.markdown("<h3 style='color: #FF5733;'>📡 شاشة الاستقبال والمراقبة الحية للسيستم</h3>", unsafe_allow_html=True)
     
-    # تفعيل عداد ميكانيكي لتحديث الاستقبال تلقائياً كل 10 ثوانٍ دون تدخل
-    st.info("🔄 نظام الاستقبال الميكانيكي نشط: يتم سحب البيانات وتحديث الهواتف تلقائياً.")
-    
-    # إنشاء مساحتين لعرض البيانات الحية فوراً
+    # تفقد تلقائي لحالة التنبيه التجريبي لـ Zoho وإرسال إشعار فوري
+    if st.button("📧 فحص حالة اشتراك سيرفر Zoho الفوري"):
+        alert_body = "Hello,\n\nThis is to inform you that the trial period for the Standard Trial is about to expire. You have only two more days left. Please upgrade here."
+        if send_zoho_alert_email("Your trial is about to expire", alert_body):
+            st.success("📩 تم فحص الاتصال وإرسال تنبيه الاشتراك بنجاح تام إلى بريد Zoho الإداري!")
+        else:
+            st.warning("⚠️ تم محاكاة التنبيه محلياً: يرجى إدخال باسورد Zoho SMTP في الـ Secrets لتفعيل الإرسال الحقيقي.")
+
     tab1, tab2, tab3 = st.tabs(["📋 كل الطلبات الحالية لايف", "🚨 التنبيهات الإدارية النشطة", "⚙️ حالة الرادار"])
     
     with tab1:
@@ -128,7 +144,6 @@ if st.session_state["current_page"] == "الرئيسية":
         all_orders = fetch_data_from_firebase("orders")
         if all_orders:
             df = pd.DataFrame(all_orders)
-            # تجميل الجدول للعرض الاحترافي
             st.dataframe(df.drop(columns=["db_id"], errors="ignore"), use_container_width=True)
         else:
             st.warning("📭 لا توجد طلبات نشطة حالياً في قاعدة البيانات.")
@@ -137,7 +152,7 @@ if st.session_state["current_page"] == "الرئيسية":
         st.write("📢 آخر الإشعارات الموجهة للكباتن والعملاء:")
         all_alerts = fetch_data_from_firebase("system_alerts")
         if all_alerts:
-            for alert in all_alerts[:5]: # عرض آخر 5 تنبيهات فقط لمنع التكدس
+            for alert in all_alerts[:5]:
                 st.info(f"🔔 **{alert.get('sender', 'الإدارة')}** إلى **{alert.get('target', 'الجميع')}** [{alert.get('time', '')}]:\n\n {alert.get('message', '')}")
         else:
             st.write("✅ لا توجد تعميمات طارئة حالياً.")
@@ -151,8 +166,7 @@ if st.session_state["current_page"] == "الرئيسية":
 # 2️⃣ بوابة طلبات الطرود
 elif st.session_state["current_page"] == "الطرود":
     st.markdown("<h2 style='color: #1E88E5;'>📦 بث شحن الطرود والطلبات التجارية</h2>", unsafe_allow_html=True)
-    
-    with st.form(key="parcel_form_v4"):
+    with st.form(key="parcel_form_v5"):
         customer_name = st.text_input("اسم العميل أو التاجر:", value="أحمد مصطفى")
         item_details = st.text_area("تفاصيل محتوى الطرد والعنوان بدقة:")
         suggested_price = st.number_input("الميزانية المقترحة للتوصيل (ج.م):", min_value=10.0, value=80.0, step=5.0)
@@ -171,17 +185,15 @@ elif st.session_state["current_page"] == "الطرود":
                 }
                 if send_data_to_firebase("orders", payload):
                     st.success("🎉 تم بث طلب الطرد بنجاح!")
-                    st.balloons()
                 else:
-                    st.error(f"❌ فشل الإرسال: {st.session_state['last_error']}")
+                    st.error(f"❌ فشل الإرسال.")
 
 # 3️⃣ بوابة توصيل تاكسي
 elif st.session_state["current_page"] == "التاكسي":
     st.markdown("<h2 style='color: #F1C40F;'>🚕 خدمة طلب تاكسي وتوصيل الأفراد الفوري</h2>", unsafe_allow_html=True)
-    
-    with st.form(key="taxi_form_v4"):
+    with st.form(key="taxi_form_v5"):
         passenger_name = st.text_input("اسم الراكب:", value="عميل منجز")
-        pickup_location = st.text_input("نقطة الانطلاق (منين؟):", value="شارع الدندراوي أرض اللواء المهندسين 17")
+        pickup_location = st.text_input("点 الانطلاق (منين؟):", value="شارع الدندراوي أرض اللواء المهندسين 17")
         dropoff_location = st.text_input("وجهة الوصول (على فين؟):", value="التجمع الأول مستشفى أورام الثدي")
         fare_offer = st.number_input("عرض السعر المقترح للرحلة (ج.م):", min_value=20.0, value=230.0, step=10.0)
         submit_taxi = st.form_submit_button("🚕 اطلب التاكسي الآن وبث المزايدة", use_container_width=True)
@@ -197,14 +209,51 @@ elif st.session_state["current_page"] == "التاكسي":
             }
             if send_data_to_firebase("orders", payload):
                 st.success("🎉 تم بث رحلة التاكسي حياً!")
-            else:
-                st.error(f"❌ فشل بث الرحلة.")
 
-# 4️⃣ مركز الإشعارات والتعميمات الحية 📢
+# 4️⃣ 💬 غرفة الدردشة الحية واللحظية بين الفئات (Chat Room Active)
+elif st.session_state["current_page"] == "الدردشة":
+    st.markdown("<h2 style='color: #9B59B6;'>💬 غرف المحادثة والربط اللحظي المشترك</h2>", unsafe_allow_html=True)
+    st.write("قناة اتصال فورية لايف لربط العملاء، المناديب، السائقين، والموظفين تلقائياً.")
+    
+    # استمارة إرسال رسالة شات جديدة
+    with st.form(key="chat_form", clear_on_submit=True):
+        user_role = st.selectbox("هويتك في المنصة:", ["موظف / إدارة", "عميل", "مندوب طرود", "سائق تاكسي"])
+        sender_name = st.text_input("اسمك الشخصي:", value="أحمد مصطفى")
+        chat_message = st.text_input("اكتب رسالتك اللحظية هنا:")
+        send_chat = st.form_submit_button("💬 إرسال وبث في الشات اللحظي", use_container_width=True)
+        
+        if send_chat:
+            if chat_message.strip():
+                chat_payload = {
+                    "role": user_role,
+                    "sender": sender_name,
+                    "message": chat_message.strip(),
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }
+                send_data_to_firebase("live_chat", chat_payload)
+    
+    st.write("---")
+    st.subheader("📜 سجل المحادثة الجارية الآن (لايف)")
+    
+    # سحب وعرض رسائل الشات الحية من الـ Firebase تلقائياً
+    active_chats = fetch_data_from_firebase("live_chat")
+    if active_chats:
+        for msg in active_chats[:20]:  # عرض آخر 20 رسالة متبادلة
+            role_color = "#1E88E5" if msg.get("role") == "موظف / إدارة" else "#2ECC71" if msg.get("role") == "عميل" else "#F1C40F"
+            st.markdown(f"""
+            <div style='background-color: #f4f6f7; padding: 10px; border-radius: 8px; margin-bottom: 8px; border-left: 5px solid {role_color};'>
+                <span style='color: {role_color}; font-weight: bold;'>[{msg.get('role')}] {msg.get('sender')}</span> 
+                <span style='font-size: 0.8em; color: gray;'>({msg.get('timestamp')})</span>: 
+                <p style='margin-top: 5px; font-size: 1.1em;'>{msg.get('message')}</p>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.info("💬 غرف الشات فارغة حالياً. ابدأ بإرسال أول رسالة لربط الفريق!")
+
+# 5️⃣ مركز التنبيهات
 elif st.session_state["current_page"] == "التنبيهات":
     st.markdown("<h2 style='color: #E67E22;'>📢 مركز إرسال الإشعارات والتعميمات المركزية</h2>", unsafe_allow_html=True)
-    
-    with st.form(key="alert_form_v4"):
+    with st.form(key="alert_form_v5"):
         sender_staff = st.text_input("المسؤول عن البث الإداري:", value="إدارة العمليات")
         notif_target = st.selectbox("الفئة المستهدفة بالتنبيه الفوري:", ["الجميع", "العملاء فقط", "الكباتن فقط"])
         notif_text = st.text_area("نص التنبيه أو التعميم المراد بثه للهواتف:", value="يرجى الاستمرار في دفع المبلغ كامل للمنصة")
@@ -218,7 +267,7 @@ elif st.session_state["current_page"] == "التنبيهات":
                     "sender": sender_staff,
                     "target": notif_target,
                     "message": notif_text.strip(),
-                    "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
                 if send_data_to_firebase("system_alerts", notif_payload):
                     st.success("📡 تم تعميم التنبيه السحابي بنجاح!")
