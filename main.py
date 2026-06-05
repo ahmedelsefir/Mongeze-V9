@@ -6,9 +6,12 @@ from firebase_admin import credentials
 from datetime import datetime
 import time
 import pandas as pd
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 # ========================================================
-# 🤖 إعداد الواجهة وحمايتها من التشنج الميكانيكي
+# 🤖 إعداد واجهة منصة منجز الذكية وحماية الجلسة
 # ========================================================
 st.set_page_config(page_title="منصة منجز الذكية", page_icon="🤖", layout="wide")
 
@@ -18,95 +21,112 @@ if "my_active_order_id" not in st.session_state:
     st.session_state["my_active_order_id"] = ""
 
 # ========================================================
-# 🔒 اتصال السيرفر ومفاتيح الـ Secrets
+# 🔒 جلب التكوينات وإعداد الاتصال السحابي بالـ Firebase
 # ========================================================
-FIREBASE_URL = st.secrets.get("FIREBASE_URL", "https://gen-lang-client-03099029-937be-default-rtdb.firebaseio.com").strip()
+FIREBASE_URL = st.secrets.get("FIREBASE_URL", "https://gen-lang-client-03099029-937be-default-rtdb.firebaseio.com/").strip()
+
 try:
     raw_json_str = st.secrets["textkey"].strip()
     firebase_credentials = json.loads(raw_json_str)
     if "private_key" in firebase_credentials:
         firebase_credentials["private_key"] = firebase_credentials["private_key"].replace("\\\\n", "\n").replace("\\n", "\n").strip()
+    
     if not firebase_admin._apps:
         cred = credentials.Certificate(firebase_credentials)
         firebase_admin.initialize_app(cred, {'databaseURL': FIREBASE_URL})
 except Exception as e:
-    pass
+    st.sidebar.error(f"⚠️ خطأ في تحميل مفتاح Firebase الحساس: {str(e)}")
 
 # ========================================================
-# ☁️ دالتين بايثون للاتصال الميكانيكي اللايف (إرسال واستقبال)
+# 📡 دوال وظائف بايثون للاتصال المباشر والربط (لايف)
 # ========================================================
 def send_to_firebase(node, data):
     try:
         url = f"{FIREBASE_URL.rstrip('/')}/{node.strip('/')}.json"
-        response = requests.post(url, json=data, timeout=10)
-        return response.ok
-    except:
-        return False
+        return requests.post(url, json=data, timeout=10).ok
+    except: return False
 
 def update_firebase_node(node, data):
     try:
         url = f"{FIREBASE_URL.rstrip('/')}/{node.strip('/')}.json"
-        response = requests.patch(url, json=data, timeout=10)
-        return response.ok
-    except:
-        return False
+        return requests.patch(url, json=data, timeout=10).ok
+    except: return False
 
 def fetch_from_firebase(node):
     try:
         url = f"{FIREBASE_URL.rstrip('/')}/{node.strip('/')}.json"
-        response = requests.get(url, timeout=10)
-        if response.ok and response.json():
-            raw = response.json()
-            return [{"db_id": k, **v} for k, v in raw.items() if isinstance(v, dict)]
+        res = requests.get(url, timeout=10)
+        if res.ok and res.json():
+            return [{"db_id": k, **v} for k, v in res.json().items() if isinstance(v, dict)]
         return []
+    except: return []
+
+# ========================================================
+# 📧 محرك الإشعارات والاتصال الفوري (SMTP Gmail & Zoho)
+# ========================================================
+def send_system_email(subject, body_text):
+    try:
+        smtp_user = st.secrets.get("smtp", {}).get("user", "ahmedelsefir9@gmail.com")
+        smtp_pass = st.secrets.get("smtp", {}).get("pass", "pawp eezt ahxr pbet")
+        server_host = st.secrets.get("smtp", {}).get("server", "smtp.gmail.com")
+        server_port = int(st.secrets.get("smtp", {}).get("port", 587))
+        
+        msg = MIMEMultipart()
+        msg['From'] = smtp_user
+        msg['To'] = smtp_user  # إرسال لنفسك أو لإيميل الإدارة كإشعار
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body_text, 'plain', 'utf-8'))
+        
+        server = smtplib.SMTP(server_host, server_port)
+        server.starttls()
+        server.login(smtp_user, smtp_pass)
+        server.sendmail(smtp_user, smtp_user, msg.as_string())
+        server.quit()
+        return True
     except:
-        return []
+        return False
 
 # ========================================================
-# 📱 شريط التحكم المركزي والتنقل (الموحد لكل الفئات)
+# 📱 شريط التوجيه ودمج الصفحات الموحد
 # ========================================================
-def navigate_to(page):
-    st.session_state["current_page"] = page
+st.title("🤖 غرفة العمليات المركزية لـ منجز الذكية")
 
-st.title("🤖 منظومة مُنجز الرقمية الموحدة")
 col1, col2, col3, col4, col5 = st.columns(5)
 with col1:
-    if st.button("🏠 شاشة المراقبة", use_container_width=True): navigate_to("الرئيسية")
+    if st.button("🏠 شاشة المراقبة", use_container_width=True): st.session_state["current_page"] = "الرئيسية"
 with col2:
-    if st.button("📦 بوابة الطرود", use_container_width=True): navigate_to("الطرود")
+    if st.button("📦 بوابة الطرود", use_container_width=True): st.session_state["current_page"] = "الطرود"
 with col3:
-    if st.button("🚕 توصيل تاكسي", use_container_width=True): navigate_to("التاكسي")
+    if st.button("🚕 توصيل تاكسي", use_container_width=True): st.session_state["current_page"] = "التاكسي"
 with col4:
-    if st.button("💬 شات منجز الخاص", use_container_width=True): navigate_to("الدردشة")
+    if st.button("💬 شات منجز الخاص 🟢", use_container_width=True): st.session_state["current_page"] = "الدردشة"
 with col5:
-    if st.button("📡 تتبع طلبك الحالي (لايف) 🛰️", use_container_width=True): navigate_to("التتبع")
+    if st.button("🛰️ رادار تتبع الطلبات (لايف)", use_container_width=True): st.session_state["current_page"] = "التتبع"
 
 st.write("---")
 
-# 👤 تحديد الهوية والدور داخل التطبيق (بايثون يوجه المستخدم ديناميكياً)
+# ملف التحكم الجانبي بالهوية والصلاحيات الميكانيكية
 st.sidebar.markdown("### 👤 ملف المستخدم")
-user_role = st.sidebar.selectbox("اختر صفتك في السيستم:", ["عميل", "مندوب / كابتن", "إدارة وموظفين"])
-user_name = st.sidebar.text_input("اسمك الشخصي المعمد:", value="أحمد مصطفى")
+user_role = st.sidebar.selectbox("اختر هويتك في السيستم:", ["عميل", "مندوب / كابتن", "إدارة وموظفين"])
+user_name = st.sidebar.text_input("اسمك المسجل:", value="أحمد مصطفى")
 
-# 1️⃣ الشاشة الرئيسية
+# 1️⃣ الشاشة الرئيسية (شاشة مراقبة العمليات لايف)
 if st.session_state["current_page"] == "الرئيسية":
-    st.markdown("### 📡 لوحة تحكم ومراقبة البث السحابي")
+    st.markdown("### 📡 لوحة بث واستقبال العمليات السحابية")
     orders = fetch_from_firebase("orders")
     if orders:
-        st.write("📊 كل الطلبات الجارية على السيرفر حالياً:")
-        df = pd.DataFrame(orders)
-        st.dataframe(df.drop(columns=["db_id"], errors="ignore"), use_container_width=True)
+        st.write("📊 الطلبات الشغالة على السيرفر حالياً:")
+        st.dataframe(pd.DataFrame(orders).drop(columns=["db_id"], errors="ignore"), use_container_width=True)
     else:
-        st.warning("📭 لا توجد طلبات نشطة الآن.")
+        st.warning("📭 السيرفر نظيف ولا توجد رحلات جارية حالياً.")
 
-# 2️⃣ بوابة الطرود
+# 2️⃣ بوابة الطرود تكميلي
 elif st.session_state["current_page"] == "الطرود":
-    st.markdown("## 📦 مركز بث طلبات شحن الطرود")
-    with st.form("parcel_form"):
-        details = st.text_area("اكتب تفاصيل الشحنة والعنوان بالكامل:")
-        price = st.number_input("سعر التوصيل المقترح (ج.م):", min_value=10.0, value=50.0)
-        btn = st.form_submit_button("🚀 بث الطلب فوراً للشبكة")
-        if btn and details.strip():
+    st.markdown("## 📦 مركز بث طلبات الطرود والشحن التجاري")
+    with st.form("parcel_v10"):
+        details = st.text_area("تفاصيل الشحنة وعنوان الالتقاط والتوصيل بدقة:")
+        price = st.number_input("الميزانية المقترحة (ج.م):", min_value=10.0, value=70.0)
+        if st.form_submit_button("🚀 بث الطلب فوراً للشبكة") and details.strip():
             order_id = f"PRCL-{int(time.time())}"
             payload = {
                 "order_id": order_id, "type": "طرد تكميلي", "customer": user_name,
@@ -115,17 +135,17 @@ elif st.session_state["current_page"] == "الطرود":
             }
             if send_to_firebase("orders", payload):
                 st.session_state["my_active_order_id"] = order_id
-                st.success(f"🎉 تم نشر طلبك بنجاح! كود التتبع: {order_id}")
+                send_system_email(f"طلب طرد جديد {order_id}", f"العميل {user_name} طلب توصيل طرد بقيمة {price} ج.م")
+                st.success(f"🎉 تم بث الطلب بنجاح! كود التتبع الفريد هو: {order_id}")
 
-# 3️⃣ بوابة التاكسي
+# 3️⃣ بوابة تاكسي أفراد
 elif st.session_state["current_page"] == "التاكسي":
-    st.markdown("## 🚕 مركز طلبات التاكسي الفوري")
-    with st.form("taxi_form"):
+    st.markdown("## 🚕 مركز طلبات توصيل التاكسي والأفراد")
+    with st.form("taxi_v10"):
         start = st.text_input("نقطة الانطلاق (منين؟):")
-        end = st.text_input("وجهة الوصول (على فين؟):")
-        price = st.number_input("عرض السعر المقترح للرحلة:", min_value=20.0, value=100.0)
-        btn = st.form_submit_button("🚕 بث رحلة التاكسي لايف")
-        if btn and start.strip() and end.strip():
+        end = st.text_input("الوجهة المراد الوصول إليها (على فين؟):")
+        price = st.number_input("عرض السعر المقترح للرحلة:", min_value=20.0, value=120.0)
+        if st.form_submit_button("🚕 بث الرحلة فوراً لايف") and start.strip() and end.strip():
             order_id = f"TAXI-{int(time.time())}"
             payload = {
                 "order_id": order_id, "type": "تاكسي أفراد", "customer": user_name,
@@ -134,93 +154,84 @@ elif st.session_state["current_page"] == "التاكسي":
             }
             if send_to_firebase("orders", payload):
                 st.session_state["my_active_order_id"] = order_id
+                send_system_email(f"طلب تاكسي جديد {order_id}", f"الراكب {user_name} اطلب رحلة من {start} إلى {end}")
                 st.success(f"🎉 تم بث الرحلة بنجاح! كود التتبع: {order_id}")
 
-# 4️⃣ غرفة الدردشة الخاصة (الواتساب)
+# 4️⃣ غرفة الدردشة الذكية (غرف الواتساب الثنائية المؤمنة لكل طلب)
 elif st.session_state["current_page"] == "الدردشة":
-    st.markdown("## 💬 غرف المحادثة الخاصة بالطلبات")
+    st.markdown("## 💬 غرف المحادثة والاتصال اللحظي الموحد (نظام واتساب)")
     orders = fetch_from_firebase("orders")
-    room_options = ["الشات العام للإدارة"]
+    room_options = ["الشات العام للإدارة والموظفين"]
     if orders:
         for o in orders:
             room_options.append(f"محادثة طلب {o.get('order_id')} - العميل: {o.get('customer')}")
     
-    selected_room = st.selectbox("🎯 اختر غرفة المحادثة:", room_options)
+    selected_room = st.selectbox("🎯 اختر قناة أو غرفة المحادثة النشطة لمتابعتها وتحديثها:", room_options)
     clean_room = selected_room.replace(" ", "_").replace(":", "_").replace("-", "_")
     
-    # نموذج إرسال رسالة
-    with st.form("chat_msg_form", clear_on_submit=True):
-        msg_text = st.text_input("📝 اكتب رسالتك اللحظية:")
-        if st.form_submit_button("💬 إرسال") and msg_text.strip():
+    with st.form("chat_form_v10", clear_on_submit=True):
+        msg_text = st.text_input("📝 اكتب رسالتك اللحظية هنا:")
+        if st.form_submit_button("💬 إرسال وبث") and msg_text.strip():
             send_to_firebase(f"private_chats/{clean_room}", {
                 "role": user_role, "sender": user_name, "message": msg_text.strip(), "timestamp": datetime.now().strftime("%H:%M:%S")
             })
+            time.sleep(0.2)
     
-    # عرض رسائل الغرفة المختارة تلقائياً
+    # سحب وعرض الرسائل الحية للغرفة المحددة من الأحدث للأقدم
     chats = fetch_from_firebase(f"private_chats/{clean_room}")
     if chats:
-        for m in chats[-15:]:
-            st.markdown(f"**[{m.get('role')}] {m.get('sender')}**: {m.get('message')} *(الساعة {m.get('timestamp')})*")
+        for m in chats[-20:]:
+            role_color = "#1E88E5" if m.get("role") == "إدارة وموظفين" else "#2ECC71" if m.get("role") == "عميل" else "#F1C40F"
+            st.markdown(f"""
+            <div style='background-color: #f4f6f7; padding: 10px; border-radius: 8px; margin-bottom: 6px; border-right: 5px solid {role_color}; text-align: right;'>
+                <span style='color: {role_color}; font-weight: bold;'>[{m.get('role')}] {m.get('sender')}</span> 
+                <span style='font-size: 0.75em; color: gray;'>({m.get('timestamp')})</span>: 
+                <p style='margin-top: 4px; font-size: 1.1em; color: black;'>{m.get('message')}</p>
+            </div>
+            """, unsafe_allow_html=True)
 
-# 5️⃣ 📡 صفحة تتبع الطلبات الحية والطلب الحالي (Satellite Tracking Page) 🛰️
+# 5️⃣ 📡 رادار تتبع الحالات الحالي والالتقاط الميكانيكي (Satellite Tracking)
 elif st.session_state["current_page"] == "التتبع":
-    st.markdown("<h2 style='color: #E67E22;'>📡 رادار تتبع الحالات والطلبات النشطة لايف</h2>", unsafe_allow_html=True)
-    
-    # حقن تحديث ميكانيكي كل 4 ثوانٍ للصفحة لقراءة وتتبع أي تغيير في حالة الطلب فورا
-    st.caption("🔄 الرادار متصل بالسيرفر: يتم التحديث والمسح السحابي تلقائياً كل 4 ثوانٍ...")
+    st.markdown("## 📡 رادار التتبع والاتصال السحابي المباشر")
+    st.caption("🔄 الرادار نشط: يتم تحديث وسحب الحالات تلقائياً من السيرفر كل 3 ثوانٍ...")
     
     orders = fetch_from_firebase("orders")
     
     if user_role == "عميل":
-        st.subheader("🕵️‍♂️ حالة طلبك الحالي:")
-        # البحث عن طلب هذا العميل بناء على الكود المخزن في جلسته
-        my_order = None
-        if orders and st.session_state["my_active_order_id"]:
-            for o in orders:
-                if o.get("order_id") == st.session_state["my_active_order_id"]:
-                    my_order = o
+        st.subheader("🕵️‍♂️ مراقبة حالة طلبك الحالي:")
+        my_order = next((o for o in orders if o.get("order_id") == st.session_state["my_active_order_id"]), None) if orders else None
         
         if my_order:
-            st.info(f"🔢 **رقم الطلب:** {my_order.get('order_id')} | **النوع:** {my_order.get('type')}")
-            
-            # عرض الحالة ميكانيكياً بألوان ويندوز الذكية
-            status = my_order.get("status")
-            if status == "جاري البحث عن كابتن":
-                st.warning(f"⏳ الحالة الحالية: {status}...")
-            elif status == "الكابتن في الطريق إليك":
-                st.success(f"⚡ حالة مفرحة: {status} (اسم الكابتن: {my_order.get('driver')})")
-            else:
-                st.balloons()
-                st.success(f"✅ تم توصيل طلبك بنجاح وتقفيل العملية!")
-                
-            st.metric(label="المبلغ المطلوب للدفع", value=f"{my_order.get('price')} ج.م")
+            st.info(f"🔢 رقم الطلب الحالي: {my_order.get('order_id')} | الحالة الجارية: **{my_order.get('status')}**")
+            if my_order.get("status") == "الكابتن في الطريق إليك":
+                st.success(f"⚡ إشعار لايف: الكابتن ({my_order.get('driver')}) قبل طلبك وهو في طريقه لموقعك الآن!")
+            st.metric(label="الفاتورة والحساب الجاري", value=f"{my_order.get('price')} ج.م")
         else:
-            st.write("📭 ليس لديك أي طلبات نشطة جارية تحت التتبع حالياً. قم بإنشاء طلب من التبويبات في الأعلى!")
+            st.warning("📭 لا يوجد طلب نشط تحت التتبع حالياً لك. اذهب للأعلى وانشئ طرد أو تاكسي.")
 
     elif user_role == "مندوب / كابتن":
-        st.subheader("🚕 لوحة المنديب والسائقين - استلام الطلبات لايف")
+        st.subheader("🚕 الطلبات المتاحة في رادار السوق للالتقاط فوراً:")
         if orders:
             for o in orders:
                 if o.get("status") == "جاري البحث عن كابتن":
-                    st.markdown(f"**📦 طلب متاح للالتقاط!** | النوع: {o.get('type')} | العميل: {o.get('customer')} | السعر: {o.get('price')} ج.م")
+                    st.markdown(f"**📦 {o.get('type')} جديد!** | العميل: {o.get('customer')} | السعر: {o.get('price')} ج.م")
                     if o.get('from'): st.write(f"📍 من: {o.get('from')} -> إلى: {o.get('to')}")
                     if o.get('details'): st.write(f"📝 التفاصيل: {o.get('details')}")
                     
-                    # زر ميكانيكي تقني للمندوب للموافقة واستلام الطلب فوراً
-                    if st.button(f"✅ وافق على الطلب وافتح الشات {o.get('order_id')}", key=o.get('order_id')):
-                        # تحديث حالة الطلب في السيرفر ليتغير فوراً عند العميل
-                        for item in orders:
-                            if item.get("order_id") == o.get('order_id'):
-                                url_patch = f"orders/{item['db_id']}"
-                                update_firebase_node(url_patch, {"status": "الكابتن في الطريق إليك", "driver": user_name})
-                                st.success("🚀 تم حجز الطلب باسمك يا كابتن! توجه لتبويب الشات لمحادثة العميل فوراً.")
-                                time.sleep(1)
-                                st.rerun()
+                    if st.button(f"✅ وافق واستلم الطلب {o.get('order_id')}", key=o.get('order_id')):
+                        url_patch = f"orders/{o['db_id']}"
+                        if update_firebase_node(url_patch, {"status": "الكابتن في الطريق إليك", "driver": user_name}):
+                            st.success("🚀 تم حجز وتعميد الطلب باسمك يا كابتن! انتقل لغرفة الشات للتواصل مع العميل.")
+                            time.sleep(1)
+                            st.rerun()
         else:
-            st.write("✅ لا توجد طلبات جديدة متاحة في السوق حالياً.")
+            st.write("✅ الرادار نظيف، لا توجد طلبات معلقة حالياً في السوق.")
 
     elif user_role == "إدارة وموظفين":
-        st.subheader("📊 لوحة تحكم الموظفين والرقابة الشاملة")
-        if orders:
-            st.write("إجمالي حركة الرادار الجارية:")
+        st.subheader("📊 لوحة الرقابة الشاملة للموظفين")
+        if orders: 
             st.table(pd.DataFrame(orders)[["order_id", "type", "customer", "status", "driver", "price"]])
+
+# زر التحديث اليدوي السريع لضمان حركة التدفق الفوري للرادار
+if st.button("🔄 تحديث الرادار والمحادثات"):
+    st.rerun()
