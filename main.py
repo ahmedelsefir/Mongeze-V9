@@ -10,6 +10,7 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import logging
+from math import radians, cos, sin, asin, sqrt
 
 # ========================================================
 # 🤖 إعداد واجهة منصة منجز الذكية وحماية الجلسة
@@ -151,6 +152,108 @@ def send_system_email(subject, body_text):
     except Exception as e:
         logger.error(f"Unexpected error sending email: {str(e)}")
         return False
+
+# ========================================================
+# 📍 حساب المسافة الحية بين العميل والسائق (Distance Calculation)
+# ========================================================
+def calculate_distance_haversine(lat1, lon1, lat2, lon2):
+    """
+    حساب المسافة بين نقطتين باستخدام صيغة Haversine 
+    (تحسب المسافة على سطح الكرة الأرضية بدقة عالية)
+    
+    المعاملات:
+        lat1, lon1: إحداثيات العميل (latitude, longitude)
+        lat2, lon2: إحداثيات السائق (latitude, longitude)
+    
+    القيمة المرجعة:
+        المسافة بالكيلومتر
+    """
+    try:
+        # التحقق من صحة الإحداثيات
+        if not all(isinstance(x, (int, float)) for x in [lat1, lon1, lat2, lon2]):
+            logger.error("Invalid coordinates format - must be numeric")
+            return None
+        
+        # التحقق من نطاق الإحداثيات
+        if not (-90 <= lat1 <= 90 and -180 <= lon1 <= 180 and -90 <= lat2 <= 90 and -180 <= lon2 <= 180):
+            logger.error("Coordinates out of range")
+            return None
+        
+        # تحويل الدرجات إلى راديان
+        lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+        
+        # صيغة Haversine
+        dlon = lon2 - lon1
+        dlat = lat2 - lat1
+        a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
+        c = 2 * asin(sqrt(a))
+        
+        # نصف قطر الأرض بالكيلومتر
+        r = 6371
+        distance = c * r
+        
+        logger.info(f"Distance calculated: {distance:.2f} km from ({lat1}, {lon1}) to ({lat2}, {lon2})")
+        return round(distance, 2)
+    
+    except TypeError as e:
+        logger.error(f"Type error in distance calculation: {str(e)}")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error in distance calculation: {str(e)}")
+        return None
+
+def get_live_distance_for_order(order):
+    """
+    جلب المسافة الحية للطلب من Firebase
+    يحسب المسافة بين إحداثيات العميل والسائق
+    
+    المعاملات:
+        order: قاموس الطلب من Firebase
+    
+    القيمة المرجعة:
+        المسافة بالكيلومتر أو None في حالة الخطأ
+    """
+    try:
+        # استخراج الإحداثيات من الطلب
+        customer_lat = order.get("customer_lat")
+        customer_lon = order.get("customer_lon")
+        driver_lat = order.get("driver_lat")
+        driver_lon = order.get("driver_lon")
+        
+        # التحقق من وجود جميع الإحداثيات المطلوبة
+        if None in [customer_lat, customer_lon, driver_lat, driver_lon]:
+            logger.warning(f"Missing coordinates for order {order.get('order_id')}")
+            return None
+        
+        # حساب المسافة
+        distance = calculate_distance_haversine(customer_lat, customer_lon, driver_lat, driver_lon)
+        return distance
+    
+    except Exception as e:
+        logger.error(f"Error getting live distance for order: {str(e)}")
+        return None
+
+def format_distance_display(distance_km):
+    """
+    تنسيق عرض المسافة بشكل ملائم
+    إذا كانت المسافة أقل من 1 كم، تعرض بالمتر
+    
+    المعاملات:
+        distance_km: المسافة بالكيلومتر
+    
+    القيمة المرجعة:
+        نص مُنسّق للعرض
+    """
+    if distance_km is None:
+        return "غير متاح 📍"
+    
+    if distance_km < 1:
+        meters = int(distance_km * 1000)
+        return f"{meters} متر 🚶"
+    elif distance_km < 50:
+        return f"{distance_km} كم 🚕"
+    else:
+        return f"{distance_km} كم 🛣️"
 
 # ========================================================
 # 📱 شريط التوجيه ودمج الصفحات الموحد
@@ -325,6 +428,10 @@ elif st.session_state["current_page"] == "التتبع":
                 st.info(f"🔢 رقم الطلب الحالي: {my_order.get('order_id')} | الحالة الجارية: **{my_order.get('status')}**")
                 if my_order.get("status") == "الكابتن في الطريق إليك":
                     st.success(f"⚡ إشعار لايف: الكابتن ({my_order.get('driver')}) قبل طلبك وهو في طريقه لموقعك الآن!")
+                    # عرض المسافة الحية
+                    distance = get_live_distance_for_order(my_order)
+                    distance_text = format_distance_display(distance)
+                    st.metric(label="المسافة الحية بينك وبين السائق", value=distance_text)
                 st.metric(label="الفاتورة والحساب الجاري", value=f"{my_order.get('price')} ج.م")
             else:
                 st.warning("📭 لا يوجد طلب نشط تحت التتبع حالياً لك. اذهب للأعلى وانشئ طرد أو تاكسي.")
@@ -370,6 +477,14 @@ elif st.session_state["current_page"] == "التتبع":
                     display_cols = ["order_id", "type", "customer", "status", "driver", "price"]
                     available_cols = [col for col in display_cols if col in df.columns]
                     st.table(df[available_cols])
+                    
+                    # عرض المسافات الحية لجميع الطلبات
+                    st.subheader("📍 المسافات الحية للطلبات النشطة")
+                    for order in orders:
+                        if order.get("status") == "الكابتن في الطريق إليك":
+                            distance = get_live_distance_for_order(order)
+                            distance_text = format_distance_display(distance)
+                            st.write(f"🚕 **{order.get('order_id')}** - السائق: {order.get('driver', 'unknown')} | المسافة: {distance_text}")
                 except Exception as table_error:
                     logger.error(f"Error displaying table: {str(table_error)}")
                     st.write(orders)
