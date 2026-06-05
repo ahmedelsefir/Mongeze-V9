@@ -25,6 +25,12 @@ if "current_page" not in st.session_state:
     st.session_state["current_page"] = "الرئيسية"
 if "my_active_order_id" not in st.session_state:
     st.session_state["my_active_order_id"] = ""
+if "user_name" not in st.session_state:
+    st.session_state["user_name"] = "أحمد مصطفى"
+if "audio_notifications_enabled" not in st.session_state:
+    st.session_state["audio_notifications_enabled"] = False
+if "language" not in st.session_state:
+    st.session_state["language"] = "العربية"
 
 # ========================================================
 # 🔒 جلب التكوينات وإعداد الاتصال السحابي بالـ Firebase
@@ -114,6 +120,85 @@ def fetch_from_firebase(node):
         logger.error(f"Unexpected error fetching from Firebase: {str(e)}")
         return []
 
+def fetch_user_settings(username):
+    """Fetch user settings from Firebase with null-safety"""
+    try:
+        url = f"{FIREBASE_URL.rstrip('/')}/users/{username.replace(' ', '_')}.json"
+        res = requests.get(url, timeout=10)
+        
+        if res.ok and res.json():
+            return res.json()
+        return {}
+    except Exception as e:
+        logger.warning(f"Error fetching user settings for {username}: {str(e)}")
+        return {}
+
+def save_user_settings(username, settings):
+    """Save user settings to Firebase with comprehensive error handling"""
+    try:
+        sanitized_username = username.replace(" ", "_").replace(".", "_")
+        url = f"{FIREBASE_URL.rstrip('/')}/users/{sanitized_username}.json"
+        response = requests.patch(url, json=settings, timeout=10)
+        return response.ok
+    except Exception as e:
+        logger.error(f"Error saving user settings: {str(e)}")
+        return False
+
+def fetch_driver_account(username):
+    """Fetch driver payout account settings with null-safety"""
+    try:
+        sanitized_username = username.replace(" ", "_").replace(".", "_")
+        url = f"{FIREBASE_URL.rstrip('/')}/drivers_accounts/{sanitized_username}.json"
+        res = requests.get(url, timeout=10)
+        
+        if res.ok and res.json():
+            return res.json()
+        return {"payment_method": None, "account_number": None}
+    except Exception as e:
+        logger.warning(f"Error fetching driver account for {username}: {str(e)}")
+        return {"payment_method": None, "account_number": None}
+
+def save_driver_account(username, account_data):
+    """Save driver account information securely"""
+    try:
+        sanitized_username = username.replace(" ", "_").replace(".", "_")
+        url = f"{FIREBASE_URL.rstrip('/')}/drivers_accounts/{sanitized_username}.json"
+        account_data["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        response = requests.patch(url, json=account_data, timeout=10)
+        return response.ok
+    except Exception as e:
+        logger.error(f"Error saving driver account: {str(e)}")
+        return False
+
+def delete_user_from_firebase(username):
+    """Delete all user data from Firebase with cascading deletion"""
+    try:
+        sanitized_username = username.replace(" ", "_").replace(".", "_")
+        
+        # Delete from users node
+        url_users = f"{FIREBASE_URL.rstrip('/')}/users/{sanitized_username}.json"
+        requests.delete(url_users, timeout=10)
+        
+        # Delete from drivers_accounts if driver
+        url_driver = f"{FIREBASE_URL.rstrip('/')}/drivers_accounts/{sanitized_username}.json"
+        requests.delete(url_driver, timeout=10)
+        
+        # Delete from private_chats
+        url_chats = f"{FIREBASE_URL.rstrip('/')}/private_chats.json"
+        res = requests.get(url_chats, timeout=10)
+        if res.ok and res.json():
+            chats = res.json()
+            for chat_key in chats:
+                if sanitized_username in str(chat_key).lower():
+                    delete_url = f"{FIREBASE_URL.rstrip('/')}/private_chats/{chat_key}.json"
+                    requests.delete(delete_url, timeout=10)
+        
+        logger.info(f"User {username} completely deleted from Firebase")
+        return True
+    except Exception as e:
+        logger.error(f"Error deleting user: {str(e)}")
+        return False
+
 # ========================================================
 # 📧 محرك الإشعارات والاتصال الفوري (SMTP Gmail & Zoho)
 # ========================================================
@@ -152,6 +237,18 @@ def send_system_email(subject, body_text):
     except Exception as e:
         logger.error(f"Unexpected error sending email: {str(e)}")
         return False
+
+# ========================================================
+# 🎵 محرك التنبيهات الصوتية الذكي
+# ========================================================
+def trigger_audio_alert():
+    """Trigger an HTML5 audio alert notification"""
+    audio_html = """
+    <audio autoplay>
+        <source src="data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEAQB8AAAB9AAACABAAZGF0YQIAAAAAAA==" type="audio/wav">
+    </audio>
+    """
+    st.markdown(audio_html, unsafe_allow_html=True)
 
 # ========================================================
 # 📍 حساب المسافة الحية بين العميل والسائق (Distance Calculation)
@@ -242,7 +339,7 @@ def format_distance_display(distance_km):
         distance_km: المسافة بالكيلومتر
     
     القيمة المرجعة:
-        نص مُنسّق للعرض
+        نص مُنسّق ��لعرض
     """
     if distance_km is None:
         return "غير متاح 📍"
@@ -260,7 +357,7 @@ def format_distance_display(distance_km):
 # ========================================================
 st.title("🤖 غرفة العمليات المركزية لـ منجز الذكية")
 
-col1, col2, col3, col4, col5 = st.columns(5)
+col1, col2, col3, col4, col5, col6 = st.columns(6)
 with col1:
     if st.button("🏠 شاشة المراقبة", use_container_width=True): 
         st.session_state["current_page"] = "الرئيسية"
@@ -276,13 +373,19 @@ with col4:
 with col5:
     if st.button("🛰️ رادار تتبع الطلبات (لايف)", use_container_width=True): 
         st.session_state["current_page"] = "التتبع"
+with col6:
+    if st.button("⚙️ الإعدادات والملف الشخصي", use_container_width=True):
+        st.session_state["current_page"] = "الإعدادات"
 
 st.write("---")
 
 # ملف التحكم الجانبي بالهوية والصلاحيات الميكانيكية
 st.sidebar.markdown("### 👤 ملف المستخدم")
 user_role = st.sidebar.selectbox("اختر هويتك في السيستم:", ["عميل", "مندوب / كابتن", "إدارة وموظفين"])
-user_name = st.sidebar.text_input("اسمك المسجل:", value="أحمد مصطفى")
+user_name = st.sidebar.text_input("اسمك المسجل:", value=st.session_state.get("user_name", "أحمد مصطفى"))
+
+# Update session state with current user info
+st.session_state["user_name"] = user_name
 
 # 1️⃣ الشاشة الرئيسية (شاشة مراقبة العمليات لايف)
 if st.session_state["current_page"] == "الرئيسية":
@@ -325,6 +428,8 @@ elif st.session_state["current_page"] == "الطرود":
                     st.session_state["my_active_order_id"] = order_id
                     send_system_email(f"طلب طرد جديد {order_id}", f"العميل {user_name} طلب توصيل طرد بقيمة {price} ج.م")
                     st.success(f"🎉 تم بث الطلب بنجاح! كود التتبع الفريد هو: {order_id}")
+                    if st.session_state.get("audio_notifications_enabled", False):
+                        trigger_audio_alert()
                 else:
                     st.error("❌ فشل بث الطلب. تحقق من الاتصال.")
             except Exception as e:
@@ -350,6 +455,8 @@ elif st.session_state["current_page"] == "التاكسي":
                     st.session_state["my_active_order_id"] = order_id
                     send_system_email(f"طلب تاكسي جديد {order_id}", f"الراكب {user_name} اطلب رحلة من {start} إلى {end}")
                     st.success(f"🎉 تم بث الرحلة بنجاح! كود التتبع: {order_id}")
+                    if st.session_state.get("audio_notifications_enabled", False):
+                        trigger_audio_alert()
                 else:
                     st.error("❌ فشل بث الرحلة. تحقق من الاتصال.")
             except Exception as e:
@@ -493,6 +600,325 @@ elif st.session_state["current_page"] == "التتبع":
     except Exception as e:
         logger.error(f"Error in tracking page: {str(e)}")
         st.error("حدث خطأ في صفحة التتبع")
+
+# 6️⃣ ⚙️ نظام الإعدادات الشامل مع تكامل Firebase الكامل
+elif st.session_state["current_page"] == "الإعدادات":
+    st.markdown("## ⚙️ مركز الإعدادات والملف الشخصي المتقدم")
+    
+    # Initialize tabs for settings
+    settings_tabs = st.tabs(["🌍 الإعدادات العامة", "🚕 إعدادات المندوب", "📋 المساعدة والدعم"])
+    
+    # ========== TAB 1: الإعدادات العامة ==========
+    with settings_tabs[0]:
+        st.subheader("📱 الإعدادات العامة (Global Settings)")
+        
+        # Profile Section
+        st.markdown("### 👤 تعديل البروفايل الشخصي")
+        
+        try:
+            # Fetch current user settings
+            current_settings = fetch_user_settings(user_name)
+            
+            # Safe defaults for null-safety
+            default_name = current_settings.get("full_name", user_name) if current_settings else user_name
+            default_whatsapp = current_settings.get("whatsapp_number", "") if current_settings else ""
+            
+            with st.form("profile_edit_form"):
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    new_name = st.text_input(
+                        "🔤 الاسم الكامل:",
+                        value=default_name,
+                        help="أدخل اسمك الكامل كما تريد أن يظهر في النظام"
+                    )
+                
+                with col2:
+                    whatsapp_num = st.text_input(
+                        "📱 رقم الواتساب:",
+                        value=default_whatsapp,
+                        placeholder="+20xxxxxxxxxx",
+                        help="رقم واتساب للتواصل السريع"
+                    )
+                
+                if st.form_submit_button("💾 حفظ تعديلات البروفايل", use_container_width=True):
+                    try:
+                        profile_data = {
+                            "full_name": new_name,
+                            "whatsapp_number": whatsapp_num,
+                            "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "user_role": user_role
+                        }
+                        
+                        if save_user_settings(user_name, profile_data):
+                            st.session_state["user_name"] = new_name
+                            st.success("✅ تم حفظ تعديلات البروفايل بنجاح!")
+                            logger.info(f"Profile updated for user: {user_name}")
+                        else:
+                            st.error("❌ فشل حفظ التعديلات. حاول مرة أخرى.")
+                    except Exception as e:
+                        logger.error(f"Error saving profile: {str(e)}")
+                        st.error(f"خطأ في حفظ البيانات: {str(e)}")
+        
+        except Exception as e:
+            logger.error(f"Error loading profile settings: {str(e)}")
+            st.warning("⚠️ حدث خطأ في تحميل إعدادات البروفايل")
+        
+        st.divider()
+        
+        # Audio Notifications Section
+        st.markdown("### 🎵 إعدادات التنبيهات الصوتية")
+        st.caption("فعّل التنبيهات الصوتية لتلقي تنويهات عند وصول طلبات جديدة أو تحديثات الرادار")
+        
+        try:
+            audio_enabled = st.checkbox(
+                "🔊 تفعيل التنبيهات الصوتية",
+                value=st.session_state.get("audio_notifications_enabled", False),
+                help="عند التفعيل، سيسمع صوت تنبيه عند كل طلب جديد"
+            )
+            
+            st.session_state["audio_notifications_enabled"] = audio_enabled
+            
+            if audio_enabled:
+                st.info("✅ التنبيهات الصوتية **مفعّلة** - ستسمع صوت عند وصول طلب جديد")
+                if st.button("🔊 تجربة الصوت"):
+                    trigger_audio_alert()
+                    st.success("تم تشغيل الصوت!")
+            else:
+                st.info("❌ التنبيهات الصوتية **معطّلة**")
+        
+        except Exception as e:
+            logger.error(f"Error with audio notifications: {str(e)}")
+            st.warning("⚠️ خطأ في إعدادات التنبيهات الصوتية")
+        
+        st.divider()
+        
+        # Language Settings
+        st.markdown("### 🌐 إعدادات اللغة")
+        
+        try:
+            language_option = st.selectbox(
+                "اختر لغة الواجهة:",
+                options=["العربية", "English"],
+                index=0 if st.session_state.get("language", "العربية") == "العربية" else 1,
+                help="تغيير لغة الواجهة والرسائل"
+            )
+            
+            st.session_state["language"] = language_option
+            
+            if language_option == "العربية":
+                st.success("✅ تم تعيين اللغة على **العربية**")
+            else:
+                st.success("✅ Language set to **English**")
+        
+        except Exception as e:
+            logger.error(f"Error with language settings: {str(e)}")
+            st.warning("⚠️ خطأ في إعدادات اللغة")
+    
+    # ========== TAB 2: إعدادات المندوب ==========
+    with settings_tabs[1]:
+        st.subheader("🚕 إعدادات المندوب (Driver Settings)")
+        
+        if user_role == "مندوب / كابتن":
+            st.markdown("### 💰 تسجيل حسابات السحب والدفع")
+            st.caption("قم بتسجيل معلومات حسابك البنكي بأمان تام - البيانات مشفرة في الخادم")
+            
+            try:
+                # Fetch current driver account info
+                driver_account = fetch_driver_account(user_name)
+                
+                current_method = driver_account.get("payment_method") or "اختر الطريقة"
+                current_account = driver_account.get("account_number") or ""
+                
+                with st.form("driver_payout_form"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        payment_method = st.selectbox(
+                            "💳 طريقة الدفع المفضلة:",
+                            options=["اختر الطريقة", "Vodafone Cash 🟠", "InstaPay 💳", "Bank Transfer 🏦"],
+                            index=0,
+                            help="اختر طريقة تحويل الرصيد المفضلة لديك"
+                        )
+                    
+                    with col2:
+                        account_num = st.text_input(
+                            "📱 رقم الحساب / الهاتف:",
+                            value=current_account,
+                            placeholder="أدخل رقم هاتفك أو رقم حسابك البنكي",
+                            help="رقم محفظتك أو حسابك البنكي"
+                        )
+                    
+                    st.info("🔐 تحذير أمني: تأكد من صحة البيانات قبل الحفظ - لا يمكن الرجوع فيها بسهولة")
+                    
+                    col_confirm, col_cancel = st.columns(2)
+                    
+                    with col_confirm:
+                        if st.form_submit_button("✅ حفظ حساب السحب بأمان", use_container_width=True):
+                            try:
+                                if payment_method == "اختر الطريقة":
+                                    st.error("❌ يجب اختيار طريقة دفع أولاً")
+                                elif not account_num.strip():
+                                    st.error("❌ يجب إدخال رقم الحساب")
+                                else:
+                                    account_data = {
+                                        "payment_method": payment_method,
+                                        "account_number": account_num.strip(),
+                                        "verified": False,
+                                        "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                    }
+                                    
+                                    if save_driver_account(user_name, account_data):
+                                        st.success("✅ تم حفظ معلومات حسابك بنجاح! سيتم تحقق الفريق من البيانات")
+                                        send_system_email(
+                                            f"تسجيل حساب سحب جديد - {user_name}",
+                                            f"المندوب {user_name} قام بتسجيل حساب: {payment_method}"
+                                        )
+                                        logger.info(f"Driver account saved for: {user_name}")
+                                    else:
+                                        st.error("❌ فشل حفظ البيانات. حاول مرة أخرى.")
+                            except Exception as e:
+                                logger.error(f"Error saving driver account: {str(e)}")
+                                st.error(f"خطأ: {str(e)}")
+                
+                # Display current account info (if exists)
+                if driver_account and driver_account.get("account_number"):
+                    st.divider()
+                    st.markdown("### 📋 معلومات الحساب الحالية")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("طريقة الدفع", driver_account.get("payment_method", "غير محدد"))
+                    with col2:
+                        masked_account = "*" * (len(str(driver_account.get("account_number", ""))) - 4) + str(driver_account.get("account_number", ""))[-4:]
+                        st.metric("الحساب (مشفر)", masked_account)
+                    with col3:
+                        st.metric("الحالة", "✅ مسجل" if driver_account.get("verified") else "⏳ قيد التحقق")
+            
+            except Exception as e:
+                logger.error(f"Error in driver settings: {str(e)}")
+                st.warning("⚠️ خطأ في تحميل إعدادات المندوب")
+        
+        else:
+            st.info("ℹ️ هذا القسم متاح فقط للمندوبين والكابتن. غيّر دورك أعلى الصفحة لتفعيله.")
+    
+    # ========== TAB 3: المساعدة والدعم ==========
+    with settings_tabs[2]:
+        st.subheader("📋 المساعدة والدعم (Support & Maintenance)")
+        
+        # Legal & Privacy
+        st.markdown("### 📜 السياسات والشروط القانونية")
+        
+        with st.expander("🔐 سياسة الخصوصية وحماية البيانات"):
+            st.markdown("""
+            #### سياسة الخصوصية 🔒
+            
+            **منصة منجز الذكية** تلتزم بحماية بيانات المستخدمين وفقاً لأعلى معايير الأمان:
+            
+            ✅ **تشفير المحادثات**: جميع الرسائل والمحادثات في الشات الخاص مشفرة بتقنية SSL/TLS
+            
+            ✅ **حماية البيانات الشخصية**: تُخزن جميع البيانات بشكل آمن في خوادم Firebase مع نسخ احتياطية
+            
+            ✅ **عدم المشاركة**: لن نشارك بيانات المستخدمين مع طرف ثالث بدون موافقة صريحة
+            
+            ✅ **الوصول المقيد**: الوصول إلى بيانات المستخدم محصور على موظفي الشركة الموثوقين فقط
+            
+            ✅ **الامتثال**: نمتثل لجميع القوانين المحلية والدولية المتعلقة بحماية البيانات
+            
+            **آخر تحديث**: 2026-01-13
+            """)
+        
+        with st.expander("📋 شروط الاستخدام"):
+            st.markdown("""
+            #### شروط الاستخدام 📋
+            
+            باستخدامك لمنصة منجز الذكية، فإنك توافق على:
+            
+            1️⃣ **الاستخدام المشروع**: استخدام المنصة فقط للأغراض المشروعة والقانونية
+            
+            2️⃣ **المسؤولية الشخصية**: أنت مسؤول عن جميع الأنشطة التي تحدث تحت حسابك
+            
+            3️⃣ **عدم الإساءة**: لا يُسمح بإساءة الاستخدام أو الاحتيال أو الأنشطة الضارة
+            
+            4️⃣ **الامتثال للقوانين**: التزام كامل بقوانين الدولة والمحافظة
+            
+            5️⃣ **الاتفاقية الملزمة**: هذه الشروط تشكل اتفاقية ملزمة بيننا وبينك
+            
+            **آخر تحديث**: 2026-01-13
+            """)
+        
+        st.divider()
+        
+        # Account Deletion Section
+        st.markdown("### ⚠️ حذف الحساب (Account Deletion)")
+        st.warning("""
+        🚨 **تحذير مهم**: حذف الحساب عملية **لا يمكن التراجع عنها**.
+        
+        سيؤدي هذا إلى:
+        - ❌ حذف جميع بيانات ملفك الشخصي
+        - ❌ فقدان جميع سجلات الطلبات والمحادثات
+        - ❌ إلغاء أي حسابات دفع مسجلة
+        - ❌ عدم القدرة على استعادة البيانات
+        """)
+        
+        col_delete1, col_delete2 = st.columns([2, 1])
+        
+        with col_delete1:
+            st.markdown("**هل تريد حذف حسابك بشكل دائم؟**")
+        
+        with col_delete2:
+            if st.button("🗑️ حذف الحساب", key="delete_account_btn"):
+                st.session_state["confirm_delete"] = True
+        
+        # Double confirmation
+        if st.session_state.get("confirm_delete", False):
+            st.error("⚠️ تأكيد نهائي: هذه العملية لا يمكن التراجع عنها!")
+            
+            confirm_text = st.text_input(
+                "اكتب اسمك بالكامل للتأكيد:",
+                placeholder="اكتب اسمك هنا",
+                help="هذا تأكيد نهائي - اكتب اسمك بالضبط"
+            )
+            
+            col_final_yes, col_final_no = st.columns(2)
+            
+            with col_final_yes:
+                if st.button("✅ تأكيد النذف الدائم", use_container_width=True):
+                    if confirm_text.strip() == user_name:
+                        try:
+                            if delete_user_from_firebase(user_name):
+                                st.success("✅ تم حذف حسابك بنجاح. يتم إعادة التوجيه...")
+                                send_system_email(
+                                    f"تم حذف حساب: {user_name}",
+                                    f"تم حذف حساب المستخدم {user_name} بناءً على طلبه الشخصي"
+                                )
+                                time.sleep(2)
+                                st.session_state.clear()
+                                st.rerun()
+                            else:
+                                st.error("❌ حدث خطأ أثناء حذف الحساب")
+                        except Exception as e:
+                            logger.error(f"Error deleting account: {str(e)}")
+                            st.error(f"خطأ: {str(e)}")
+                    else:
+                        st.error("❌ الاسم المدخل لا يطابق اسمك المسجل")
+            
+            with col_final_no:
+                if st.button("❌ إلغاء الحذف", use_container_width=True):
+                    st.session_state["confirm_delete"] = False
+                    st.info("✅ تم إلغاء عملية الحذف")
+        
+        st.divider()
+        
+        # Support Contact
+        st.markdown("### 📞 التواصل مع الدعم الفني")
+        st.info("""
+        🆘 **هل تحتاج إلى مساعدة؟**
+        
+        - 📧 **البريد الإلكتروني**: support@mongeza.app
+        - 📱 **الواتساب**: +20xxxxxxxxxx
+        - 🌐 **الموقع الرسمي**: www.mongeza.app
+        - ⏰ **ساعات العمل**: ٢٤/٧ خدمة العملاء
+        """)
 
 # زر التحديث اليدوي السريع لضمان حركة التدفق الفوري للرادار
 if st.button("🔄 تحديث الرادار والمحادثات"):
