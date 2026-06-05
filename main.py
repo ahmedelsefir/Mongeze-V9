@@ -11,6 +11,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import logging
 from math import radians, cos, sin, asin, sqrt
+import base64
+from io import BytesIO
 
 # ========================================================
 # 🤖 إعداد واجهة منصة منجز الذكية وحماية الجلسة
@@ -31,6 +33,8 @@ if "audio_notifications_enabled" not in st.session_state:
     st.session_state["audio_notifications_enabled"] = False
 if "language" not in st.session_state:
     st.session_state["language"] = "العربية"
+if "driver_verification_status" not in st.session_state:
+    st.session_state["driver_verification_status"] = "Pending Approval"
 
 # ========================================================
 # 🔒 جلب التكوينات وإعداد الاتصال السحابي بالـ Firebase
@@ -200,6 +204,154 @@ def delete_user_from_firebase(username):
         return False
 
 # ========================================================
+# 🎖️ نظام التحقق من هوية المندوب (KYC - Know Your Driver)
+# ========================================================
+def upload_document_to_firebase(username, document_type, file_data):
+    """
+    Upload driver documents safely to Firebase with base64 encoding
+    
+    Args:
+        username: Driver username
+        document_type: Type of document (national_id, driving_license, vehicle_license)
+        file_data: File bytes from st.file_uploader
+    
+    Returns:
+        True if upload successful, False otherwise
+    """
+    try:
+        if not file_data:
+            logger.warning(f"Empty file data for {document_type}")
+            return False
+        
+        # Read file and encode to base64
+        try:
+            file_bytes = file_data.read()
+            if not file_bytes:
+                logger.error(f"File is empty: {document_type}")
+                return False
+            
+            file_base64 = base64.b64encode(file_bytes).decode('utf-8')
+            
+            # Sanitize username
+            sanitized_username = username.replace(" ", "_").replace(".", "_")
+            
+            # Create document metadata
+            doc_data = {
+                "document_type": document_type,
+                "file_base64": file_base64,
+                "file_name": file_data.name,
+                "file_size": len(file_bytes),
+                "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "verified": False
+            }
+            
+            # Upload to Firebase
+            node = f"driver_kyc/{sanitized_username}/{document_type}"
+            url = f"{FIREBASE_URL.rstrip('/')}/{node}.json"
+            response = requests.patch(url, json=doc_data, timeout=30)
+            
+            if response.ok:
+                logger.info(f"Document {document_type} uploaded successfully for {username}")
+                return True
+            else:
+                logger.error(f"Firebase upload failed with status {response.status_code}")
+                return False
+        
+        except Exception as upload_error:
+            logger.error(f"Error encoding/uploading file: {str(upload_error)}")
+            return False
+    
+    except Exception as e:
+        logger.error(f"Error uploading document to Firebase: {str(e)}")
+        return False
+
+def fetch_driver_kyc_documents(username):
+    """Fetch all KYC documents for a driver with null-safety"""
+    try:
+        sanitized_username = username.replace(" ", "_").replace(".", "_")
+        url = f"{FIREBASE_URL.rstrip('/')}/driver_kyc/{sanitized_username}.json"
+        res = requests.get(url, timeout=10)
+        
+        if res.ok and res.json():
+            return res.json()
+        return {}
+    except Exception as e:
+        logger.warning(f"Error fetching KYC documents for {username}: {str(e)}")
+        return {}
+
+def create_driver_kyc_record(username, user_role, car_type=None):
+    """Create initial KYC record for new driver"""
+    try:
+        sanitized_username = username.replace(" ", "_").replace(".", "_")
+        
+        kyc_record = {
+            "driver_name": username,
+            "user_role": user_role,
+            "verification_status": "Pending Approval",
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "approved_at": None,
+            "rejected_at": None,
+            "rejection_reason": None,
+            "documents_submitted": False,
+            "car_type": car_type if car_type else "Personal"
+        }
+        
+        node = f"driver_kyc/{sanitized_username}/metadata"
+        url = f"{FIREBASE_URL.rstrip('/')}/{node}.json"
+        response = requests.patch(url, json=kyc_record, timeout=10)
+        
+        if response.ok:
+            logger.info(f"KYC record created for {username}")
+            # Update user settings with verification status
+            save_user_settings(username, {"verification_status": "Pending Approval"})
+            return True
+        return False
+    
+    except Exception as e:
+        logger.error(f"Error creating KYC record: {str(e)}")
+        return False
+
+def update_driver_verification_status(username, status, rejection_reason=None):
+    """
+    Update driver verification status in Firebase
+    
+    Status options:
+    - "Active": Approved and can use the platform
+    - "Rejected": Rejected, cannot use platform
+    - "Pending Approval": Awaiting admin review
+    """
+    try:
+        sanitized_username = username.replace(" ", "_").replace(".", "_")
+        
+        update_data = {
+            "verification_status": status,
+            "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        
+        if status == "Active":
+            update_data["approved_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        elif status == "Rejected":
+            update_data["rejected_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            if rejection_reason:
+                update_data["rejection_reason"] = rejection_reason
+        
+        # Update in driver_kyc node
+        node = f"driver_kyc/{sanitized_username}/metadata"
+        url = f"{FIREBASE_URL.rstrip('/')}/{node}.json"
+        response = requests.patch(url, json=update_data, timeout=10)
+        
+        if response.ok:
+            # Also update in users node
+            save_user_settings(username, {"verification_status": status})
+            logger.info(f"Driver {username} verification status updated to {status}")
+            return True
+        return False
+    
+    except Exception as e:
+        logger.error(f"Error updating driver verification status: {str(e)}")
+        return False
+
+# ========================================================
 # 📧 محرك الإشعارات والاتصال الفوري (SMTP Gmail & Zoho)
 # ========================================================
 def send_system_email(subject, body_text):
@@ -339,7 +491,7 @@ def format_distance_display(distance_km):
         distance_km: المسافة بالكيلومتر
     
     القيمة المرجعة:
-        نص مُنسّق ��لعرض
+        نص مُنسّق للعرض
     """
     if distance_km is None:
         return "غير متاح 📍"
@@ -601,12 +753,15 @@ elif st.session_state["current_page"] == "التتبع":
         logger.error(f"Error in tracking page: {str(e)}")
         st.error("حدث خطأ في صفحة التتبع")
 
-# 6️⃣ ⚙️ نظام الإعدادات الشامل مع تكامل Firebase الكامل
+# 6️⃣ ⚙️ نظام الإعدادات الشامل مع تكامل Firebase الكامل + نظام KYC
 elif st.session_state["current_page"] == "الإعدادات":
     st.markdown("## ⚙️ مركز الإعدادات والملف الشخصي المتقدم")
     
     # Initialize tabs for settings
-    settings_tabs = st.tabs(["🌍 الإعدادات العامة", "🚕 إعدادات المندوب", "📋 المساعدة والدعم"])
+    if user_role == "مندوب / كابتن":
+        settings_tabs = st.tabs(["🌍 الإعدادات العامة", "🚕 إعدادات المندوب", "🎖️ التحقق من الهوية (KYC)", "📋 المساعدة والدعم"])
+    else:
+        settings_tabs = st.tabs(["🌍 الإعدادات العامة", "📋 المساعدة والدعم"])
     
     # ========== TAB 1: الإعدادات العامة ==========
     with settings_tabs[0]:
@@ -716,10 +871,9 @@ elif st.session_state["current_page"] == "الإعدادات":
             st.warning("⚠️ خطأ في إعدادات اللغة")
     
     # ========== TAB 2: إعدادات المندوب ==========
-    with settings_tabs[1]:
-        st.subheader("🚕 إعدادات المندوب (Driver Settings)")
-        
-        if user_role == "مندوب / كابتن":
+    if user_role == "مندوب / كابتن":
+        with settings_tabs[1]:
+            st.subheader("🚕 إعدادات المندوب (Driver Settings)")
             st.markdown("### 💰 تسجيل حسابات السحب والدفع")
             st.caption("قم بتسجيل معلومات حسابك البنكي بأمان تام - البيانات مشفرة في الخادم")
             
@@ -751,35 +905,32 @@ elif st.session_state["current_page"] == "الإعدادات":
                     
                     st.info("🔐 تحذير أمني: تأكد من صحة البيانات قبل الحفظ - لا يمكن الرجوع فيها بسهولة")
                     
-                    col_confirm, col_cancel = st.columns(2)
-                    
-                    with col_confirm:
-                        if st.form_submit_button("✅ حفظ حساب السحب بأمان", use_container_width=True):
-                            try:
-                                if payment_method == "اختر الطريقة":
-                                    st.error("❌ يجب اختيار طريقة دفع أولاً")
-                                elif not account_num.strip():
-                                    st.error("❌ يجب إدخال رقم الحساب")
+                    if st.form_submit_button("✅ حفظ حساب السحب بأمان", use_container_width=True):
+                        try:
+                            if payment_method == "اختر الطريقة":
+                                st.error("❌ يجب اختيار طريقة دفع أولاً")
+                            elif not account_num.strip():
+                                st.error("❌ يجب إدخال رقم الحساب")
+                            else:
+                                account_data = {
+                                    "payment_method": payment_method,
+                                    "account_number": account_num.strip(),
+                                    "verified": False,
+                                    "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                }
+                                
+                                if save_driver_account(user_name, account_data):
+                                    st.success("✅ تم حفظ معلومات حسابك بنجاح! سيتم تحقق الفريق من البيانات")
+                                    send_system_email(
+                                        f"تسجيل حساب سحب جديد - {user_name}",
+                                        f"المندوب {user_name} قام بتسجيل حساب: {payment_method}"
+                                    )
+                                    logger.info(f"Driver account saved for: {user_name}")
                                 else:
-                                    account_data = {
-                                        "payment_method": payment_method,
-                                        "account_number": account_num.strip(),
-                                        "verified": False,
-                                        "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                    }
-                                    
-                                    if save_driver_account(user_name, account_data):
-                                        st.success("✅ تم حفظ معلومات حسابك بنجاح! سيتم تحقق الفريق من البيانات")
-                                        send_system_email(
-                                            f"تسجيل حساب سحب جديد - {user_name}",
-                                            f"المندوب {user_name} قام بتسجيل حساب: {payment_method}"
-                                        )
-                                        logger.info(f"Driver account saved for: {user_name}")
-                                    else:
-                                        st.error("❌ فشل حفظ البيانات. حاول مرة أخرى.")
-                            except Exception as e:
-                                logger.error(f"Error saving driver account: {str(e)}")
-                                st.error(f"خطأ: {str(e)}")
+                                    st.error("❌ فشل حفظ البيانات. حاول مرة أخرى.")
+                        except Exception as e:
+                            logger.error(f"Error saving driver account: {str(e)}")
+                            st.error(f"خطأ: {str(e)}")
                 
                 # Display current account info (if exists)
                 if driver_account and driver_account.get("account_number"):
@@ -798,127 +949,343 @@ elif st.session_state["current_page"] == "الإعدادات":
                 logger.error(f"Error in driver settings: {str(e)}")
                 st.warning("⚠️ خطأ في تحميل إعدادات المندوب")
         
-        else:
-            st.info("ℹ️ هذا القسم متاح فقط للمندوبين والكابتن. غيّر دورك أعلى الصفحة لتفعيله.")
-    
-    # ========== TAB 3: المساعدة والدعم ==========
-    with settings_tabs[2]:
-        st.subheader("📋 المساعدة والدعم (Support & Maintenance)")
-        
-        # Legal & Privacy
-        st.markdown("### 📜 السياسات والشروط القانونية")
-        
-        with st.expander("🔐 سياسة الخصوصية وحماية البيانات"):
-            st.markdown("""
-            #### سياسة الخصوصية 🔒
+        # ========== TAB 3: KYC Verification System ==========
+        with settings_tabs[2]:
+            st.subheader("🎖️ نظام التحقق من الهوية (Know Your Driver - KYC)")
             
-            **منصة منجز الذكية** تلتزم بحماية بيانات المستخدمين وفقاً لأعلى معايير الأمان:
-            
-            ✅ **تشفير المحادثات**: جميع الرسائل والمحادثات في الشات الخاص مشفرة بتقنية SSL/TLS
-            
-            ✅ **حماية البيانات الشخصية**: تُخزن جميع البيانات بشكل آمن في خوادم Firebase مع نسخ احتياطية
-            
-            ✅ **عدم المشاركة**: لن نشارك بيانات المستخدمين مع طرف ثالث بدون موافقة صريحة
-            
-            ✅ **الوصول المقيد**: الوصول إلى بيانات المستخدم محصور على موظفي الشركة الموثوقين فقط
-            
-            ✅ **الامتثال**: نمتثل لجميع القوانين المحلية والدولية المتعلقة بحماية البيانات
-            
-            **آخر تحديث**: 2026-01-13
-            """)
-        
-        with st.expander("📋 شروط الاستخدام"):
-            st.markdown("""
-            #### شروط الاستخدام 📋
-            
-            باستخدامك لمنصة منجز الذكية، فإنك توافق على:
-            
-            1️⃣ **الاستخدام المشروع**: استخدام المنصة فقط للأغراض المشروعة والقانونية
-            
-            2️⃣ **المسؤولية الشخصية**: أنت مسؤول عن جميع الأنشطة التي تحدث تحت حسابك
-            
-            3️⃣ **عدم الإساءة**: لا يُسمح بإساءة الاستخدام أو الاحتيال أو الأنشطة الضارة
-            
-            4️⃣ **الامتثال للقوانين**: التزام كامل بقوانين الدولة والمحافظة
-            
-            5️⃣ **الاتفاقية الملزمة**: هذه الشروط تشكل اتفاقية ملزمة بيننا وبينك
-            
-            **آخر تحديث**: 2026-01-13
-            """)
-        
-        st.divider()
-        
-        # Account Deletion Section
-        st.markdown("### ⚠️ حذف الحساب (Account Deletion)")
-        st.warning("""
-        🚨 **تحذير مهم**: حذف الحساب عملية **لا يمكن التراجع عنها**.
-        
-        سيؤدي هذا إلى:
-        - ❌ حذف جميع بيانات ملفك الشخصي
-        - ❌ فقدان جميع سجلات الطلبات والمحادثات
-        - ❌ إلغاء أي حسابات دفع مسجلة
-        - ❌ عدم القدرة على استعادة البيانات
-        """)
-        
-        col_delete1, col_delete2 = st.columns([2, 1])
-        
-        with col_delete1:
-            st.markdown("**هل تريد حذف حسابك بشكل دائم؟**")
-        
-        with col_delete2:
-            if st.button("🗑️ حذف الحساب", key="delete_account_btn"):
-                st.session_state["confirm_delete"] = True
-        
-        # Double confirmation
-        if st.session_state.get("confirm_delete", False):
-            st.error("⚠️ تأكيد نهائي: هذه العملية لا يمكن التراجع عنها!")
-            
-            confirm_text = st.text_input(
-                "اكتب اسمك بالكامل للتأكيد:",
-                placeholder="اكتب اسمك هنا",
-                help="هذا تأكيد نهائي - اكتب اسمك بالضبط"
-            )
-            
-            col_final_yes, col_final_no = st.columns(2)
-            
-            with col_final_yes:
-                if st.button("✅ تأكيد النذف الدائم", use_container_width=True):
-                    if confirm_text.strip() == user_name:
+            try:
+                # Fetch KYC status
+                kyc_docs = fetch_driver_kyc_documents(user_name)
+                
+                # Check if KYC record exists
+                if not kyc_docs or "metadata" not in kyc_docs:
+                    st.info("📝 أنت جديد في النظام. يجب تسجيل وثائقك للتفعيل الكامل.")
+                    if st.button("🆕 بدء عملية التحقق من الهوية"):
                         try:
-                            if delete_user_from_firebase(user_name):
-                                st.success("✅ تم حذف حسابك بنجاح. يتم إعادة التوجيه...")
-                                send_system_email(
-                                    f"تم حذف حساب: {user_name}",
-                                    f"تم حذف حساب المستخدم {user_name} بناءً على طلبه الشخصي"
-                                )
-                                time.sleep(2)
-                                st.session_state.clear()
+                            if create_driver_kyc_record(user_name, user_role, car_type="Personal"):
+                                st.success("✅ تم إنشاء ملف التحقق الخاص بك! الآن قم برفع الوثائق المطلوبة.")
+                                st.session_state["driver_verification_status"] = "Pending Approval"
+                                time.sleep(1)
                                 st.rerun()
                             else:
-                                st.error("❌ حدث خطأ أثناء حذف الحساب")
+                                st.error("❌ فشل إنشاء ملف التحقق")
                         except Exception as e:
-                            logger.error(f"Error deleting account: {str(e)}")
+                            logger.error(f"Error creating KYC record: {str(e)}")
                             st.error(f"خطأ: {str(e)}")
+                else:
+                    # Display KYC status
+                    metadata = kyc_docs.get("metadata", {})
+                    verification_status = metadata.get("verification_status", "Unknown")
+                    
+                    st.markdown("### 📊 حالة التحقق من الهوية")
+                    
+                    # Status indicator
+                    if verification_status == "Active":
+                        st.success("✅ **حالتك مفعّلة** - يمكنك استخدام المنصة بالكامل!")
+                    elif verification_status == "Rejected":
+                        rejection_reason = metadata.get("rejection_reason", "لم يتم تحديد السبب")
+                        st.error(f"❌ **تم رفض طلبك** - السبب: {rejection_reason}")
                     else:
-                        st.error("❌ الاسم المدخل لا يطابق اسمك المسجل")
+                        st.warning(f"⏳ **حالتك معلقة** - جاري المراجعة من قبل الفريق الإداري")
+                    
+                    # Display metadata
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("الحالة", verification_status)
+                    with col2:
+                        created_date = metadata.get("created_at", "N/A")
+                        st.metric("تاريخ الطلب", created_date[:10] if created_date else "N/A")
+                    with col3:
+                        st.metric("النوع", metadata.get("user_role", "Unknown"))
+                    
+                    st.divider()
+                    
+                    # Document Upload Section
+                    st.markdown("### 📄 رفع الوثائق المطلوبة")
+                    st.caption("يجب رفع جميع الوثائق أدناه لتفعيل حسابك بالكامل")
+                    
+                    # National ID
+                    st.markdown("#### 🆔 صورة البطاقة الشخصية")
+                    national_id_file = st.file_uploader(
+                        "اختر صورة البطاقة الشخصية",
+                        type=["jpg", "jpeg", "png", "pdf"],
+                        key="national_id_uploader",
+                        help="اختر صورة واضحة لبطاقتك الشخصية (الوجه + الخلف)"
+                    )
+                    
+                    if national_id_file and st.button("📤 رفع صورة البطاقة"):
+                        try:
+                            with st.spinner("جاري رفع الصورة..."):
+                                if upload_document_to_firebase(user_name, "national_id", national_id_file):
+                                    st.success("✅ تم رفع صورة البطاقة بنجاح!")
+                                    send_system_email(
+                                        f"وثيقة جديدة: بطاقة شخصية - {user_name}",
+                                        f"المندوب {user_name} رفع صورة البطاقة الشخصية للمراجعة"
+                                    )
+                                else:
+                                    st.error("❌ فشل رفع الصورة. حاول مرة أخرى.")
+                        except Exception as e:
+                            logger.error(f"Error uploading national ID: {str(e)}")
+                            st.error(f"خطأ: {str(e)}")
+                    
+                    # Display current status
+                    if "national_id" in kyc_docs and kyc_docs["national_id"].get("file_base64"):
+                        nat_id_status = kyc_docs["national_id"].get("verified", False)
+                        st.info(f"📋 البطاقة الشخصية: {'✅ مسجلة' if nat_id_status else '⏳ قيد المراجعة'}")
+                    
+                    st.divider()
+                    
+                    # Driving License
+                    st.markdown("#### 🚗 رخصة القيادة")
+                    driving_license_file = st.file_uploader(
+                        "اختر صورة رخصة القيادة",
+                        type=["jpg", "jpeg", "png", "pdf"],
+                        key="driving_license_uploader",
+                        help="اختر صورة واضحة لرخصة القيادة"
+                    )
+                    
+                    if driving_license_file and st.button("📤 رفع رخصة القيادة"):
+                        try:
+                            with st.spinner("جاري رفع الوثيقة..."):
+                                if upload_document_to_firebase(user_name, "driving_license", driving_license_file):
+                                    st.success("✅ تم رفع رخصة القيادة بنجاح!")
+                                    send_system_email(
+                                        f"وثيقة جديدة: رخصة القيادة - {user_name}",
+                                        f"المندوب {user_name} رفع صورة رخصة القيادة للمراجعة"
+                                    )
+                                else:
+                                    st.error("❌ فشل رفع الوثيقة. حاول مرة أخرى.")
+                        except Exception as e:
+                            logger.error(f"Error uploading driving license: {str(e)}")
+                            st.error(f"خطأ: {str(e)}")
+                    
+                    # Display current status
+                    if "driving_license" in kyc_docs and kyc_docs["driving_license"].get("file_base64"):
+                        lic_status = kyc_docs["driving_license"].get("verified", False)
+                        st.info(f"📋 رخصة القيادة: {'✅ مسجلة' if lic_status else '⏳ قيد المراجعة'}")
+                    
+                    st.divider()
+                    
+                    # Vehicle License (if applicable)
+                    st.markdown("#### 🛞 رخصة المركبة (إن وجدت)")
+                    st.caption("اختياري - رفع هذه الوثيقة إذا كنت تملك مركبة")
+                    vehicle_license_file = st.file_uploader(
+                        "اختر صورة رخصة المركبة",
+                        type=["jpg", "jpeg", "png", "pdf"],
+                        key="vehicle_license_uploader",
+                        help="اختر صورة واضحة لرخصة المركبة"
+                    )
+                    
+                    if vehicle_license_file and st.button("📤 رفع رخصة المركبة"):
+                        try:
+                            with st.spinner("جاري رفع الوثيقة..."):
+                                if upload_document_to_firebase(user_name, "vehicle_license", vehicle_license_file):
+                                    st.success("✅ تم رفع رخصة المركبة بنجاح!")
+                                    send_system_email(
+                                        f"وثيقة جديدة: رخصة المركبة - {user_name}",
+                                        f"المندوب {user_name} رفع صورة رخصة المركبة للمراجعة"
+                                    )
+                                else:
+                                    st.error("❌ فشل رفع الوثيقة. حاول مرة أخرى.")
+                        except Exception as e:
+                            logger.error(f"Error uploading vehicle license: {str(e)}")
+                            st.error(f"خطأ: {str(e)}")
+                    
+                    # Display current status
+                    if "vehicle_license" in kyc_docs and kyc_docs["vehicle_license"].get("file_base64"):
+                        veh_status = kyc_docs["vehicle_license"].get("verified", False)
+                        st.info(f"📋 رخصة المركبة: {'✅ مسجلة' if veh_status else '⏳ قيد المراجعة'}")
             
-            with col_final_no:
-                if st.button("❌ إلغاء الحذف", use_container_width=True):
-                    st.session_state["confirm_delete"] = False
-                    st.info("✅ تم إلغاء عملية الحذف")
+            except Exception as e:
+                logger.error(f"Error in KYC section: {str(e)}")
+                st.warning("⚠️ خطأ في قسم التحقق من الهوية")
         
-        st.divider()
+        # ========== TAB 4: المساعدة والدعم (للمندوب) ==========
+        settings_tab_index = 3
+        with settings_tabs[settings_tab_index]:
+            st.subheader("📋 المساعدة والدعم (Support & Maintenance)")
+            
+            with st.expander("🔐 سياسة الخصوصية وحماية البيانات"):
+                st.markdown("""
+                #### سياسة الخصوصية 🔒
+                
+                **منصة منجز الذكية** تلتزم بحماية بيانات المستخدمين وفقاً لأعلى معايير الأمان:
+                
+                ✅ **تشفير المحادثات**: جميع الرسائل والمحادثات في الشات الخاص مشفرة بتقنية SSL/TLS
+                
+                ✅ **حماية البيانات الشخصية**: تُخزن جميع البيانات بشكل آمن في خوادم Firebase مع نسخ احتياطية
+                
+                ✅ **عدم المشاركة**: لن نشارك بيانات المستخدمين مع طرف ثالث بدون موافقة صريحة
+                
+                ✅ **الوصول المقيد**: الوصول إلى بيانات المستخدم محصور على موظفي الشركة الموثوقين فقط
+                
+                ✅ **الامتثال**: نمتثل لجميع القوانين المحلية والدولية المتعلقة بحماية البيانات
+                
+                **آخر تحديث**: 2026-01-13
+                """)
+            
+            with st.expander("📋 شروط الاستخدام"):
+                st.markdown("""
+                #### شروط الاستخدام 📋
+                
+                باستخدامك لمنصة منجز الذكية، فإنك توافق على:
+                
+                1️⃣ **الاستخدام المشروع**: استخدام المنصة فقط للأغراض المشروعة والقانونية
+                
+                2️⃣ **المسؤولية الشخصية**: أنت مسؤول عن جميع الأنشطة التي تحدث تحت حسابك
+                
+                3️⃣ **عدم الإساءة**: لا يُسمح بإساءة الاستخدام أو الاحتيال أو الأنشطة الضارة
+                
+                4️⃣ **الامتثال للقوانين**: التزام كامل بقوانين الدولة والمحافظة
+                
+                5️⃣ **الاتفاقية الملزمة**: هذه الشروط تشكل اتفاقية ملزمة بيننا وبينك
+                
+                **آخر تحديث**: 2026-01-13
+                """)
+            
+            st.divider()
+            
+            st.markdown("### 📞 التواصل مع الدعم الفني")
+            st.info("""
+            🆘 **هل تحتاج إلى مساعدة؟**
+            
+            - 📧 **البريد الإلكتروني**: support@mongeza.app
+            - 📱 **الواتساب**: +20xxxxxxxxxx
+            - 🌐 **الموقع الرسمي**: www.mongeza.app
+            - ⏰ **ساعات العمل**: ٢٤/٧ خدمة العملاء
+            """)
+    
+    else:
+        # For non-driver users, show basic support
+        with settings_tabs[1]:
+            st.subheader("📋 المساعدة والدعم (Support & Maintenance)")
+            
+            with st.expander("🔐 سياسة الخصوصية وحماية البيانات"):
+                st.markdown("""
+                #### سياسة الخصوصية 🔒
+                
+                **منصة منجز الذكية** تلتزم بحماية بيانات المستخدمين وفقاً لأعلى معايير الأمان.
+                """)
+            
+            st.divider()
+            st.markdown("### 📞 التواصل مع الدعم الفني")
+            st.info("للتواصل مع فريق الدعم، استخدم البيانات أعلاه.")
+
+# ========== ADMIN CONSOLE: Pending Verification Radar ==========
+if user_role == "إدارة وموظفين" and st.session_state["current_page"] == "الإعدادات":
+    st.markdown("---")
+    st.markdown("## 🔍 لوحة تحكم التحقق من الهوية (Admin KYC Console)")
+    
+    try:
+        # Fetch all KYC records
+        kyc_records = fetch_from_firebase("driver_kyc")
         
-        # Support Contact
-        st.markdown("### 📞 التواصل مع الدعم الفني")
-        st.info("""
-        🆘 **هل تحتاج إلى مساعدة؟**
+        if kyc_records and len(kyc_records) > 0:
+            # Filter pending drivers
+            pending_drivers = []
+            for record in kyc_records:
+                try:
+                    metadata = record.get("metadata", {})
+                    if metadata.get("verification_status") == "Pending Approval":
+                        pending_drivers.append({
+                            "db_id": record.get("db_id"),
+                            "driver_name": metadata.get("driver_name", "Unknown"),
+                            "created_at": metadata.get("created_at", "N/A"),
+                            "documents": record
+                        })
+                except Exception as e:
+                    logger.warning(f"Error processing KYC record: {str(e)}")
+                    continue
+            
+            if pending_drivers:
+                st.subheader(f"📡 رادار المحتاجين للمراجعة ({len(pending_drivers)} معلقة)")
+                
+                for driver in pending_drivers:
+                    try:
+                        driver_name = driver.get("driver_name", "Unknown")
+                        created_at = driver.get("created_at", "N/A")
+                        
+                        with st.expander(f"👤 {driver_name} - المُرسل: {created_at}"):
+                            # Show documents status
+                            col1, col2, col3 = st.columns(3)
+                            
+                            with col1:
+                                nat_id_exists = "national_id" in driver.get("documents", {})
+                                st.metric("🆔 البطاقة", "✅ موجودة" if nat_id_exists else "❌ مفقودة")
+                            
+                            with col2:
+                                lic_exists = "driving_license" in driver.get("documents", {})
+                                st.metric("🚗 الرخصة", "✅ موجودة" if lic_exists else "❌ مفقودة")
+                            
+                            with col3:
+                                veh_exists = "vehicle_license" in driver.get("documents", {})
+                                st.metric("🛞 المركبة", "✅ موجودة" if veh_exists else "❌ مفقودة")
+                            
+                            st.divider()
+                            
+                            # Action buttons
+                            st.markdown("### 🎯 الإجراءات الإدارية")
+                            
+                            col_approve, col_reject = st.columns(2)
+                            
+                            with col_approve:
+                                if st.button(f"🟢 موافقة وتفعيل الحساب - {driver_name}", key=f"approve_{driver_name}"):
+                                    try:
+                                        if update_driver_verification_status(driver_name, "Active"):
+                                            st.success(f"✅ تم تفعيل حساب {driver_name} بنجاح!")
+                                            send_system_email(
+                                                f"✅ تم الموافقة على حسابك - {driver_name}",
+                                                f"تم الموافقة على طلب التحقق من هويتك. يمكنك الآن استخدام المنصة بالكامل والقبول على الطلبات!"
+                                            )
+                                            logger.info(f"Driver {driver_name} approved")
+                                            time.sleep(1)
+                                            st.rerun()
+                                        else:
+                                            st.error("❌ فشلت عملية التفعيل")
+                                    except Exception as e:
+                                        logger.error(f"Error approving driver: {str(e)}")
+                                        st.error(f"خطأ: {str(e)}")
+                            
+                            with col_reject:
+                                rejection_reason = st.text_input(
+                                    "سبب الرفض (إن وجد):",
+                                    placeholder="مثال: الوثائق غير واضحة",
+                                    key=f"reject_reason_{driver_name}"
+                                )
+                                
+                                if st.button(f"🔴 رفض الطلب - {driver_name}", key=f"reject_{driver_name}"):
+                                    try:
+                                        if not rejection_reason.strip():
+                                            st.error("❌ يجب إدخال سبب الرفض")
+                                        else:
+                                            if update_driver_verification_status(driver_name, "Rejected", rejection_reason.strip()):
+                                                st.success(f"✅ تم رفض طلب {driver_name}")
+                                                send_system_email(
+                                                    f"❌ تم رفض طلبك - {driver_name}",
+                                                    f"للأسف، تم رفض طلب التحقق من هويتك. السبب: {rejection_reason}\n\nيمكنك إعادة محاولة رفع الوثائق مرة أخرى."
+                                                )
+                                                logger.info(f"Driver {driver_name} rejected")
+                                                time.sleep(1)
+                                                st.rerun()
+                                            else:
+                                                st.error("❌ فشلت عملية الرفض")
+                                    except Exception as e:
+                                        logger.error(f"Error rejecting driver: {str(e)}")
+                                        st.error(f"خطأ: {str(e)}")
+                    
+                    except Exception as display_error:
+                        logger.warning(f"Error displaying driver: {str(display_error)}")
+                        continue
+            
+            else:
+                st.info("✅ لا توجد طلبات معلقة للمراجعة - جميع المندوبين تم مراجعتهم!")
         
-        - 📧 **البريد الإلكتروني**: support@mongeza.app
-        - 📱 **الواتساب**: +20xxxxxxxxxx
-        - 🌐 **الموقع الرسمي**: www.mongeza.app
-        - ⏰ **ساعات العمل**: ٢٤/٧ خدمة العملاء
-        """)
+        else:
+            st.info("📭 لا توجد طلبات KYC حتى الآن")
+    
+    except Exception as e:
+        logger.error(f"Error in admin KYC console: {str(e)}")
+        st.error("⚠️ خطأ في تحميل لوحة التحكم")
 
 # زر التحديث اليدوي السريع لضمان حركة التدفق الفوري للرادار
 if st.button("🔄 تحديث الرادار والمحادثات"):
