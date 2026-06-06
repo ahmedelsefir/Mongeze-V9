@@ -82,7 +82,7 @@ def render_admin_kyc_console(fetch_from_firebase, update_driver_verification_sta
                             # Document status & preview
                             _render_doc_review(docs, "national_id", "🆔 البطاقة الشخصية (National ID)")
                             _render_doc_review(docs, "driving_license", "🚗 رخصة القيادة (Driving License)")
-                            _render_doc_review(docs, "vehicle_registration", "🛞 شهادة تسجيل المركبة (Vehicle Registration)")
+                            _render_doc_review(docs, "vehicle_license", "🛞 شهادة تسجيل المركبة (Vehicle Registration)")
 
                             st.divider()
                             st.markdown("### 🎯 الإجراءات الإدارية")

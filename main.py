@@ -362,12 +362,34 @@ def update_driver_verification_status(username, status, rejection_reason=None):
 
 def credit_driver_wallet(username, amount):
     """Atomically credit amount to driver's wallet balance in Firebase.
-    Uses read-then-write with PATCH to simulate atomic increment."""
+    Uses Firebase Admin SDK transaction for true atomic read-modify-write.
+    Falls back to REST API if Admin SDK is not initialized."""
     try:
         sanitized_username = username.replace(" ", "_").replace(".", "_")
-        wallet_url = f"{FIREBASE_URL.rstrip('/')}/drivers/{sanitized_username}/wallet_balance.json"
 
-        # Read current balance (null-safe)
+        # Try atomic transaction via Firebase Admin SDK
+        if firebase_admin._apps:
+            try:
+                from firebase_admin import db as fb_db
+                ref = fb_db.reference(f"drivers/{sanitized_username}/wallet_balance")
+
+                def increment_balance(current_value):
+                    current_balance = 0.0
+                    if current_value is not None:
+                        try:
+                            current_balance = float(current_value)
+                        except (ValueError, TypeError):
+                            current_balance = 0.0
+                    return round(current_balance + float(amount), 2)
+
+                new_balance = ref.transaction(increment_balance)
+                logger.info(f"Wallet credited (atomic): {username} += {amount}, new balance = {new_balance}")
+                return True
+            except Exception as sdk_err:
+                logger.warning(f"Firebase Admin SDK transaction failed, falling back to REST: {str(sdk_err)}")
+
+        # Fallback: REST API read-then-write (best-effort if SDK unavailable)
+        wallet_url = f"{FIREBASE_URL.rstrip('/')}/drivers/{sanitized_username}/wallet_balance.json"
         res = requests.get(wallet_url, timeout=10)
         current_balance = 0.0
         if res.ok and res.json() is not None:
@@ -377,13 +399,11 @@ def credit_driver_wallet(username, amount):
                 current_balance = 0.0
 
         new_balance = round(current_balance + float(amount), 2)
-
-        # Write new balance
         node_url = f"{FIREBASE_URL.rstrip('/')}/drivers/{sanitized_username}.json"
         response = requests.patch(node_url, json={"wallet_balance": new_balance}, timeout=10)
 
         if response.ok:
-            logger.info(f"Wallet credited: {username} += {amount}, new balance = {new_balance}")
+            logger.info(f"Wallet credited (REST fallback): {username} += {amount}, new balance = {new_balance}")
             return True
         return False
 
@@ -644,7 +664,8 @@ elif st.session_state["current_page"] == "التتبع":
             render_customer_tracking(fetch_from_firebase, get_live_distance_for_order, format_distance_display)
 
         elif user_role == "مندوب / كابتن":
-            render_driver_tracking(user_name, orders, update_firebase_node)
+            render_driver_tracking(user_name, orders, update_firebase_node,
+                                   fetch_driver_kyc_documents)
 
         elif user_role == "إدارة وموظفين":
             render_admin_tracking(orders, get_live_distance_for_order, format_distance_display)

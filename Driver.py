@@ -12,8 +12,20 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def render_driver_tracking(user_name, orders, update_firebase_node):
+def render_driver_tracking(user_name, orders, update_firebase_node,
+                           fetch_driver_kyc_documents=None):
     """Render driver tracking/radar view for picking up orders."""
+    # Sync verification status from Firebase on every load (avoids stale session state)
+    if fetch_driver_kyc_documents is not None:
+        try:
+            kyc_docs = fetch_driver_kyc_documents(user_name)
+            if kyc_docs and isinstance(kyc_docs, dict):
+                metadata = kyc_docs.get("metadata", {})
+                status = metadata.get("verification_status", "Pending Manual Review")
+                st.session_state["driver_verification_status"] = status
+        except Exception as e:
+            logger.warning(f"Error fetching driver KYC status: {str(e)}")
+
     # Block unverified drivers from picking up orders
     driver_status = st.session_state.get("driver_verification_status", "Pending Manual Review")
     if driver_status != "Active":
@@ -215,7 +227,7 @@ def render_driver_kyc_tab(user_name, user_role, fetch_driver_kyc_documents,
             st.divider()
 
             _render_doc_upload(
-                user_name, kyc_docs, "vehicle_registration",
+                user_name, kyc_docs, "vehicle_license",
                 "🛞 رخصة المركبة (Vehicle Registration)",
                 "اختر صورة رخصة المركبة",
                 "اختر صورة واضحة لرخصة المركبة",
