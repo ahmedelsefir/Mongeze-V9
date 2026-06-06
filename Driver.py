@@ -144,6 +144,84 @@ def render_driver_settings_tab(user_name, fetch_driver_account, save_driver_acco
         st.warning("⚠️ خطأ في تحميل إعدادات المندوب")
 
 
+def render_wallet_topup(user_name, initiate_wallet_topup_fn=None):
+    """Render Paymob wallet top-up section for drivers.
+
+    Args:
+        user_name: The driver's username.
+        initiate_wallet_topup_fn: callable from paymob.initiate_wallet_topup.
+    """
+    st.divider()
+    st.markdown("### 💳 شحن المحفظة عبر Paymob")
+    st.caption("ادفع عبر Vodafone Cash أو بطاقة ائتمان لشحن رصيدك فوراً")
+
+    try:
+        with st.form("wallet_topup_form"):
+            col1, col2 = st.columns(2)
+
+            with col1:
+                topup_amount = st.number_input(
+                    "💵 المبلغ (ج.م):",
+                    min_value=10.0,
+                    max_value=50000.0,
+                    value=100.0,
+                    step=10.0,
+                    help="أدخل المبلغ الذي تريد شحنه بالجنيه المصري"
+                )
+
+            with col2:
+                topup_method = st.selectbox(
+                    "📱 طريقة الدفع:",
+                    options=["💳 بطاقة ائتمان (Credit Card)", "📲 فودافون كاش (Vodafone Cash)"],
+                    help="اختر طريقة الدفع المفضلة"
+                )
+
+            if st.form_submit_button("🚀 متابعة لصفحة الدفع", use_container_width=True):
+                if not initiate_wallet_topup_fn:
+                    st.warning("⚠️ خدمة Paymob غير متاحة حالياً — يرجى التواصل مع الإدارة")
+                    logger.warning("initiate_wallet_topup_fn not provided — Paymob not configured")
+                else:
+                    try:
+                        payment_method = "wallet" if "فودافون" in topup_method else "card"
+                        driver_info = {
+                            "first_name": user_name.split()[0] if user_name else "Driver",
+                            "last_name": user_name.split()[-1] if user_name and len(user_name.split()) > 1 else "Monjez",
+                            "email": "driver@monjez.app",
+                            "phone_number": "+20000000000",
+                        }
+
+                        with st.spinner("⏳ جاري تجهيز صفحة الدفع..."):
+                            result = initiate_wallet_topup_fn(
+                                driver_username=user_name,
+                                amount_egp=topup_amount,
+                                driver_info=driver_info,
+                                payment_method=payment_method,
+                            )
+
+                        if result and result.get("checkout_url"):
+                            st.success(f"✅ تم تجهيز الدفع — المبلغ: {topup_amount} ج.م")
+                            st.markdown(
+                                f'<a href="{result["checkout_url"]}" target="_blank">'
+                                f'<button style="background-color:#4CAF50;color:white;padding:12px 24px;'
+                                f'border:none;border-radius:8px;cursor:pointer;font-size:16px;width:100%">'
+                                f'💳 انتقل لصفحة الدفع الآمنة</button></a>',
+                                unsafe_allow_html=True,
+                            )
+                            st.info(f"🔑 رقم الطلب: {result.get('order_id', 'N/A')}")
+                            logger.info(f"Wallet topup checkout ready: {user_name}, {topup_amount} EGP via {payment_method}")
+                        elif result:
+                            st.warning("⚠️ تم تجهيز الدفع ولكن رابط الدفع غير متاح — تحقق من إعداد PAYMOB_IFRAME_ID")
+                        else:
+                            st.error("❌ فشل تجهيز عملية الدفع — تحقق من إعدادات Paymob")
+                    except Exception as e:
+                        logger.error(f"Error initiating wallet topup: {e}")
+                        st.error(f"❌ خطأ في عملية الدفع: {e}")
+
+    except Exception as e:
+        logger.error(f"Error in wallet topup section: {e}")
+        st.warning("⚠️ خطأ في قسم شحن المحفظة")
+
+
 def render_driver_kyc_tab(user_name, user_role, fetch_driver_kyc_documents,
                           create_driver_kyc_record, upload_document_to_firebase,
                           send_system_email):

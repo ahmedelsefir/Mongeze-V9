@@ -15,9 +15,10 @@ import base64
 from io import BytesIO
 
 from Client import render_parcels_page, render_taxi_page, render_chat_page, render_customer_tracking
-from Driver import render_driver_tracking, render_driver_settings_tab, render_driver_kyc_tab
+from Driver import render_driver_tracking, render_driver_settings_tab, render_driver_kyc_tab, render_wallet_topup
 from Admin import render_admin_tracking, render_admin_kyc_console, render_commission_engine
 from Policies import render_privacy_policy, render_terms_of_use, render_support_contact, render_privacy_policy_brief
+from paymob import initiate_wallet_topup, process_paymob_webhook
 
 # ========================================================
 # 🤖 إعداد واجهة منصة منجز الذكية وحماية الجلسة
@@ -794,6 +795,7 @@ elif st.session_state["current_page"] == "الإعدادات":
     if user_role == "مندوب / كابتن":
         with settings_tabs[1]:
             render_driver_settings_tab(user_name, fetch_driver_account, save_driver_account, send_system_email)
+            render_wallet_topup(user_name, initiate_wallet_topup_fn=initiate_wallet_topup)
         
         # ========== TAB 3: KYC Verification System ==========
         with settings_tabs[2]:
