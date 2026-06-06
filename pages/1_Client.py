@@ -1,20 +1,13 @@
 import streamlit as st
-import firebase_admin
-from firebase_admin import credentials, firestore
-import json
+from firebase_admin import firestore
+from firebase_helpers import init_firestore
 
 st.set_page_config(page_title="منصة مُنجز - بوابة العميل", layout="wide", initial_sidebar_state="expanded")
 
 # --- الاتصال الآمن بالفايربيز ---
-try:
-    if not firebase_admin._apps:
-        key_dict = json.loads(st.secrets["textkey"])
-        cred = credentials.Certificate(key_dict)
-        firebase_admin.initialize_app(cred)
-    db = firestore.client()
-except Exception as e:
-    st.error(f"❌ اتصال السيرفر معطل: {e}")
-    db = None
+db = init_firestore()
+if db is None:
+    st.error("❌ اتصال السيرفر معطل")
 
 # --- بروفايل العميل الجانبي (DiDi Style) ---
 st.sidebar.markdown("""

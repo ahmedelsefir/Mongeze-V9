@@ -1,21 +1,13 @@
 from utils import send_monjez_email  # 💡 مكان الاستدلال الصحيح في السطر الأول بالملي!
 import streamlit as st
-import firebase_admin
-from firebase_admin import credentials, firestore
-import json
+from firebase_helpers import init_firestore
 
 st.set_page_config(page_title="منصة مُنجز - بوابة المندوب", layout="wide")
 
 # --- تفعيل الفايربيز ---
-try:
-    if not firebase_admin._apps:
-        key_dict = json.loads(st.secrets["textkey"])
-        cred = credentials.Certificate(key_dict)
-        firebase_admin.initialize_app(cred)
-    db = firestore.client()
-except Exception as e:
-    st.error(f"❌ فشل ربط السيرفر: {e}")
-    db = None
+db = init_firestore()
+if db is None:
+    st.error("❌ فشل ربط السيرفر")
 
 DRIVER_NAME = "ahmed mostafa mohammed"
 
@@ -53,7 +45,7 @@ with col_metric2:
 st.markdown("---")
 
 # الرصيد المالي السلبي الحقيقي
-st.markdown(f"""
+st.markdown("""
 <div style='background-color: #FEF2F2; padding: 15px; border-radius: 8px; border: 1px solid #FCA5A5; display: flex; justify-content: space-between; align-items: center; direction: rtl;'>
     <span style='color: #991B1B; font-weight: bold; font-size: 16px;'>📉 رصيد الحساب الحالي:</span>
     <span style='color: #DC2626; font-weight: bold; font-size: 18px;'>-160.96 جنيه</span>
