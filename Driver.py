@@ -4,6 +4,7 @@ Contains: Radar tracking, wallet dashboard, and KYC/document verification views.
 All views are imported and rendered from main.py.
 """
 
+import html
 import streamlit as st
 from datetime import datetime
 import time
@@ -201,7 +202,7 @@ def render_wallet_topup(user_name, initiate_wallet_topup_fn=None):
                         if result and result.get("checkout_url"):
                             st.success(f"✅ تم تجهيز الدفع — المبلغ: {topup_amount} ج.م")
                             st.markdown(
-                                f'<a href="{result["checkout_url"]}" target="_blank">'
+                                f'<a href="{html.escape(str(result["checkout_url"]))}" target="_blank">'
                                 f'<button style="background-color:#4CAF50;color:white;padding:12px 24px;'
                                 f'border:none;border-radius:8px;cursor:pointer;font-size:16px;width:100%">'
                                 f'💳 انتقل لصفحة الدفع الآمنة</button></a>',

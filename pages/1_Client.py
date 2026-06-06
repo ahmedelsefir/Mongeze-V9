@@ -1,3 +1,4 @@
+import html as html_mod
 import streamlit as st
 from firebase_admin import firestore
 from firebase_helpers import init_firestore
@@ -75,9 +76,9 @@ if client_menu == "🚖 اطلب مشوار / توصيل الآن":
                 st.markdown(f"""
                 <div style='background-color: #EFF6FF; padding: 15px; border-radius: 8px; border-right: 5px solid #3B82F6; margin-bottom: 10px; text-align: right;'>
                     <b style='color: #1E3A8A; font-size: 16px;'>✔️ تم قبول طلبك وبدأ التنفيذ الحقيقي!</b><br>
-                    <span style='color: #333;'>👤 الكابتن المسؤول: {driver if driver else 'جاري الاستلام'}</span><br>
-                    <span style='color: #333;'>💰 السعر المتفق عليه: {price} جنيه</span><br>
-                    <span style='color: #DC2626;'>🚨 حالة التحرك الحية الآن: 🚖 {status}</span>
+                    <span style='color: #333;'>👤 الكابتن المسؤول: {html_mod.escape(str(driver)) if driver else 'جاري الاستلام'}</span><br>
+                    <span style='color: #333;'>💰 السعر المتفق عليه: {html_mod.escape(str(price))} جنيه</span><br>
+                    <span style='color: #DC2626;'>🚨 حالة التحرك الحية الآن: 🚖 {html_mod.escape(str(status))}</span>
                 </div>
                 """, unsafe_allow_html=True)
                 

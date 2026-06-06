@@ -4,6 +4,7 @@ Contains: Parcels, Taxi, Customer Chat, and Customer Tracking views.
 All views are imported and rendered from main.py.
 """
 
+import html
 import streamlit as st
 from datetime import datetime
 import time
@@ -164,9 +165,9 @@ def render_chat_page(user_name, user_role, send_to_firebase, fetch_from_firebase
                         role_color = "#1E88E5" if m.get("role") == "إدارة وموظفين" else "#2ECC71" if m.get("role") == "عميل" else "#F1C40F"
                         st.markdown(f"""
                         <div style='background-color: #f4f6f7; padding: 10px; border-radius: 8px; margin-bottom: 6px; border-right: 5px solid {role_color}; text-align: right;'>
-                            <span style='color: {role_color}; font-weight: bold;'>[{m.get('role', 'Unknown')}] {m.get('sender', 'Unknown')}</span> 
-                            <span style='font-size: 0.75em; color: gray;'>({m.get('timestamp', '')})</span>: 
-                            <p style='margin-top: 4px; font-size: 1.1em; color: black;'>{m.get('message', '')}</p>
+                            <span style='color: {role_color}; font-weight: bold;'>[{html.escape(str(m.get('role', 'Unknown')))}] {html.escape(str(m.get('sender', 'Unknown')))}</span> 
+                            <span style='font-size: 0.75em; color: gray;'>({html.escape(str(m.get('timestamp', '')))})</span>: 
+                            <p style='margin-top: 4px; font-size: 1.1em; color: black;'>{html.escape(str(m.get('message', '')))}</p>
                         </div>
                         """, unsafe_allow_html=True)
                     except Exception as msg_error:
@@ -375,9 +376,9 @@ def _render_support_banner(order_id, fetch_firebase_raw):
             <div style='background: linear-gradient(135deg, #ff4444, #cc0000); color: white;
                         padding: 12px 16px; border-radius: 10px; margin-bottom: 12px;
                         text-align: right; direction: rtl;'>
-                <strong>🚨 الدعم الفني مطلوب</strong> — تم استدعاء فريق الإدارة للطلب <code style='color: #ffcccc;'>{order_id}</code>
+                <strong>🚨 الدعم الفني مطلوب</strong> — تم استدعاء فريق الإدارة للطلب <code style='color: #ffcccc;'>{html.escape(str(order_id))}</code>
                 <br><span style='font-size: 0.85em; opacity: 0.9;'>
-                    طلب الدعم: {requester} • {requested_at}
+                    طلب الدعم: {html.escape(str(requester))} • {html.escape(str(requested_at))}
                 </span>
             </div>
             """, unsafe_allow_html=True)

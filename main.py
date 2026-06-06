@@ -1,3 +1,4 @@
+import html
 import streamlit as st
 import pandas as pd
 import smtplib
@@ -58,6 +59,7 @@ if not init_firebase_admin():
 # 📡 send_to_firebase / update_firebase_node / fetch_from_firebase
 #    are now imported from firebase_helpers.py
 # ========================================================
+
 
 def fetch_firebase_raw(node):
     """Fetch raw JSON data from a Firebase node without list transformation.
@@ -304,8 +306,11 @@ def send_system_email(subject, body_text):
     """Send email with comprehensive error handling"""
     try:
         smtp_config = st.secrets.get("smtp", {})
-        smtp_user = smtp_config.get("user", "ahmedelsefir9@gmail.com")
-        smtp_pass = smtp_config.get("pass", "pawp eezt ahxr pbet")
+        smtp_user = smtp_config.get("user", "")
+        smtp_pass = smtp_config.get("pass", "")
+        if not smtp_user or not smtp_pass:
+            logger.error("SMTP credentials not configured in secrets")
+            return False
         server_host = smtp_config.get("server", "smtp.gmail.com")
         
         try:

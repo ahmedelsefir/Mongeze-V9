@@ -1,4 +1,5 @@
-from utils import send_monjez_email  # 💡 مكان الاستدلال الصحيح في السطر الأول بالملي!
+import html as html_mod
+from utils import send_monjez_email
 import streamlit as st
 from firebase_helpers import init_firestore
 
@@ -70,9 +71,9 @@ with driver_tabs[0]:
             
             st.markdown(f"""
             <div style='background-color: #F9FAFB; padding: 15px; border-radius: 8px; border-right: 4px solid #10B981; margin-bottom: 10px; text-align: right;'>
-                <b style='color: #111827;'>📍 طلب توصيل من: {o_data.get('client_name')}</b><br>
-                <span style='color: #4B5563;'>📦 تفاصيل الشحنة: {o_data.get('order_details')}</span><br>
-                <b style='color: #10B981;'>💵 ميزانية العميل المقترحة: {o_data.get('suggested_price')} جنيه</b>
+                <b style='color: #111827;'>📍 طلب توصيل من: {html_mod.escape(str(o_data.get('client_name', '')))}</b><br>
+                <span style='color: #4B5563;'>📦 تفاصيل الشحنة: {html_mod.escape(str(o_data.get('order_details', '')))}</span><br>
+                <b style='color: #10B981;'>💵 ميزانية العميل المقترحة: {html_mod.escape(str(o_data.get('suggested_price', '')))} جنيه</b>
             </div>
             """, unsafe_allow_html=True)
             
@@ -138,8 +139,10 @@ with driver_tabs[1]:
                             <p style="font-size: 12px; color: #6B7280; text-align: center;">شكراً لاستخدامك منصة منجز السيادية 2026 ✨</p>
                         </div>
                         """
-                        # نقوم بالإرسال لإيميل العميل (هنا نضع إيميل تجريبي أو إيميلك الشخصي للفحص حالياً)
-                        send_monjez_email("ahmed.mustafa@monjez-app.icu", "📦 فاتورة رحلتك وتوصيل شحنتك من منصة مُنجز", invoice_html)
+                        # Send invoice to the client's registered email (if available)
+                        client_email = m_data.get("client_email", "")
+                        if client_email:
+                            send_monjez_email(client_email, "📦 فاتورة رحلتك وتوصيل شحنتك من منصة مُنجز", invoice_html)
                         
                         st.success("🎯 تم إنهاء المشوار وإرسال الفاتورة الرسمية للعميل بريدياً!")
                         st.rerun()

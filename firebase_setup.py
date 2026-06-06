@@ -9,7 +9,13 @@ from firebase_admin import credentials
 from firebase_admin import auth
 
 # Initialize Firebase Admin SDK
-cred = credentials.Certificate('path/to/serviceAccountKey.json')
+# Load credentials from environment or a secure path - never hardcode
+import os
+
+_cred_path = os.environ.get("FIREBASE_CREDENTIALS_PATH", "")
+if not _cred_path:
+    raise RuntimeError("Set FIREBASE_CREDENTIALS_PATH env var to the service account JSON file")
+cred = credentials.Certificate(_cred_path)
 firebase_admin.initialize_app(cred)
 
 # Function to add a new user
@@ -36,9 +42,4 @@ def update_user_role(uid, role):
 def display_users():
     users = auth.list_users().users
     for user in users:
-        print(f'User {user.email} 
-
-# Example usage:
-# add_user('user@example.com', 'password123', 'client')
-# update_user_role('uid_of_user', 'admin')
-# display_users()
+        print(f'User {user.email}')
