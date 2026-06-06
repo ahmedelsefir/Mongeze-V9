@@ -130,6 +130,23 @@ def fetch_from_firebase(node):
         logger.error(f"Unexpected error fetching from Firebase: {str(e)}")
         return []
 
+def fetch_firebase_raw(node):
+    """Fetch raw JSON data from a Firebase node without list transformation.
+
+    Unlike fetch_from_firebase (which converts dicts into lists of nested items),
+    this returns the raw parsed JSON — useful for flat key-value nodes like
+    chats/{order_id}/support_request.
+    """
+    try:
+        url = f"{FIREBASE_URL.rstrip('/')}/{node.strip('/')}.json"
+        res = requests.get(url, timeout=10)
+        if res.ok:
+            return res.json()
+        return None
+    except Exception as e:
+        logger.error(f"Error fetching raw Firebase node {node}: {str(e)}")
+        return None
+
 def fetch_user_settings(username):
     """Fetch user settings from Firebase with null-safety"""
     try:
@@ -653,7 +670,8 @@ elif st.session_state["current_page"] == "التاكسي":
 elif st.session_state["current_page"] == "الدردشة":
     render_chat_page(user_name, user_role, send_to_firebase, fetch_from_firebase,
                      update_firebase_node=update_firebase_node,
-                     log_accounting_entry=log_accounting_entry)
+                     log_accounting_entry=log_accounting_entry,
+                     fetch_firebase_raw=fetch_firebase_raw)
 
 # 5️⃣ 📡 رادار تتبع الحالات الحالي والالتقاط الميكانيكي (Satellite Tracking)
 elif st.session_state["current_page"] == "التتبع":

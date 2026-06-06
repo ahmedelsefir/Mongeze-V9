@@ -90,7 +90,8 @@ def _find_order_by_id(orders, order_id):
 
 
 def render_chat_page(user_name, user_role, send_to_firebase, fetch_from_firebase,
-                     update_firebase_node=None, log_accounting_entry=None):
+                     update_firebase_node=None, log_accounting_entry=None,
+                     fetch_firebase_raw=None):
     """Render the chat rooms page with three-dot menu for order actions.
 
     Args:
@@ -100,6 +101,7 @@ def render_chat_page(user_name, user_role, send_to_firebase, fetch_from_firebase
         fetch_from_firebase: Callable to GET data from a Firebase node.
         update_firebase_node: Callable to PATCH a Firebase node (for status updates).
         log_accounting_entry: Callable to log accounting ledger entries.
+        fetch_firebase_raw: Callable to GET raw JSON from a Firebase node (flat objects).
     """
     st.markdown("## 💬 غرف المحادثة والاتصال اللحظي الموحد (نظام واتساب)")
     try:
@@ -137,7 +139,7 @@ def render_chat_page(user_name, user_role, send_to_firebase, fetch_from_firebase
 
         # ── Live Support Banner ────────────────────────────────────
         if is_order_room:
-            _render_support_banner(current_order_id, fetch_from_firebase)
+            _render_support_banner(current_order_id, fetch_firebase_raw)
 
         # ── Chat Message Input ─────────────────────────────────────
         with st.form("chat_form_v10", clear_on_submit=True):
@@ -351,27 +353,22 @@ def _handle_request_support(user_name, user_role, order_id, clean_room,
         st.error(f"❌ حدث خطأ أثناء طلب الدعم الفني: {str(e)}")
 
 
-def _render_support_banner(order_id, fetch_from_firebase):
+def _render_support_banner(order_id, fetch_firebase_raw):
     """Show a live support banner if a support request is active for this order.
 
     Visible to all participants (customer, driver, admin) so everyone knows
     support staff have been tagged.
     """
+    if not fetch_firebase_raw:
+        return
     try:
-        support_data = fetch_from_firebase(f"chats/{order_id}/support_request")
-        if not support_data:
+        support_data = fetch_firebase_raw(f"chats/{order_id}/support_request")
+        if not support_data or not isinstance(support_data, dict):
             return
 
-        # fetch_from_firebase returns a list of dicts; check if any has active=True
-        is_active = False
-        requester = ""
-        requested_at = ""
-        for item in support_data:
-            if item.get("active"):
-                is_active = True
-                requester = item.get("requested_by", "")
-                requested_at = item.get("requested_at", "")
-                break
+        is_active = support_data.get("active", False)
+        requester = support_data.get("requested_by", "")
+        requested_at = support_data.get("requested_at", "")
 
         if is_active:
             st.markdown(f"""
