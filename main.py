@@ -651,7 +651,9 @@ elif st.session_state["current_page"] == "التاكسي":
 
 # 4️⃣ غرفة الدردشة الذكية (غرف الواتساب الثنائية المؤمنة لكل طلب)
 elif st.session_state["current_page"] == "الدردشة":
-    render_chat_page(user_name, user_role, send_to_firebase, fetch_from_firebase)
+    render_chat_page(user_name, user_role, send_to_firebase, fetch_from_firebase,
+                     update_firebase_node=update_firebase_node,
+                     log_accounting_entry=log_accounting_entry)
 
 # 5️⃣ 📡 رادار تتبع الحالات الحالي والالتقاط الميكانيكي (Satellite Tracking)
 elif st.session_state["current_page"] == "التتبع":
