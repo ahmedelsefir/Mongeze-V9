@@ -35,3 +35,8 @@ jobs:
           # فحص الكود برمجياً (Compilation) بدون تشغيله فعلياً لتجنب نقص مفاتيح السحابة
           python -m py_compile assistant.py
           echo "تم فحص المحرك وربط الرادار بنجاح يا بشمهندس أحمد 🚀"
+
+      - name: Run unit tests
+        run: |
+          pip install pytest pytest-cov
+          python -m pytest tests/ -v --tb=short
