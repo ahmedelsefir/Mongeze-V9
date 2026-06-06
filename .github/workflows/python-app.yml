@@ -39,5 +39,6 @@ jobs:
           python -m py_compile Driver.py
           python -m py_compile Admin.py
           python -m py_compile Policies.py
+          python -m py_compile paymob.py
           python -m py_compile utils.py
           echo "تم فحص المحرك وربط الرادار بنجاح يا بشمهندس أحمد 🚀"
