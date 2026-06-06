@@ -1,3 +1,4 @@
+import html as html_mod
 import streamlit as st
 from firebase_admin import firestore
 from firebase_helpers import init_firestore
@@ -41,10 +42,10 @@ with tab_support:
                 st.markdown(f"""
                 <div style='background-color: #FEF2F2; padding: 18px; border-radius: 10px; margin-bottom: 12px; 
                             border-right: 5px solid #DC2626; color: #333; text-align: right;'>
-                    <b style='color: #DC2626; font-size: 16px;'>🚨 بلاغ عن: {t_data.get('type')}</b>
-                    <p style='margin: 5px 0;'><b>👤 الشاكي:</b> {t_data.get('reporter_name')} ({t_data.get('reporter_role')})</p>
-                    <p style='margin: 5px 0;'><b>⚠️ المشكو في حقه:</b> {accused} ({t_data.get('accused_role')})</p>
-                    <p style='margin: 5px 0;'><b>📝 تفاصيل الواقعة:</b> {t_data.get('details')}</p>
+                    <b style='color: #DC2626; font-size: 16px;'>🚨 بلاغ عن: {html_mod.escape(str(t_data.get('type', '')))}</b>
+                    <p style='margin: 5px 0;'><b>👤 الشاكي:</b> {html_mod.escape(str(t_data.get('reporter_name', '')))} ({html_mod.escape(str(t_data.get('reporter_role', '')))})</p>
+                    <p style='margin: 5px 0;'><b>⚠️ المشكو في حقه:</b> {html_mod.escape(str(accused))} ({html_mod.escape(str(t_data.get('accused_role', '')))})</p>
+                    <p style='margin: 5px 0;'><b>📝 تفاصيل الواقعة:</b> {html_mod.escape(str(t_data.get('details', '')))}</p>
                 </div>
                 """, unsafe_allow_html=True)
                 

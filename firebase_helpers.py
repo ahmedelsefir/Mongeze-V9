@@ -8,6 +8,7 @@ and Streamlit page files.
 
 import json
 import logging
+import re
 
 import firebase_admin
 import requests
@@ -38,16 +39,25 @@ def sanitize_username(username):
 
 def _get_firebase_url():
     """Read the Firebase Realtime Database URL from Streamlit secrets."""
-    return st.secrets.get(
-        "FIREBASE_URL",
-        "https://gen-lang-client-03099029-937be-default-rtdb.firebaseio.com/",
-    ).strip()
+    url = st.secrets.get("FIREBASE_URL", "").strip()
+    if not url:
+        logger.error("Missing FIREBASE_URL in Streamlit secrets")
+    return url
+
+
+def _sanitize_firebase_path(node):
+    """Sanitize Firebase node path to prevent path traversal."""
+    sanitized = node.strip("/")
+    sanitized = re.sub(r'[\[\]#$]', '', sanitized)
+    sanitized = re.sub(r'\.{2,}', '.', sanitized)
+    return sanitized
 
 
 def _build_url(node):
     """Build a fully-qualified Firebase REST endpoint for *node*."""
     base = _get_firebase_url()
-    return f"{base.rstrip('/')}/{node.strip('/')}.json"
+    sanitized = _sanitize_firebase_path(node)
+    return f"{base.rstrip('/')}/{sanitized}.json"
 
 
 def firebase_request(method, node, data=None, timeout=10):
