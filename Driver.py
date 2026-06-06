@@ -14,6 +14,13 @@ logger = logging.getLogger(__name__)
 
 def render_driver_tracking(user_name, orders, update_firebase_node):
     """Render driver tracking/radar view for picking up orders."""
+    # Block unverified drivers from picking up orders
+    driver_status = st.session_state.get("driver_verification_status", "Pending Manual Review")
+    if driver_status != "Active":
+        st.error("🔒 **حسابك مقفل — Pending Manual Review**")
+        st.warning("⏳ لا يمكنك قبول طلبات حتى يتم تفعيل حسابك من قبل الإدارة. اذهب إلى إعدادات ← التحقق من الهوية لرفع وثائقك.")
+        return
+
     st.subheader("🚕 الطلبات المتاحة في رادار السوق للالتقاط فوراً:")
     if orders and len(orders) > 0:
         available_orders = [o for o in orders if o.get("status") == "جاري البحث عن كابتن"]
@@ -128,19 +135,24 @@ def render_driver_settings_tab(user_name, fetch_driver_account, save_driver_acco
 def render_driver_kyc_tab(user_name, user_role, fetch_driver_kyc_documents,
                           create_driver_kyc_record, upload_document_to_firebase,
                           send_system_email):
-    """Render driver KYC/document verification tab."""
+    """Render driver KYC/document verification tab with account lock until approved."""
     st.subheader("🎖️ نظام التحقق من الهوية (Know Your Driver - KYC)")
 
     try:
         kyc_docs = fetch_driver_kyc_documents(user_name)
 
         if not kyc_docs or "metadata" not in kyc_docs:
-            st.info("📝 أنت جديد في النظام. يجب تسجيل وثائقك للتفعيل الكامل.")
+            # New driver — account locked, must register
+            st.error("🔒 **حسابك مقفل — Pending Manual Review**")
+            st.warning(
+                "يجب تسجيل وثائقك والحصول على موافقة الإدارة قبل قبول أي طلبات. "
+                "ارفع الوثائق المطلوبة أدناه لبدء عملية التحقق."
+            )
             if st.button("🆕 بدء عملية التحقق من الهوية"):
                 try:
                     if create_driver_kyc_record(user_name, user_role, car_type="Personal"):
                         st.success("✅ تم إنشاء ملف التحقق الخاص بك! الآن قم برفع الوثائق المطلوبة.")
-                        st.session_state["driver_verification_status"] = "Pending Approval"
+                        st.session_state["driver_verification_status"] = "Pending Manual Review"
                         time.sleep(1)
                         st.rerun()
                     else:
@@ -150,7 +162,10 @@ def render_driver_kyc_tab(user_name, user_role, fetch_driver_kyc_documents,
                     st.error(f"خطأ: {str(e)}")
         else:
             metadata = kyc_docs.get("metadata", {})
-            verification_status = metadata.get("verification_status", "Unknown")
+            verification_status = metadata.get("verification_status", "Pending Manual Review")
+
+            # Update session state for use in tracking page lock
+            st.session_state["driver_verification_status"] = verification_status
 
             st.markdown("### 📊 حالة التحقق من الهوية")
 
@@ -159,8 +174,10 @@ def render_driver_kyc_tab(user_name, user_role, fetch_driver_kyc_documents,
             elif verification_status == "Rejected":
                 rejection_reason = metadata.get("rejection_reason", "لم يتم تحديد السبب")
                 st.error(f"❌ **تم رفض طلبك** - السبب: {rejection_reason}")
+                st.info("يمكنك إعادة رفع الوثائق بعد تصحيح المشكلة وستتم مراجعتها مجدداً.")
             else:
-                st.warning("⏳ **حالتك معلقة** - جاري المراجعة من قبل الفريق الإداري")
+                st.error("🔒 **حسابك مقفل — Pending Manual Review**")
+                st.warning("⏳ جاري المراجعة من قبل الفريق الإداري. لا يمكنك قبول طلبات حتى يتم التفعيل.")
 
             col1, col2, col3 = st.columns(3)
             with col1:
@@ -176,95 +193,68 @@ def render_driver_kyc_tab(user_name, user_role, fetch_driver_kyc_documents,
             st.markdown("### 📄 رفع الوثائق المطلوبة")
             st.caption("يجب رفع جميع الوثائق أدناه لتفعيل حسابك بالكامل")
 
-            # National ID
-            st.markdown("#### 🆔 صورة البطاقة الشخصية")
-            national_id_file = st.file_uploader(
+            # Document upload slots
+            _render_doc_upload(
+                user_name, kyc_docs, "national_id",
+                "🆔 صورة البطاقة الشخصية (National ID)",
                 "اختر صورة البطاقة الشخصية",
-                type=["jpg", "jpeg", "png", "pdf"],
-                key="national_id_uploader",
-                help="اختر صورة واضحة لبطاقتك الشخصية (الوجه + الخلف)"
+                "اختر صورة واضحة لبطاقتك الشخصية (الوجه + الخلف)",
+                upload_document_to_firebase, send_system_email
             )
-
-            if national_id_file and st.button("📤 رفع صورة البطاقة"):
-                try:
-                    with st.spinner("جاري رفع الصورة..."):
-                        if upload_document_to_firebase(user_name, "national_id", national_id_file):
-                            st.success("✅ تم رفع صورة البطاقة بنجاح!")
-                            send_system_email(
-                                f"وثيقة جديدة: بطاقة شخصية - {user_name}",
-                                f"المندوب {user_name} رفع صورة البطاقة الشخصية للمراجعة"
-                            )
-                        else:
-                            st.error("❌ فشل رفع الصورة. حاول مرة أخرى.")
-                except Exception as e:
-                    logger.error(f"Error uploading national ID: {str(e)}")
-                    st.error(f"خطأ: {str(e)}")
-
-            if "national_id" in kyc_docs and kyc_docs["national_id"].get("file_base64"):
-                nat_id_status = kyc_docs["national_id"].get("verified", False)
-                st.info(f"📋 البطاقة الشخصية: {'✅ مسجلة' if nat_id_status else '⏳ قيد المراجعة'}")
 
             st.divider()
 
-            # Driving License
-            st.markdown("#### 🚗 رخصة القيادة")
-            driving_license_file = st.file_uploader(
+            _render_doc_upload(
+                user_name, kyc_docs, "driving_license",
+                "🚗 رخصة القيادة (Driving License)",
                 "اختر صورة رخصة القيادة",
-                type=["jpg", "jpeg", "png", "pdf"],
-                key="driving_license_uploader",
-                help="اختر صورة واضحة لرخصة القيادة"
+                "اختر صورة واضحة لرخصة القيادة",
+                upload_document_to_firebase, send_system_email
             )
-
-            if driving_license_file and st.button("📤 رفع رخصة القيادة"):
-                try:
-                    with st.spinner("جاري رفع الوثيقة..."):
-                        if upload_document_to_firebase(user_name, "driving_license", driving_license_file):
-                            st.success("✅ تم رفع رخصة القيادة بنجاح!")
-                            send_system_email(
-                                f"وثيقة جديدة: رخصة القيادة - {user_name}",
-                                f"المندوب {user_name} رفع صورة رخصة القيادة للمراجعة"
-                            )
-                        else:
-                            st.error("❌ فشل رفع الوثيقة. حاول مرة أخرى.")
-                except Exception as e:
-                    logger.error(f"Error uploading driving license: {str(e)}")
-                    st.error(f"خطأ: {str(e)}")
-
-            if "driving_license" in kyc_docs and kyc_docs["driving_license"].get("file_base64"):
-                lic_status = kyc_docs["driving_license"].get("verified", False)
-                st.info(f"📋 رخصة القيادة: {'✅ مسجلة' if lic_status else '⏳ قيد المراجعة'}")
 
             st.divider()
 
-            # Vehicle License (optional)
-            st.markdown("#### 🛞 رخصة المركبة (إن وجدت)")
-            st.caption("اختياري - رفع هذه الوثيقة إذا كنت تملك مركبة")
-            vehicle_license_file = st.file_uploader(
+            _render_doc_upload(
+                user_name, kyc_docs, "vehicle_registration",
+                "🛞 رخصة المركبة (Vehicle Registration)",
                 "اختر صورة رخصة المركبة",
-                type=["jpg", "jpeg", "png", "pdf"],
-                key="vehicle_license_uploader",
-                help="اختر صورة واضحة لرخصة المركبة"
+                "اختر صورة واضحة لرخصة المركبة",
+                upload_document_to_firebase, send_system_email
             )
-
-            if vehicle_license_file and st.button("📤 رفع رخصة المركبة"):
-                try:
-                    with st.spinner("جاري رفع الوثيقة..."):
-                        if upload_document_to_firebase(user_name, "vehicle_license", vehicle_license_file):
-                            st.success("✅ تم رفع رخصة المركبة بنجاح!")
-                            send_system_email(
-                                f"وثيقة جديدة: رخصة المركبة - {user_name}",
-                                f"المندوب {user_name} رفع صورة رخصة المركبة للمراجعة"
-                            )
-                        else:
-                            st.error("❌ فشل رفع الوثيقة. حاول مرة أخرى.")
-                except Exception as e:
-                    logger.error(f"Error uploading vehicle license: {str(e)}")
-                    st.error(f"خطأ: {str(e)}")
-
-            if "vehicle_license" in kyc_docs and kyc_docs["vehicle_license"].get("file_base64"):
-                veh_status = kyc_docs["vehicle_license"].get("verified", False)
-                st.info(f"📋 رخصة المركبة: {'✅ مسجلة' if veh_status else '⏳ قيد المراجعة'}")
 
     except Exception as e:
         logger.error(f"Error in KYC section: {str(e)}")
         st.warning("⚠️ خطأ في قسم التحقق من الهوية")
+
+
+def _render_doc_upload(user_name, kyc_docs, doc_type, title, label, help_text,
+                       upload_document_to_firebase, send_system_email):
+    """Render a single document upload slot with status indicator."""
+    st.markdown(f"#### {title}")
+
+    uploaded_file = st.file_uploader(
+        label,
+        type=["jpg", "jpeg", "png", "pdf"],
+        key=f"{doc_type}_uploader",
+        help=help_text
+    )
+
+    if uploaded_file and st.button(f"📤 رفع {title.split(' ', 1)[-1]}", key=f"upload_{doc_type}"):
+        try:
+            with st.spinner("جاري رفع الوثيقة..."):
+                if upload_document_to_firebase(user_name, doc_type, uploaded_file):
+                    st.success(f"✅ تم رفع {title} بنجاح!")
+                    send_system_email(
+                        f"وثيقة جديدة: {doc_type} - {user_name}",
+                        f"المندوب {user_name} رفع وثيقة {doc_type} للمراجعة"
+                    )
+                else:
+                    st.error("❌ فشل رفع الوثيقة. حاول مرة أخرى.")
+        except Exception as e:
+            logger.error(f"Error uploading {doc_type}: {str(e)}")
+            st.error(f"خطأ: {str(e)}")
+
+    existing_doc = kyc_docs.get(doc_type, {})
+    if isinstance(existing_doc, dict) and existing_doc.get("file_base64"):
+        is_verified = existing_doc.get("verified", False)
+        st.info(f"📋 {title}: {'✅ تم التحقق' if is_verified else '⏳ قيد المراجعة'}")

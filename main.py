@@ -16,7 +16,7 @@ from io import BytesIO
 
 from Client import render_parcels_page, render_taxi_page, render_chat_page, render_customer_tracking
 from Driver import render_driver_tracking, render_driver_settings_tab, render_driver_kyc_tab
-from Admin import render_admin_tracking, render_admin_kyc_console
+from Admin import render_admin_tracking, render_admin_kyc_console, render_commission_engine
 from Policies import render_privacy_policy, render_terms_of_use, render_support_contact, render_privacy_policy_brief
 
 # ========================================================
@@ -39,7 +39,7 @@ if "audio_notifications_enabled" not in st.session_state:
 if "language" not in st.session_state:
     st.session_state["language"] = "العربية"
 if "driver_verification_status" not in st.session_state:
-    st.session_state["driver_verification_status"] = "Pending Approval"
+    st.session_state["driver_verification_status"] = "Pending Manual Review"
 
 # ========================================================
 # 🔒 جلب التكوينات وإعداد الاتصال السحابي بالـ Firebase
@@ -292,7 +292,7 @@ def create_driver_kyc_record(username, user_role, car_type=None):
         kyc_record = {
             "driver_name": username,
             "user_role": user_role,
-            "verification_status": "Pending Approval",
+            "verification_status": "Pending Manual Review",
             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "approved_at": None,
             "rejected_at": None,
@@ -308,7 +308,7 @@ def create_driver_kyc_record(username, user_role, car_type=None):
         if response.ok:
             logger.info(f"KYC record created for {username}")
             # Update user settings with verification status
-            save_user_settings(username, {"verification_status": "Pending Approval"})
+            save_user_settings(username, {"verification_status": "Pending Manual Review"})
             return True
         return False
     
@@ -354,6 +354,59 @@ def update_driver_verification_status(username, status, rejection_reason=None):
     
     except Exception as e:
         logger.error(f"Error updating driver verification status: {str(e)}")
+        return False
+
+# ========================================================
+# 💰 دوال المحفظة والمحاسبة (Wallet & Accounting Helpers)
+# ========================================================
+
+def credit_driver_wallet(username, amount):
+    """Atomically credit amount to driver's wallet balance in Firebase.
+    Uses read-then-write with PATCH to simulate atomic increment."""
+    try:
+        sanitized_username = username.replace(" ", "_").replace(".", "_")
+        wallet_url = f"{FIREBASE_URL.rstrip('/')}/drivers/{sanitized_username}/wallet_balance.json"
+
+        # Read current balance (null-safe)
+        res = requests.get(wallet_url, timeout=10)
+        current_balance = 0.0
+        if res.ok and res.json() is not None:
+            try:
+                current_balance = float(res.json())
+            except (ValueError, TypeError):
+                current_balance = 0.0
+
+        new_balance = round(current_balance + float(amount), 2)
+
+        # Write new balance
+        node_url = f"{FIREBASE_URL.rstrip('/')}/drivers/{sanitized_username}.json"
+        response = requests.patch(node_url, json={"wallet_balance": new_balance}, timeout=10)
+
+        if response.ok:
+            logger.info(f"Wallet credited: {username} += {amount}, new balance = {new_balance}")
+            return True
+        return False
+
+    except Exception as e:
+        logger.error(f"Error crediting wallet for {username}: {str(e)}")
+        return False
+
+
+def log_accounting_entry(trip_id, entry_data):
+    """Log a permanent accounting ledger entry under accounting_logs/{trip_id}."""
+    try:
+        sanitized_trip_id = str(trip_id).replace(" ", "_").replace("/", "_")
+        node = f"accounting_logs/{sanitized_trip_id}"
+        url = f"{FIREBASE_URL.rstrip('/')}/{node}.json"
+        response = requests.patch(url, json=entry_data, timeout=10)
+
+        if response.ok:
+            logger.info(f"Accounting log created for trip: {trip_id}")
+            return True
+        return False
+
+    except Exception as e:
+        logger.error(f"Error logging accounting entry for {trip_id}: {str(e)}")
         return False
 
 # ========================================================
@@ -743,9 +796,11 @@ elif st.session_state["current_page"] == "الإعدادات":
             st.divider()
             render_support_contact()
 
-# ========== ADMIN CONSOLE: Pending Verification Radar ==========
+# ========== ADMIN CONSOLE: Verification Radar + Commission Engine ==========
 if user_role == "إدارة وموظفين" and st.session_state["current_page"] == "الإعدادات":
     render_admin_kyc_console(fetch_from_firebase, update_driver_verification_status, send_system_email)
+    render_commission_engine(fetch_from_firebase, update_firebase_node,
+                            credit_driver_wallet, log_accounting_entry)
 
 # زر التحديث اليدوي السريع لضمان حركة التدفق الفوري للرادار
 if st.button("🔄 تحديث الرادار والمحادثات"):
