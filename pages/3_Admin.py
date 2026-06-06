@@ -1,20 +1,13 @@
 import streamlit as st
-import firebase_admin
-from firebase_admin import credentials, firestore
-import json
+from firebase_admin import firestore
+from firebase_helpers import init_firestore
 
 st.set_page_config(page_title="غرفة العمليات والرقابة - منجز", layout="wide")
 
 # --- تفعيل قاعدة البيانات السحابية ---
-try:
-    if not firebase_admin._apps:
-        key_dict = json.loads(st.secrets["textkey"])
-        cred = credentials.Certificate(key_dict)
-        firebase_admin.initialize_app(cred)
-    db = firestore.client()
-except Exception as e:
-    st.error(f"❌ فشل الاتصال بقاعدة البيانات: {e}")
-    db = None
+db = init_firestore()
+if db is None:
+    st.error("❌ فشل الاتصال بقاعدة البيانات")
 
 st.markdown("<h1 style='text-align: center; color: #1E3A8A;'>🛡️ مركز الرقابة وغرفة العمليات المركزية</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #4B5563;'>نظام إدارة المشرفين، الموظفين، وبلاغات الدعم الفني والربط الأمني للحظر 2026</p>", unsafe_allow_html=True)

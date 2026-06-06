@@ -1,10 +1,6 @@
-import requests
 import streamlit as st
-import json
-import firebase_admin
-from firebase_admin import credentials
-from datetime import datetime
 import time
+from datetime import datetime
 import pandas as pd
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -12,7 +8,17 @@ from email.mime.text import MIMEText
 import logging
 from math import radians, cos, sin, asin, sqrt
 import base64
-from io import BytesIO
+
+from firebase_helpers import (
+    get_current_timestamp,
+    sanitize_username,
+    send_to_firebase,
+    update_firebase_node,
+    fetch_from_firebase,
+    fetch_firebase_dict,
+    delete_firebase_node,
+    init_firebase_admin,
+)
 
 # ========================================================
 # 🤖 إعداد واجهة منصة منجز الذكية وحماية الجلسة
@@ -39,164 +45,50 @@ if "driver_verification_status" not in st.session_state:
 # ========================================================
 # 🔒 جلب التكوينات وإعداد الاتصال السحابي بالـ Firebase
 # ========================================================
-FIREBASE_URL = st.secrets.get("FIREBASE_URL", "https://gen-lang-client-03099029-937be-default-rtdb.firebaseio.com/").strip()
-
-try:
-    raw_json_str = st.secrets["textkey"].strip()
-    firebase_credentials = json.loads(raw_json_str)
-    if "private_key" in firebase_credentials:
-        firebase_credentials["private_key"] = firebase_credentials["private_key"].replace("\\\\n", "\n").replace("\\n", "\n").strip()
-    
-    if not firebase_admin._apps:
-        cred = credentials.Certificate(firebase_credentials)
-        firebase_admin.initialize_app(cred, {'databaseURL': FIREBASE_URL})
-except Exception as e:
-    logger.error(f"Firebase initialization error: {str(e)}")
-    st.sidebar.error(f"⚠️ خطأ في تحميل مفتاح Firebase الحساس: {str(e)}")
+if not init_firebase_admin():
+    st.sidebar.error("⚠️ خطأ في تحميل مفتاح Firebase الحساس")
 
 # ========================================================
-# 📡 دوال وظائف بايثون للاتصال المباشر والربط (لايف)
+# 📡 send_to_firebase / update_firebase_node / fetch_from_firebase
+#    are now imported from firebase_helpers.py
 # ========================================================
-def send_to_firebase(node, data):
-    """Send data to Firebase with error handling"""
-    try:
-        url = f"{FIREBASE_URL.rstrip('/')}/{node.strip('/')}.json"
-        response = requests.post(url, json=data, timeout=10)
-        return response.ok
-    except requests.exceptions.Timeout:
-        logger.error(f"Timeout sending to Firebase node: {node}")
-        return False
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Request error sending to Firebase: {str(e)}")
-        return False
-    except Exception as e:
-        logger.error(f"Unexpected error sending to Firebase: {str(e)}")
-        return False
-
-def update_firebase_node(node, data):
-    """Update Firebase node with error handling"""
-    try:
-        url = f"{FIREBASE_URL.rstrip('/')}/{node.strip('/')}.json"
-        response = requests.patch(url, json=data, timeout=10)
-        return response.ok
-    except requests.exceptions.Timeout:
-        logger.error(f"Timeout updating Firebase node: {node}")
-        return False
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Request error updating Firebase: {str(e)}")
-        return False
-    except Exception as e:
-        logger.error(f"Unexpected error updating Firebase: {str(e)}")
-        return False
-
-def fetch_from_firebase(node):
-    """Fetch data from Firebase with robust error handling"""
-    try:
-        url = f"{FIREBASE_URL.rstrip('/')}/{node.strip('/')}.json"
-        res = requests.get(url, timeout=10)
-        
-        if res.ok:
-            data = res.json()
-            if data and isinstance(data, dict):
-                # Safely construct list of items
-                items = []
-                for k, v in data.items():
-                    try:
-                        if isinstance(v, dict):
-                            item = {"db_id": k}
-                            item.update(v)
-                            items.append(item)
-                    except Exception as item_error:
-                        logger.warning(f"Error processing item {k}: {str(item_error)}")
-                        continue
-                return items
-        return []
-    except requests.exceptions.Timeout:
-        logger.error(f"Timeout fetching from Firebase node: {node}")
-        return []
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Request error fetching from Firebase: {str(e)}")
-        return []
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON decode error from Firebase: {str(e)}")
-        return []
-    except Exception as e:
-        logger.error(f"Unexpected error fetching from Firebase: {str(e)}")
-        return []
 
 def fetch_user_settings(username):
     """Fetch user settings from Firebase with null-safety"""
-    try:
-        url = f"{FIREBASE_URL.rstrip('/')}/users/{username.replace(' ', '_')}.json"
-        res = requests.get(url, timeout=10)
-        
-        if res.ok and res.json():
-            return res.json()
-        return {}
-    except Exception as e:
-        logger.warning(f"Error fetching user settings for {username}: {str(e)}")
-        return {}
+    return fetch_firebase_dict(f"users/{sanitize_username(username)}")
 
 def save_user_settings(username, settings):
     """Save user settings to Firebase with comprehensive error handling"""
-    try:
-        sanitized_username = username.replace(" ", "_").replace(".", "_")
-        url = f"{FIREBASE_URL.rstrip('/')}/users/{sanitized_username}.json"
-        response = requests.patch(url, json=settings, timeout=10)
-        return response.ok
-    except Exception as e:
-        logger.error(f"Error saving user settings: {str(e)}")
-        return False
+    return update_firebase_node(f"users/{sanitize_username(username)}", settings)
 
 def fetch_driver_account(username):
     """Fetch driver payout account settings with null-safety"""
-    try:
-        sanitized_username = username.replace(" ", "_").replace(".", "_")
-        url = f"{FIREBASE_URL.rstrip('/')}/drivers_accounts/{sanitized_username}.json"
-        res = requests.get(url, timeout=10)
-        
-        if res.ok and res.json():
-            return res.json()
+    data = fetch_firebase_dict(f"drivers_accounts/{sanitize_username(username)}")
+    if not data:
         return {"payment_method": None, "account_number": None}
-    except Exception as e:
-        logger.warning(f"Error fetching driver account for {username}: {str(e)}")
-        return {"payment_method": None, "account_number": None}
+    return data
 
 def save_driver_account(username, account_data):
     """Save driver account information securely"""
-    try:
-        sanitized_username = username.replace(" ", "_").replace(".", "_")
-        url = f"{FIREBASE_URL.rstrip('/')}/drivers_accounts/{sanitized_username}.json"
-        account_data["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        response = requests.patch(url, json=account_data, timeout=10)
-        return response.ok
-    except Exception as e:
-        logger.error(f"Error saving driver account: {str(e)}")
-        return False
+    account_data["last_updated"] = get_current_timestamp()
+    return update_firebase_node(
+        f"drivers_accounts/{sanitize_username(username)}", account_data
+    )
 
 def delete_user_from_firebase(username):
     """Delete all user data from Firebase with cascading deletion"""
     try:
-        sanitized_username = username.replace(" ", "_").replace(".", "_")
-        
-        # Delete from users node
-        url_users = f"{FIREBASE_URL.rstrip('/')}/users/{sanitized_username}.json"
-        requests.delete(url_users, timeout=10)
-        
-        # Delete from drivers_accounts if driver
-        url_driver = f"{FIREBASE_URL.rstrip('/')}/drivers_accounts/{sanitized_username}.json"
-        requests.delete(url_driver, timeout=10)
-        
-        # Delete from private_chats
-        url_chats = f"{FIREBASE_URL.rstrip('/')}/private_chats.json"
-        res = requests.get(url_chats, timeout=10)
-        if res.ok and res.json():
-            chats = res.json()
+        safe_name = sanitize_username(username)
+
+        delete_firebase_node(f"users/{safe_name}")
+        delete_firebase_node(f"drivers_accounts/{safe_name}")
+
+        chats = fetch_firebase_dict("private_chats")
+        if chats:
             for chat_key in chats:
-                if sanitized_username in str(chat_key).lower():
-                    delete_url = f"{FIREBASE_URL.rstrip('/')}/private_chats/{chat_key}.json"
-                    requests.delete(delete_url, timeout=10)
-        
+                if safe_name in str(chat_key).lower():
+                    delete_firebase_node(f"private_chats/{chat_key}")
+
         logger.info(f"User {username} completely deleted from Firebase")
         return True
     except Exception as e:
@@ -222,91 +114,61 @@ def upload_document_to_firebase(username, document_type, file_data):
         if not file_data:
             logger.warning(f"Empty file data for {document_type}")
             return False
-        
-        # Read file and encode to base64
-        try:
-            file_bytes = file_data.read()
-            if not file_bytes:
-                logger.error(f"File is empty: {document_type}")
-                return False
-            
-            file_base64 = base64.b64encode(file_bytes).decode('utf-8')
-            
-            # Sanitize username
-            sanitized_username = username.replace(" ", "_").replace(".", "_")
-            
-            # Create document metadata
-            doc_data = {
-                "document_type": document_type,
-                "file_base64": file_base64,
-                "file_name": file_data.name,
-                "file_size": len(file_bytes),
-                "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "verified": False
-            }
-            
-            # Upload to Firebase
-            node = f"driver_kyc/{sanitized_username}/{document_type}"
-            url = f"{FIREBASE_URL.rstrip('/')}/{node}.json"
-            response = requests.patch(url, json=doc_data, timeout=30)
-            
-            if response.ok:
-                logger.info(f"Document {document_type} uploaded successfully for {username}")
-                return True
-            else:
-                logger.error(f"Firebase upload failed with status {response.status_code}")
-                return False
-        
-        except Exception as upload_error:
-            logger.error(f"Error encoding/uploading file: {str(upload_error)}")
+
+        file_bytes = file_data.read()
+        if not file_bytes:
+            logger.error(f"File is empty: {document_type}")
             return False
-    
+
+        file_base64 = base64.b64encode(file_bytes).decode('utf-8')
+        safe_name = sanitize_username(username)
+
+        doc_data = {
+            "document_type": document_type,
+            "file_base64": file_base64,
+            "file_name": file_data.name,
+            "file_size": len(file_bytes),
+            "uploaded_at": get_current_timestamp(),
+            "verified": False,
+        }
+
+        node = f"driver_kyc/{safe_name}/{document_type}"
+        if update_firebase_node(node, doc_data):
+            logger.info(f"Document {document_type} uploaded successfully for {username}")
+            return True
+        logger.error("Firebase upload failed")
+        return False
+
     except Exception as e:
         logger.error(f"Error uploading document to Firebase: {str(e)}")
         return False
 
 def fetch_driver_kyc_documents(username):
     """Fetch all KYC documents for a driver with null-safety"""
-    try:
-        sanitized_username = username.replace(" ", "_").replace(".", "_")
-        url = f"{FIREBASE_URL.rstrip('/')}/driver_kyc/{sanitized_username}.json"
-        res = requests.get(url, timeout=10)
-        
-        if res.ok and res.json():
-            return res.json()
-        return {}
-    except Exception as e:
-        logger.warning(f"Error fetching KYC documents for {username}: {str(e)}")
-        return {}
+    return fetch_firebase_dict(f"driver_kyc/{sanitize_username(username)}")
 
 def create_driver_kyc_record(username, user_role, car_type=None):
     """Create initial KYC record for new driver"""
     try:
-        sanitized_username = username.replace(" ", "_").replace(".", "_")
-        
         kyc_record = {
             "driver_name": username,
             "user_role": user_role,
             "verification_status": "Pending Approval",
-            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "created_at": get_current_timestamp(),
             "approved_at": None,
             "rejected_at": None,
             "rejection_reason": None,
             "documents_submitted": False,
-            "car_type": car_type if car_type else "Personal"
+            "car_type": car_type if car_type else "Personal",
         }
-        
-        node = f"driver_kyc/{sanitized_username}/metadata"
-        url = f"{FIREBASE_URL.rstrip('/')}/{node}.json"
-        response = requests.patch(url, json=kyc_record, timeout=10)
-        
-        if response.ok:
+
+        node = f"driver_kyc/{sanitize_username(username)}/metadata"
+        if update_firebase_node(node, kyc_record):
             logger.info(f"KYC record created for {username}")
-            # Update user settings with verification status
             save_user_settings(username, {"verification_status": "Pending Approval"})
             return True
         return False
-    
+
     except Exception as e:
         logger.error(f"Error creating KYC record: {str(e)}")
         return False
@@ -321,32 +183,26 @@ def update_driver_verification_status(username, status, rejection_reason=None):
     - "Pending Approval": Awaiting admin review
     """
     try:
-        sanitized_username = username.replace(" ", "_").replace(".", "_")
-        
+        now = get_current_timestamp()
         update_data = {
             "verification_status": status,
-            "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "last_updated": now,
         }
-        
+
         if status == "Active":
-            update_data["approved_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            update_data["approved_at"] = now
         elif status == "Rejected":
-            update_data["rejected_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            update_data["rejected_at"] = now
             if rejection_reason:
                 update_data["rejection_reason"] = rejection_reason
-        
-        # Update in driver_kyc node
-        node = f"driver_kyc/{sanitized_username}/metadata"
-        url = f"{FIREBASE_URL.rstrip('/')}/{node}.json"
-        response = requests.patch(url, json=update_data, timeout=10)
-        
-        if response.ok:
-            # Also update in users node
+
+        node = f"driver_kyc/{sanitize_username(username)}/metadata"
+        if update_firebase_node(node, update_data):
             save_user_settings(username, {"verification_status": status})
             logger.info(f"Driver {username} verification status updated to {status}")
             return True
         return False
-    
+
     except Exception as e:
         logger.error(f"Error updating driver verification status: {str(e)}")
         return False
@@ -505,6 +361,74 @@ def format_distance_display(distance_km):
         return f"{distance_km} كم 🛣️"
 
 # ========================================================
+# 🛠️ Extracted UI helpers to reduce duplication
+# ========================================================
+
+def _submit_order(order_prefix, order_type, payload_extra, email_subject, email_body):
+    """
+    Shared order-submission logic used by both parcel and taxi forms.
+
+    Generates an order ID, sends to Firebase, sends email notification,
+    and triggers an audio alert if enabled.
+    """
+    try:
+        order_id = f"{order_prefix}-{int(time.time())}"
+        payload = {
+            "order_id": order_id,
+            "type": order_type,
+            "customer": user_name,
+            "status": "\u062c\u0627\u0631\u064a \u0627\u0644\u0628\u062d\u062b \u0639\u0646 \u0643\u0627\u0628\u062a\u0646",
+            "driver": "\u0644\u0645 \u064a\u062d\u062f\u062f \u0628\u0639\u062f",
+            "timestamp": get_current_timestamp(),
+        }
+        payload.update(payload_extra)
+
+        if send_to_firebase("orders", payload):
+            st.session_state["my_active_order_id"] = order_id
+            send_system_email(email_subject.format(order_id=order_id), email_body)
+            st.success(f"\ud83c\udf89 \u062a\u0645 \u0628\u062b \u0627\u0644\u0637\u0644\u0628 \u0628\u0646\u062c\u0627\u062d! \u0643\u0648\u062f \u0627\u0644\u062a\u062a\u0628\u0639: {order_id}")
+            if st.session_state.get("audio_notifications_enabled", False):
+                trigger_audio_alert()
+        else:
+            st.error("\u274c \u0641\u0634\u0644 \u0628\u062b \u0627\u0644\u0637\u0644\u0628. \u062a\u062d\u0642\u0642 \u0645\u0646 \u0627\u0644\u0627\u062a\u0635\u0627\u0644.")
+    except Exception as e:
+        logger.error(f"Error creating {order_type} order: {str(e)}")
+        st.error(f"\u062d\u062f\u062b \u062e\u0637\u0623: {str(e)}")
+
+
+def _render_document_upload(doc_label, doc_type, uploader_key, username):
+    """
+    Render a file-uploader + upload-button block for a single KYC document.
+
+    Eliminates the three near-identical upload sections for national ID,
+    driving licence, and vehicle licence.
+    """
+    uploaded_file = st.file_uploader(
+        f"\u0627\u062e\u062a\u0631 \u0635\u0648\u0631\u0629 {doc_label}",
+        type=["jpg", "jpeg", "png", "pdf"],
+        key=uploader_key,
+        help=f"\u0627\u062e\u062a\u0631 \u0635\u0648\u0631\u0629 \u0648\u0627\u0636\u062d\u0629 \u0644\u0640{doc_label}",
+    )
+
+    if uploaded_file and st.button(f"\ud83d\udce4 \u0631\u0641\u0639 {doc_label}", key=f"upload_{doc_type}"):
+        try:
+            with st.spinner("\u062c\u0627\u0631\u064a \u0631\u0641\u0639 \u0627\u0644\u0648\u062b\u064a\u0642\u0629..."):
+                if upload_document_to_firebase(username, doc_type, uploaded_file):
+                    st.success(f"\u2705 \u062a\u0645 \u0631\u0641\u0639 {doc_label} \u0628\u0646\u062c\u0627\u062d!")
+                    send_system_email(
+                        f"\u0648\u062b\u064a\u0642\u0629 \u062c\u062f\u064a\u062f\u0629: {doc_label} - {username}",
+                        f"\u0627\u0644\u0645\u0646\u062f\u0648\u0628 {username} \u0631\u0641\u0639 \u0635\u0648\u0631\u0629 {doc_label} \u0644\u0644\u0645\u0631\u0627\u062c\u0639\u0629",
+                    )
+                else:
+                    st.error("\u274c \u0641\u0634\u0644 \u0631\u0641\u0639 \u0627\u0644\u0648\u062b\u064a\u0642\u0629. \u062d\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062e\u0631\u0649.")
+        except Exception as e:
+            logger.error(f"Error uploading {doc_type}: {str(e)}")
+            st.error(f"\u062e\u0637\u0623: {str(e)}")
+
+    return uploaded_file
+
+
+# ========================================================
 # 📱 شريط التوجيه ودمج الصفحات الموحد
 # ========================================================
 st.title("🤖 غرفة العمليات المركزية لـ منجز الذكية")
@@ -569,24 +493,13 @@ elif st.session_state["current_page"] == "الطرود":
         details = st.text_area("تفاصيل الشحنة وعنوان الالتقاط والتوصيل بدقة:")
         price = st.number_input("الميزانية المقترحة (ج.م):", min_value=10.0, value=70.0)
         if st.form_submit_button("🚀 بث الطلب فوراً للشبكة") and details.strip():
-            try:
-                order_id = f"PRCL-{int(time.time())}"
-                payload = {
-                    "order_id": order_id, "type": "طرد تكميلي", "customer": user_name,
-                    "details": details.strip(), "price": price, "status": "جاري البحث عن كابتن",
-                    "driver": "لم يحدد بعد", "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                }
-                if send_to_firebase("orders", payload):
-                    st.session_state["my_active_order_id"] = order_id
-                    send_system_email(f"طلب طرد جديد {order_id}", f"العميل {user_name} طلب توصيل طرد بقيمة {price} ج.م")
-                    st.success(f"🎉 تم بث الطلب بنجاح! كود التتبع الفريد هو: {order_id}")
-                    if st.session_state.get("audio_notifications_enabled", False):
-                        trigger_audio_alert()
-                else:
-                    st.error("❌ فشل بث الطلب. تحقق من الاتصال.")
-            except Exception as e:
-                logger.error(f"Error creating parcel order: {str(e)}")
-                st.error(f"حدث خطأ: {str(e)}")
+            _submit_order(
+                order_prefix="PRCL",
+                order_type="طرد تكميلي",
+                payload_extra={"details": details.strip(), "price": price},
+                email_subject="طلب طرد جديد {order_id}",
+                email_body=f"العميل {user_name} طلب توصيل طرد بقيمة {price} ج.م",
+            )
 
 # 3️⃣ بوابة تاكسي أفراد
 elif st.session_state["current_page"] == "التاكسي":
@@ -596,24 +509,13 @@ elif st.session_state["current_page"] == "التاكسي":
         end = st.text_input("الوجهة المراد الوصول إليها (على فين؟):")
         price = st.number_input("عرض السعر المقترح للرحلة:", min_value=20.0, value=120.0)
         if st.form_submit_button("🚕 بث الرحلة فوراً لايف") and start.strip() and end.strip():
-            try:
-                order_id = f"TAXI-{int(time.time())}"
-                payload = {
-                    "order_id": order_id, "type": "تاكسي أفراد", "customer": user_name,
-                    "from": start.strip(), "to": end.strip(), "price": price, "status": "جاري البحث عن كابتن",
-                    "driver": "لم يحدد بعد", "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                }
-                if send_to_firebase("orders", payload):
-                    st.session_state["my_active_order_id"] = order_id
-                    send_system_email(f"طلب تاكسي جديد {order_id}", f"الراكب {user_name} اطلب رحلة من {start} إلى {end}")
-                    st.success(f"🎉 تم بث الرحلة بنجاح! كود التتبع: {order_id}")
-                    if st.session_state.get("audio_notifications_enabled", False):
-                        trigger_audio_alert()
-                else:
-                    st.error("❌ فشل بث الرحلة. تحقق من الاتصال.")
-            except Exception as e:
-                logger.error(f"Error creating taxi order: {str(e)}")
-                st.error(f"حدث خطأ: {str(e)}")
+            _submit_order(
+                order_prefix="TAXI",
+                order_type="تاكسي أفراد",
+                payload_extra={"from": start.strip(), "to": end.strip(), "price": price},
+                email_subject="طلب تاكسي جديد {order_id}",
+                email_body=f"الراكب {user_name} اطلب رحلة من {start} إلى {end}",
+            )
 
 # 4️⃣ غرفة الدردشة الذكية (غرف الواتساب الثنائية المؤمنة لكل طلب)
 elif st.session_state["current_page"] == "الدردشة":
@@ -801,7 +703,7 @@ elif st.session_state["current_page"] == "الإعدادات":
                         profile_data = {
                             "full_name": new_name,
                             "whatsapp_number": whatsapp_num,
-                            "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "last_updated": get_current_timestamp(),
                             "user_role": user_role
                         }
                         
@@ -916,7 +818,7 @@ elif st.session_state["current_page"] == "الإعدادات":
                                     "payment_method": payment_method,
                                     "account_number": account_num.strip(),
                                     "verified": False,
-                                    "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                    "last_updated": get_current_timestamp()
                                 }
                                 
                                 if save_driver_account(user_name, account_data):
@@ -986,7 +888,7 @@ elif st.session_state["current_page"] == "الإعدادات":
                         rejection_reason = metadata.get("rejection_reason", "لم يتم تحديد السبب")
                         st.error(f"❌ **تم رفض طلبك** - السبب: {rejection_reason}")
                     else:
-                        st.warning(f"⏳ **حالتك معلقة** - جاري المراجعة من قبل الفريق الإداري")
+                        st.warning("⏳ **حالتك معلقة** - جاري المراجعة من قبل الفريق الإداري")
                     
                     # Display metadata
                     col1, col2, col3 = st.columns(3)
@@ -1004,97 +906,22 @@ elif st.session_state["current_page"] == "الإعدادات":
                     st.markdown("### 📄 رفع الوثائق المطلوبة")
                     st.caption("يجب رفع جميع الوثائق أدناه لتفعيل حسابك بالكامل")
                     
-                    # National ID
-                    st.markdown("#### 🆔 صورة البطاقة الشخصية")
-                    national_id_file = st.file_uploader(
-                        "اختر صورة البطاقة الشخصية",
-                        type=["jpg", "jpeg", "png", "pdf"],
-                        key="national_id_uploader",
-                        help="اختر صورة واضحة لبطاقتك الشخصية (الوجه + الخلف)"
-                    )
-                    
-                    if national_id_file and st.button("📤 رفع صورة البطاقة"):
-                        try:
-                            with st.spinner("جاري رفع الصورة..."):
-                                if upload_document_to_firebase(user_name, "national_id", national_id_file):
-                                    st.success("✅ تم رفع صورة البطاقة بنجاح!")
-                                    send_system_email(
-                                        f"وثيقة جديدة: بطاقة شخصية - {user_name}",
-                                        f"المندوب {user_name} رفع صورة البطاقة الشخصية للمراجعة"
-                                    )
-                                else:
-                                    st.error("❌ فشل رفع الصورة. حاول مرة أخرى.")
-                        except Exception as e:
-                            logger.error(f"Error uploading national ID: {str(e)}")
-                            st.error(f"خطأ: {str(e)}")
-                    
-                    # Display current status
-                    if "national_id" in kyc_docs and kyc_docs["national_id"].get("file_base64"):
-                        nat_id_status = kyc_docs["national_id"].get("verified", False)
-                        st.info(f"📋 البطاقة الشخصية: {'✅ مسجلة' if nat_id_status else '⏳ قيد المراجعة'}")
-                    
-                    st.divider()
-                    
-                    # Driving License
-                    st.markdown("#### 🚗 رخصة القيادة")
-                    driving_license_file = st.file_uploader(
-                        "اختر صورة رخصة القيادة",
-                        type=["jpg", "jpeg", "png", "pdf"],
-                        key="driving_license_uploader",
-                        help="اختر صورة واضحة لرخصة القيادة"
-                    )
-                    
-                    if driving_license_file and st.button("📤 رفع رخصة القيادة"):
-                        try:
-                            with st.spinner("جاري رفع الوثيقة..."):
-                                if upload_document_to_firebase(user_name, "driving_license", driving_license_file):
-                                    st.success("✅ تم رفع رخصة القيادة بنجاح!")
-                                    send_system_email(
-                                        f"وثيقة جديدة: رخصة القيادة - {user_name}",
-                                        f"المندوب {user_name} رفع صورة رخصة القيادة للمراجعة"
-                                    )
-                                else:
-                                    st.error("❌ فشل رفع الوثيقة. حاول مرة أخرى.")
-                        except Exception as e:
-                            logger.error(f"Error uploading driving license: {str(e)}")
-                            st.error(f"خطأ: {str(e)}")
-                    
-                    # Display current status
-                    if "driving_license" in kyc_docs and kyc_docs["driving_license"].get("file_base64"):
-                        lic_status = kyc_docs["driving_license"].get("verified", False)
-                        st.info(f"📋 رخصة القيادة: {'✅ مسجلة' if lic_status else '⏳ قيد المراجعة'}")
-                    
-                    st.divider()
-                    
-                    # Vehicle License (if applicable)
-                    st.markdown("#### 🛞 رخصة المركبة (إن وجدت)")
-                    st.caption("اختياري - رفع هذه الوثيقة إذا كنت تملك مركبة")
-                    vehicle_license_file = st.file_uploader(
-                        "اختر صورة رخصة المركبة",
-                        type=["jpg", "jpeg", "png", "pdf"],
-                        key="vehicle_license_uploader",
-                        help="اختر صورة واضحة لرخصة المركبة"
-                    )
-                    
-                    if vehicle_license_file and st.button("📤 رفع رخصة المركبة"):
-                        try:
-                            with st.spinner("جاري رفع الوثيقة..."):
-                                if upload_document_to_firebase(user_name, "vehicle_license", vehicle_license_file):
-                                    st.success("✅ تم رفع رخصة المركبة بنجاح!")
-                                    send_system_email(
-                                        f"وثيقة جديدة: رخصة المركبة - {user_name}",
-                                        f"المندوب {user_name} رفع صورة رخصة المركبة للمراجعة"
-                                    )
-                                else:
-                                    st.error("❌ فشل رفع الوثيقة. حاول مرة أخرى.")
-                        except Exception as e:
-                            logger.error(f"Error uploading vehicle license: {str(e)}")
-                            st.error(f"خطأ: {str(e)}")
-                    
-                    # Display current status
-                    if "vehicle_license" in kyc_docs and kyc_docs["vehicle_license"].get("file_base64"):
-                        veh_status = kyc_docs["vehicle_license"].get("verified", False)
-                        st.info(f"📋 رخصة المركبة: {'✅ مسجلة' if veh_status else '⏳ قيد المراجعة'}")
+                    # Each document type: (section heading, doc_type key, uploader widget key, display label)
+                    _kyc_documents = [
+                        ("🆔 صورة البطاقة الشخصية", "national_id", "national_id_uploader", "البطاقة الشخصية"),
+                        ("🚗 رخصة القيادة", "driving_license", "driving_license_uploader", "رخصة القيادة"),
+                        ("🛞 رخصة المركبة (إن وجدت)", "vehicle_license", "vehicle_license_uploader", "رخصة المركبة"),
+                    ]
+
+                    for heading, doc_type, uploader_key, display_label in _kyc_documents:
+                        st.markdown(f"#### {heading}")
+                        _render_document_upload(display_label, doc_type, uploader_key, user_name)
+
+                        if doc_type in kyc_docs and kyc_docs[doc_type].get("file_base64"):
+                            verified = kyc_docs[doc_type].get("verified", False)
+                            st.info(f"📋 {display_label}: {'✅ مسجلة' if verified else '⏳ قيد المراجعة'}")
+
+                        st.divider()
             
             except Exception as e:
                 logger.error(f"Error in KYC section: {str(e)}")
@@ -1235,7 +1062,7 @@ if user_role == "إدارة وموظفين" and st.session_state["current_page"]
                                             st.success(f"✅ تم تفعيل حساب {driver_name} بنجاح!")
                                             send_system_email(
                                                 f"✅ تم الموافقة على حسابك - {driver_name}",
-                                                f"تم الموافقة على طلب التحقق من هويتك. يمكنك الآن استخدام المنصة بالكامل والقبول على الطلبات!"
+                                                "تم الموافقة على طلب التحقق من هويتك. يمكنك الآن استخدام المنصة بالكامل والقبول على الطلبات!"
                                             )
                                             logger.info(f"Driver {driver_name} approved")
                                             time.sleep(1)
