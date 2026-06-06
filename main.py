@@ -1,10 +1,4 @@
-import requests
 import streamlit as st
-import json
-import firebase_admin
-from firebase_admin import credentials
-from datetime import datetime
-import time
 import pandas as pd
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -12,13 +6,25 @@ from email.mime.text import MIMEText
 import logging
 from math import radians, cos, sin, asin, sqrt
 import base64
-from io import BytesIO
+import firebase_admin
+
+from firebase_helpers import (
+    get_current_timestamp,
+    sanitize_username,
+    firebase_request,
+    send_to_firebase,
+    update_firebase_node,
+    fetch_from_firebase,
+    fetch_firebase_dict,
+    delete_firebase_node,
+    init_firebase_admin,
+)
 
 from Client import render_parcels_page, render_taxi_page, render_chat_page, render_customer_tracking
 from Driver import render_driver_tracking, render_driver_settings_tab, render_driver_kyc_tab, render_wallet_topup
 from Admin import render_admin_tracking, render_admin_kyc_console, render_commission_engine
 from Policies import render_privacy_policy, render_terms_of_use, render_support_contact, render_privacy_policy_brief
-from paymob import initiate_wallet_topup, process_paymob_webhook
+from paymob import initiate_wallet_topup
 
 # ========================================================
 # 🤖 إعداد واجهة منصة منجز الذكية وحماية الجلسة
@@ -45,90 +51,13 @@ if "driver_verification_status" not in st.session_state:
 # ========================================================
 # 🔒 جلب التكوينات وإعداد الاتصال السحابي بالـ Firebase
 # ========================================================
-FIREBASE_URL = st.secrets.get("FIREBASE_URL", "https://gen-lang-client-03099029-937be-default-rtdb.firebaseio.com/").strip()
-
-try:
-    raw_json_str = st.secrets["textkey"].strip()
-    firebase_credentials = json.loads(raw_json_str)
-    if "private_key" in firebase_credentials:
-        firebase_credentials["private_key"] = firebase_credentials["private_key"].replace("\\\\n", "\n").replace("\\n", "\n").strip()
-    
-    if not firebase_admin._apps:
-        cred = credentials.Certificate(firebase_credentials)
-        firebase_admin.initialize_app(cred, {'databaseURL': FIREBASE_URL})
-except Exception as e:
-    logger.error(f"Firebase initialization error: {str(e)}")
-    st.sidebar.error(f"⚠️ خطأ في تحميل مفتاح Firebase الحساس: {str(e)}")
+if not init_firebase_admin():
+    st.sidebar.error("⚠️ خطأ في تحميل مفتاح Firebase الحساس")
 
 # ========================================================
-# 📡 دوال وظائف بايثون للاتصال المباشر والربط (لايف)
+# 📡 send_to_firebase / update_firebase_node / fetch_from_firebase
+#    are now imported from firebase_helpers.py
 # ========================================================
-def send_to_firebase(node, data):
-    """Send data to Firebase with error handling"""
-    try:
-        url = f"{FIREBASE_URL.rstrip('/')}/{node.strip('/')}.json"
-        response = requests.post(url, json=data, timeout=10)
-        return response.ok
-    except requests.exceptions.Timeout:
-        logger.error(f"Timeout sending to Firebase node: {node}")
-        return False
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Request error sending to Firebase: {str(e)}")
-        return False
-    except Exception as e:
-        logger.error(f"Unexpected error sending to Firebase: {str(e)}")
-        return False
-
-def update_firebase_node(node, data):
-    """Update Firebase node with error handling"""
-    try:
-        url = f"{FIREBASE_URL.rstrip('/')}/{node.strip('/')}.json"
-        response = requests.patch(url, json=data, timeout=10)
-        return response.ok
-    except requests.exceptions.Timeout:
-        logger.error(f"Timeout updating Firebase node: {node}")
-        return False
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Request error updating Firebase: {str(e)}")
-        return False
-    except Exception as e:
-        logger.error(f"Unexpected error updating Firebase: {str(e)}")
-        return False
-
-def fetch_from_firebase(node):
-    """Fetch data from Firebase with robust error handling"""
-    try:
-        url = f"{FIREBASE_URL.rstrip('/')}/{node.strip('/')}.json"
-        res = requests.get(url, timeout=10)
-        
-        if res.ok:
-            data = res.json()
-            if data and isinstance(data, dict):
-                # Safely construct list of items
-                items = []
-                for k, v in data.items():
-                    try:
-                        if isinstance(v, dict):
-                            item = {"db_id": k}
-                            item.update(v)
-                            items.append(item)
-                    except Exception as item_error:
-                        logger.warning(f"Error processing item {k}: {str(item_error)}")
-                        continue
-                return items
-        return []
-    except requests.exceptions.Timeout:
-        logger.error(f"Timeout fetching from Firebase node: {node}")
-        return []
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Request error fetching from Firebase: {str(e)}")
-        return []
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON decode error from Firebase: {str(e)}")
-        return []
-    except Exception as e:
-        logger.error(f"Unexpected error fetching from Firebase: {str(e)}")
-        return []
 
 def fetch_firebase_raw(node):
     """Fetch raw JSON data from a Firebase node without list transformation.
@@ -138,9 +67,8 @@ def fetch_firebase_raw(node):
     chats/{order_id}/support_request.
     """
     try:
-        url = f"{FIREBASE_URL.rstrip('/')}/{node.strip('/')}.json"
-        res = requests.get(url, timeout=10)
-        if res.ok:
+        res = firebase_request("get", node)
+        if res and res.ok:
             return res.json()
         return None
     except Exception as e:
@@ -149,77 +77,40 @@ def fetch_firebase_raw(node):
 
 def fetch_user_settings(username):
     """Fetch user settings from Firebase with null-safety"""
-    try:
-        url = f"{FIREBASE_URL.rstrip('/')}/users/{username.replace(' ', '_')}.json"
-        res = requests.get(url, timeout=10)
-        
-        if res.ok and res.json():
-            return res.json()
-        return {}
-    except Exception as e:
-        logger.warning(f"Error fetching user settings for {username}: {str(e)}")
-        return {}
+    return fetch_firebase_dict(f"users/{sanitize_username(username)}")
 
 def save_user_settings(username, settings):
     """Save user settings to Firebase with comprehensive error handling"""
-    try:
-        sanitized_username = username.replace(" ", "_").replace(".", "_")
-        url = f"{FIREBASE_URL.rstrip('/')}/users/{sanitized_username}.json"
-        response = requests.patch(url, json=settings, timeout=10)
-        return response.ok
-    except Exception as e:
-        logger.error(f"Error saving user settings: {str(e)}")
-        return False
+    return update_firebase_node(f"users/{sanitize_username(username)}", settings)
 
 def fetch_driver_account(username):
     """Fetch driver payout account settings with null-safety"""
-    try:
-        sanitized_username = username.replace(" ", "_").replace(".", "_")
-        url = f"{FIREBASE_URL.rstrip('/')}/drivers_accounts/{sanitized_username}.json"
-        res = requests.get(url, timeout=10)
-        
-        if res.ok and res.json():
-            return res.json()
+    data = fetch_firebase_dict(f"drivers_accounts/{sanitize_username(username)}")
+    if not data:
         return {"payment_method": None, "account_number": None}
-    except Exception as e:
-        logger.warning(f"Error fetching driver account for {username}: {str(e)}")
-        return {"payment_method": None, "account_number": None}
+    return data
 
 def save_driver_account(username, account_data):
     """Save driver account information securely"""
-    try:
-        sanitized_username = username.replace(" ", "_").replace(".", "_")
-        url = f"{FIREBASE_URL.rstrip('/')}/drivers_accounts/{sanitized_username}.json"
-        account_data["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        response = requests.patch(url, json=account_data, timeout=10)
-        return response.ok
-    except Exception as e:
-        logger.error(f"Error saving driver account: {str(e)}")
-        return False
+    account_data["last_updated"] = get_current_timestamp()
+    return update_firebase_node(
+        f"drivers_accounts/{sanitize_username(username)}", account_data
+    )
 
 def delete_user_from_firebase(username):
     """Delete all user data from Firebase with cascading deletion"""
     try:
-        sanitized_username = username.replace(" ", "_").replace(".", "_")
-        
-        # Delete from users node
-        url_users = f"{FIREBASE_URL.rstrip('/')}/users/{sanitized_username}.json"
-        requests.delete(url_users, timeout=10)
-        
-        # Delete from drivers_accounts if driver
-        url_driver = f"{FIREBASE_URL.rstrip('/')}/drivers_accounts/{sanitized_username}.json"
-        requests.delete(url_driver, timeout=10)
-        
-        # Delete from private_chats
-        url_chats = f"{FIREBASE_URL.rstrip('/')}/private_chats.json"
-        res = requests.get(url_chats, timeout=10)
-        if res.ok and res.json():
-            chats = res.json()
+        safe_name = sanitize_username(username)
+
+        delete_firebase_node(f"users/{safe_name}")
+        delete_firebase_node(f"drivers_accounts/{safe_name}")
+
+        chats = fetch_firebase_dict("private_chats")
+        if chats:
             for chat_key in chats:
-                if sanitized_username in str(chat_key).lower():
-                    delete_url = f"{FIREBASE_URL.rstrip('/')}/private_chats/{chat_key}.json"
-                    requests.delete(delete_url, timeout=10)
-        
+                if safe_name in str(chat_key).lower():
+                    delete_firebase_node(f"private_chats/{chat_key}")
+
         logger.info(f"User {username} completely deleted from Firebase")
         return True
     except Exception as e:
@@ -245,91 +136,61 @@ def upload_document_to_firebase(username, document_type, file_data):
         if not file_data:
             logger.warning(f"Empty file data for {document_type}")
             return False
-        
-        # Read file and encode to base64
-        try:
-            file_bytes = file_data.read()
-            if not file_bytes:
-                logger.error(f"File is empty: {document_type}")
-                return False
-            
-            file_base64 = base64.b64encode(file_bytes).decode('utf-8')
-            
-            # Sanitize username
-            sanitized_username = username.replace(" ", "_").replace(".", "_")
-            
-            # Create document metadata
-            doc_data = {
-                "document_type": document_type,
-                "file_base64": file_base64,
-                "file_name": file_data.name,
-                "file_size": len(file_bytes),
-                "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "verified": False
-            }
-            
-            # Upload to Firebase
-            node = f"driver_kyc/{sanitized_username}/{document_type}"
-            url = f"{FIREBASE_URL.rstrip('/')}/{node}.json"
-            response = requests.patch(url, json=doc_data, timeout=30)
-            
-            if response.ok:
-                logger.info(f"Document {document_type} uploaded successfully for {username}")
-                return True
-            else:
-                logger.error(f"Firebase upload failed with status {response.status_code}")
-                return False
-        
-        except Exception as upload_error:
-            logger.error(f"Error encoding/uploading file: {str(upload_error)}")
+
+        file_bytes = file_data.read()
+        if not file_bytes:
+            logger.error(f"File is empty: {document_type}")
             return False
-    
+
+        file_base64 = base64.b64encode(file_bytes).decode('utf-8')
+        safe_name = sanitize_username(username)
+
+        doc_data = {
+            "document_type": document_type,
+            "file_base64": file_base64,
+            "file_name": file_data.name,
+            "file_size": len(file_bytes),
+            "uploaded_at": get_current_timestamp(),
+            "verified": False,
+        }
+
+        node = f"driver_kyc/{safe_name}/{document_type}"
+        if update_firebase_node(node, doc_data):
+            logger.info(f"Document {document_type} uploaded successfully for {username}")
+            return True
+        logger.error("Firebase upload failed")
+        return False
+
     except Exception as e:
         logger.error(f"Error uploading document to Firebase: {str(e)}")
         return False
 
 def fetch_driver_kyc_documents(username):
     """Fetch all KYC documents for a driver with null-safety"""
-    try:
-        sanitized_username = username.replace(" ", "_").replace(".", "_")
-        url = f"{FIREBASE_URL.rstrip('/')}/driver_kyc/{sanitized_username}.json"
-        res = requests.get(url, timeout=10)
-        
-        if res.ok and res.json():
-            return res.json()
-        return {}
-    except Exception as e:
-        logger.warning(f"Error fetching KYC documents for {username}: {str(e)}")
-        return {}
+    return fetch_firebase_dict(f"driver_kyc/{sanitize_username(username)}")
 
 def create_driver_kyc_record(username, user_role, car_type=None):
     """Create initial KYC record for new driver"""
     try:
-        sanitized_username = username.replace(" ", "_").replace(".", "_")
-        
         kyc_record = {
             "driver_name": username,
             "user_role": user_role,
             "verification_status": "Pending Manual Review",
-            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "created_at": get_current_timestamp(),
             "approved_at": None,
             "rejected_at": None,
             "rejection_reason": None,
             "documents_submitted": False,
-            "car_type": car_type if car_type else "Personal"
+            "car_type": car_type if car_type else "Personal",
         }
-        
-        node = f"driver_kyc/{sanitized_username}/metadata"
-        url = f"{FIREBASE_URL.rstrip('/')}/{node}.json"
-        response = requests.patch(url, json=kyc_record, timeout=10)
-        
-        if response.ok:
+
+        node = f"driver_kyc/{sanitize_username(username)}/metadata"
+        if update_firebase_node(node, kyc_record):
             logger.info(f"KYC record created for {username}")
-            # Update user settings with verification status
             save_user_settings(username, {"verification_status": "Pending Manual Review"})
             return True
         return False
-    
+
     except Exception as e:
         logger.error(f"Error creating KYC record: {str(e)}")
         return False
@@ -344,32 +205,26 @@ def update_driver_verification_status(username, status, rejection_reason=None):
     - "Pending Approval": Awaiting admin review
     """
     try:
-        sanitized_username = username.replace(" ", "_").replace(".", "_")
-        
+        now = get_current_timestamp()
         update_data = {
             "verification_status": status,
-            "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "last_updated": now,
         }
-        
+
         if status == "Active":
-            update_data["approved_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            update_data["approved_at"] = now
         elif status == "Rejected":
-            update_data["rejected_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            update_data["rejected_at"] = now
             if rejection_reason:
                 update_data["rejection_reason"] = rejection_reason
-        
-        # Update in driver_kyc node
-        node = f"driver_kyc/{sanitized_username}/metadata"
-        url = f"{FIREBASE_URL.rstrip('/')}/{node}.json"
-        response = requests.patch(url, json=update_data, timeout=10)
-        
-        if response.ok:
-            # Also update in users node
+
+        node = f"driver_kyc/{sanitize_username(username)}/metadata"
+        if update_firebase_node(node, update_data):
             save_user_settings(username, {"verification_status": status})
             logger.info(f"Driver {username} verification status updated to {status}")
             return True
         return False
-    
+
     except Exception as e:
         logger.error(f"Error updating driver verification status: {str(e)}")
         return False
@@ -383,13 +238,13 @@ def credit_driver_wallet(username, amount):
     Uses Firebase Admin SDK transaction for true atomic read-modify-write.
     Falls back to REST API if Admin SDK is not initialized."""
     try:
-        sanitized_username = username.replace(" ", "_").replace(".", "_")
+        safe_name = sanitize_username(username)
 
         # Try atomic transaction via Firebase Admin SDK
         if firebase_admin._apps:
             try:
                 from firebase_admin import db as fb_db
-                ref = fb_db.reference(f"drivers/{sanitized_username}/wallet_balance")
+                ref = fb_db.reference(f"drivers/{safe_name}/wallet_balance")
 
                 def increment_balance(current_value):
                     current_balance = 0.0
@@ -407,20 +262,18 @@ def credit_driver_wallet(username, amount):
                 logger.warning(f"Firebase Admin SDK transaction failed, falling back to REST: {str(sdk_err)}")
 
         # Fallback: REST API read-then-write (best-effort if SDK unavailable)
-        wallet_url = f"{FIREBASE_URL.rstrip('/')}/drivers/{sanitized_username}/wallet_balance.json"
-        res = requests.get(wallet_url, timeout=10)
+        res = firebase_request("get", f"drivers/{safe_name}/wallet_balance")
         current_balance = 0.0
-        if res.ok and res.json() is not None:
+        if res and res.ok and res.json() is not None:
             try:
                 current_balance = float(res.json())
             except (ValueError, TypeError):
                 current_balance = 0.0
 
         new_balance = round(current_balance + float(amount), 2)
-        node_url = f"{FIREBASE_URL.rstrip('/')}/drivers/{sanitized_username}.json"
-        response = requests.patch(node_url, json={"wallet_balance": new_balance}, timeout=10)
+        response = firebase_request("patch", f"drivers/{safe_name}", {"wallet_balance": new_balance})
 
-        if response.ok:
+        if response and response.ok:
             logger.info(f"Wallet credited (REST fallback): {username} += {amount}, new balance = {new_balance}")
             return True
         return False
@@ -435,10 +288,7 @@ def log_accounting_entry(trip_id, entry_data):
     try:
         sanitized_trip_id = str(trip_id).replace(" ", "_").replace("/", "_")
         node = f"accounting_logs/{sanitized_trip_id}"
-        url = f"{FIREBASE_URL.rstrip('/')}/{node}.json"
-        response = requests.patch(url, json=entry_data, timeout=10)
-
-        if response.ok:
+        if update_firebase_node(node, entry_data):
             logger.info(f"Accounting log created for trip: {trip_id}")
             return True
         return False
@@ -742,7 +592,7 @@ elif st.session_state["current_page"] == "الإعدادات":
                         profile_data = {
                             "full_name": new_name,
                             "whatsapp_number": whatsapp_num,
-                            "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "last_updated": get_current_timestamp(),
                             "user_role": user_role
                         }
                         
