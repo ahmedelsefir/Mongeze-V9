@@ -13,7 +13,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-COMMISSION_RATE = 0.10  # 10% platform commission
+COMMISSION_RATE = 0.20  # 20% platform commission
+DRIVER_SHARE = 0.80    # 80% driver share
+VAT_RATE = 0.14        # 14% VAT on platform commission
 
 
 def render_admin_tracking(orders, get_live_distance_for_order, format_distance_display):
@@ -178,11 +180,11 @@ def _render_doc_review(docs, doc_type, label):
 
 def render_commission_engine(fetch_from_firebase, update_firebase_node,
                              credit_driver_wallet, log_accounting_entry):
-    """Live Commission Engine: process completed trips, calculate 10% commission,
-    credit 90% to driver wallet, and log to accounting_logs/."""
+    """Live Commission Engine: process completed trips, calculate 20% commission,
+    apply 14% VAT on commission, credit 80% to driver wallet, and log to accounting_logs/."""
     st.markdown("---")
     st.markdown("## 💰 محرك العمولات الحية (Live Commission Engine)")
-    st.caption(f"نسبة العمولة: {int(COMMISSION_RATE * 100)}% للمنصة | {int((1 - COMMISSION_RATE) * 100)}% للسائق")
+    st.caption(f"نسبة العمولة: {int(COMMISSION_RATE * 100)}% للمنصة | {int(DRIVER_SHARE * 100)}% للسائق | ضريبة القيمة المضافة: {int(VAT_RATE * 100)}% على عمولة المنصة")
 
     try:
         orders = fetch_from_firebase("orders")
@@ -213,16 +215,20 @@ def render_commission_engine(fetch_from_firebase, update_firebase_node,
                     transaction_amount = 0.0
 
                 commission = round(transaction_amount * COMMISSION_RATE, 2)
-                driver_credit = round(transaction_amount * (1 - COMMISSION_RATE), 2)
+                vat_amount = round(commission * VAT_RATE, 2)
+                platform_net = round(commission - vat_amount, 2)
+                driver_credit = round(transaction_amount * DRIVER_SHARE, 2)
 
                 with st.expander(f"🧾 {order_id} | السائق: {driver_username} | المبلغ: {transaction_amount} ج.م"):
-                    col1, col2, col3 = st.columns(3)
+                    col1, col2, col3, col4 = st.columns(4)
                     with col1:
                         st.metric("💵 المبلغ الكلي", f"{transaction_amount} ج.م")
                     with col2:
-                        st.metric("🏢 عمولة المنصة (10%)", f"{commission} ج.م")
+                        st.metric("🏢 عمولة المنصة (20%)", f"{commission} ج.م")
                     with col3:
-                        st.metric("👤 حصة السائق (90%)", f"{driver_credit} ج.م")
+                        st.metric("🧾 ضريبة VAT (14%)", f"{vat_amount} ج.م")
+                    with col4:
+                        st.metric("👤 حصة السائق (80%)", f"{driver_credit} ج.م")
 
                     if not driver_username:
                         st.warning("⚠️ لا يوجد سائق مسجل لهذا الطلب — لا يمكن المعالجة")
@@ -236,6 +242,7 @@ def render_commission_engine(fetch_from_firebase, update_firebase_node,
                         _process_commission(
                             order, order_id, driver_username,
                             transaction_amount, commission, driver_credit,
+                            vat_amount, platform_net,
                             update_firebase_node, credit_driver_wallet, log_accounting_entry
                         )
 
@@ -254,9 +261,12 @@ def render_commission_engine(fetch_from_firebase, update_firebase_node,
                         drv = order.get("driver", "")
                         amt = _safe_float(order.get("price", 0))
                         comm = round(amt * COMMISSION_RATE, 2)
-                        drv_credit = round(amt * (1 - COMMISSION_RATE), 2)
+                        vat = round(comm * VAT_RATE, 2)
+                        plat_net = round(comm - vat, 2)
+                        drv_credit = round(amt * DRIVER_SHARE, 2)
                         if _process_commission(
                             order, oid, drv, amt, comm, drv_credit,
+                            vat, plat_net,
                             update_firebase_node, credit_driver_wallet, log_accounting_entry
                         ):
                             success_count += 1
@@ -280,18 +290,26 @@ def render_commission_engine(fetch_from_firebase, update_firebase_node,
                         "السائق": entry.get("driver_username", "N/A"),
                         "المبلغ الكلي": entry.get("transaction_amount", 0),
                         "عمولة المنصة": entry.get("platform_commission", 0),
-                        "حصة السائق": entry.get("driver_credit", 0),
+                        "ضريبة VAT": entry.get("vat_collected", 0),
+                        "صافي المنصة": entry.get("platform_net", 0),
+                        "حصة السائق": entry.get("driver_payout", entry.get("driver_credit", 0)),
                         "التاريخ": entry.get("processed_at", "N/A"),
                     })
                 df = pd.DataFrame(log_data)
                 st.dataframe(df, use_container_width=True)
 
                 total_commission = sum(float(e.get("platform_commission", 0)) for e in logs)
-                total_credited = sum(float(e.get("driver_credit", 0)) for e in logs)
-                col1, col2 = st.columns(2)
+                total_vat = sum(float(e.get("vat_collected", 0)) for e in logs)
+                total_net = sum(float(e.get("platform_net", 0)) for e in logs)
+                total_credited = sum(float(e.get("driver_payout", e.get("driver_credit", 0))) for e in logs)
+                col1, col2, col3, col4 = st.columns(4)
                 with col1:
                     st.metric("🏢 إجمالي عمولات المنصة", f"{round(total_commission, 2)} ج.م")
                 with col2:
+                    st.metric("🧾 إجمالي ضريبة VAT", f"{round(total_vat, 2)} ج.م")
+                with col3:
+                    st.metric("💼 صافي إيرادات المنصة", f"{round(total_net, 2)} ج.م")
+                with col4:
                     st.metric("👤 إجمالي المبالغ المحولة للسائقين", f"{round(total_credited, 2)} ج.م")
             else:
                 st.info("📭 لا توجد معاملات محاسبية مسجلة حتى الآن")
@@ -306,11 +324,12 @@ def render_commission_engine(fetch_from_firebase, update_firebase_node,
 
 def _process_commission(order, order_id, driver_username,
                         transaction_amount, commission, driver_credit,
+                        vat_amount, platform_net,
                         update_firebase_node, credit_driver_wallet, log_accounting_entry):
     """Atomically process a single trip's commission. Returns True on success."""
     try:
         with st.spinner(f"⚡ جاري معالجة العمولة لـ {order_id}..."):
-            # 1. Credit 90% to driver wallet (atomic increment)
+            # 1. Credit 80% to driver wallet (atomic increment)
             wallet_ok = credit_driver_wallet(driver_username, driver_credit)
             if not wallet_ok:
                 st.error(f"❌ فشل تحديث محفظة السائق {driver_username}")
@@ -323,8 +342,11 @@ def _process_commission(order, order_id, driver_username,
                 "driver_username": driver_username,
                 "transaction_amount": transaction_amount,
                 "platform_commission": commission,
-                "driver_credit": driver_credit,
+                "vat_collected": vat_amount,
+                "platform_net": platform_net,
+                "driver_payout": driver_credit,
                 "commission_rate": COMMISSION_RATE,
+                "vat_rate": VAT_RATE,
                 "processed_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "status": "completed"
             }
@@ -340,12 +362,14 @@ def _process_commission(order, order_id, driver_username,
 
             st.success(
                 f"✅ تمت المعالجة: {order_id} | "
-                f"عمولة: {commission} ج.م | "
+                f"عمولة: {commission} ج.م | VAT: {vat_amount} ج.م | "
+                f"صافي المنصة: {platform_net} ج.م | "
                 f"محفظة السائق +{driver_credit} ج.م"
             )
             logger.info(
                 f"Commission processed: trip={order_id}, driver={driver_username}, "
-                f"amount={transaction_amount}, commission={commission}, driver_credit={driver_credit}"
+                f"amount={transaction_amount}, commission={commission}, "
+                f"vat={vat_amount}, platform_net={platform_net}, driver_payout={driver_credit}"
             )
             return True
 
