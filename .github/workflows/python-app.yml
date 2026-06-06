@@ -34,4 +34,11 @@ jobs:
         run: |
           # فحص الكود برمجياً (Compilation) بدون تشغيله فعلياً لتجنب نقص مفاتيح السحابة
           python -m py_compile assistant.py
+          python -m py_compile main.py
+          python -m py_compile Client.py
+          python -m py_compile Driver.py
+          python -m py_compile Admin.py
+          python -m py_compile Policies.py
+          python -m py_compile paymob.py
+          python -m py_compile utils.py
           echo "تم فحص المحرك وربط الرادار بنجاح يا بشمهندس أحمد 🚀"

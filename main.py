@@ -1,6 +1,4 @@
 import streamlit as st
-import time
-from datetime import datetime
 import pandas as pd
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -8,10 +6,12 @@ from email.mime.text import MIMEText
 import logging
 from math import radians, cos, sin, asin, sqrt
 import base64
+import firebase_admin
 
 from firebase_helpers import (
     get_current_timestamp,
     sanitize_username,
+    firebase_request,
     send_to_firebase,
     update_firebase_node,
     fetch_from_firebase,
@@ -19,6 +19,12 @@ from firebase_helpers import (
     delete_firebase_node,
     init_firebase_admin,
 )
+
+from Client import render_parcels_page, render_taxi_page, render_chat_page, render_customer_tracking
+from Driver import render_driver_tracking, render_driver_settings_tab, render_driver_kyc_tab, render_wallet_topup
+from Admin import render_admin_tracking, render_admin_kyc_console, render_commission_engine
+from Policies import render_privacy_policy, render_terms_of_use, render_support_contact, render_privacy_policy_brief
+from paymob import initiate_wallet_topup
 
 # ========================================================
 # 🤖 إعداد واجهة منصة منجز الذكية وحماية الجلسة
@@ -40,7 +46,7 @@ if "audio_notifications_enabled" not in st.session_state:
 if "language" not in st.session_state:
     st.session_state["language"] = "العربية"
 if "driver_verification_status" not in st.session_state:
-    st.session_state["driver_verification_status"] = "Pending Approval"
+    st.session_state["driver_verification_status"] = "Pending Manual Review"
 
 # ========================================================
 # 🔒 جلب التكوينات وإعداد الاتصال السحابي بالـ Firebase
@@ -52,6 +58,22 @@ if not init_firebase_admin():
 # 📡 send_to_firebase / update_firebase_node / fetch_from_firebase
 #    are now imported from firebase_helpers.py
 # ========================================================
+
+def fetch_firebase_raw(node):
+    """Fetch raw JSON data from a Firebase node without list transformation.
+
+    Unlike fetch_from_firebase (which converts dicts into lists of nested items),
+    this returns the raw parsed JSON — useful for flat key-value nodes like
+    chats/{order_id}/support_request.
+    """
+    try:
+        res = firebase_request("get", node)
+        if res and res.ok:
+            return res.json()
+        return None
+    except Exception as e:
+        logger.error(f"Error fetching raw Firebase node {node}: {str(e)}")
+        return None
 
 def fetch_user_settings(username):
     """Fetch user settings from Firebase with null-safety"""
@@ -153,7 +175,7 @@ def create_driver_kyc_record(username, user_role, car_type=None):
         kyc_record = {
             "driver_name": username,
             "user_role": user_role,
-            "verification_status": "Pending Approval",
+            "verification_status": "Pending Manual Review",
             "created_at": get_current_timestamp(),
             "approved_at": None,
             "rejected_at": None,
@@ -165,7 +187,7 @@ def create_driver_kyc_record(username, user_role, car_type=None):
         node = f"driver_kyc/{sanitize_username(username)}/metadata"
         if update_firebase_node(node, kyc_record):
             logger.info(f"KYC record created for {username}")
-            save_user_settings(username, {"verification_status": "Pending Approval"})
+            save_user_settings(username, {"verification_status": "Pending Manual Review"})
             return True
         return False
 
@@ -205,6 +227,74 @@ def update_driver_verification_status(username, status, rejection_reason=None):
 
     except Exception as e:
         logger.error(f"Error updating driver verification status: {str(e)}")
+        return False
+
+# ========================================================
+# 💰 دوال المحفظة والمحاسبة (Wallet & Accounting Helpers)
+# ========================================================
+
+def credit_driver_wallet(username, amount):
+    """Atomically credit amount to driver's wallet balance in Firebase.
+    Uses Firebase Admin SDK transaction for true atomic read-modify-write.
+    Falls back to REST API if Admin SDK is not initialized."""
+    try:
+        safe_name = sanitize_username(username)
+
+        # Try atomic transaction via Firebase Admin SDK
+        if firebase_admin._apps:
+            try:
+                from firebase_admin import db as fb_db
+                ref = fb_db.reference(f"drivers/{safe_name}/wallet_balance")
+
+                def increment_balance(current_value):
+                    current_balance = 0.0
+                    if current_value is not None:
+                        try:
+                            current_balance = float(current_value)
+                        except (ValueError, TypeError):
+                            current_balance = 0.0
+                    return round(current_balance + float(amount), 2)
+
+                new_balance = ref.transaction(increment_balance)
+                logger.info(f"Wallet credited (atomic): {username} += {amount}, new balance = {new_balance}")
+                return True
+            except Exception as sdk_err:
+                logger.warning(f"Firebase Admin SDK transaction failed, falling back to REST: {str(sdk_err)}")
+
+        # Fallback: REST API read-then-write (best-effort if SDK unavailable)
+        res = firebase_request("get", f"drivers/{safe_name}/wallet_balance")
+        current_balance = 0.0
+        if res and res.ok and res.json() is not None:
+            try:
+                current_balance = float(res.json())
+            except (ValueError, TypeError):
+                current_balance = 0.0
+
+        new_balance = round(current_balance + float(amount), 2)
+        response = firebase_request("patch", f"drivers/{safe_name}", {"wallet_balance": new_balance})
+
+        if response and response.ok:
+            logger.info(f"Wallet credited (REST fallback): {username} += {amount}, new balance = {new_balance}")
+            return True
+        return False
+
+    except Exception as e:
+        logger.error(f"Error crediting wallet for {username}: {str(e)}")
+        return False
+
+
+def log_accounting_entry(trip_id, entry_data):
+    """Log a permanent accounting ledger entry under accounting_logs/{trip_id}."""
+    try:
+        sanitized_trip_id = str(trip_id).replace(" ", "_").replace("/", "_")
+        node = f"accounting_logs/{sanitized_trip_id}"
+        if update_firebase_node(node, entry_data):
+            logger.info(f"Accounting log created for trip: {trip_id}")
+            return True
+        return False
+
+    except Exception as e:
+        logger.error(f"Error logging accounting entry for {trip_id}: {str(e)}")
         return False
 
 # ========================================================
@@ -361,74 +451,6 @@ def format_distance_display(distance_km):
         return f"{distance_km} كم 🛣️"
 
 # ========================================================
-# 🛠️ Extracted UI helpers to reduce duplication
-# ========================================================
-
-def _submit_order(order_prefix, order_type, payload_extra, email_subject, email_body):
-    """
-    Shared order-submission logic used by both parcel and taxi forms.
-
-    Generates an order ID, sends to Firebase, sends email notification,
-    and triggers an audio alert if enabled.
-    """
-    try:
-        order_id = f"{order_prefix}-{int(time.time())}"
-        payload = {
-            "order_id": order_id,
-            "type": order_type,
-            "customer": user_name,
-            "status": "\u062c\u0627\u0631\u064a \u0627\u0644\u0628\u062d\u062b \u0639\u0646 \u0643\u0627\u0628\u062a\u0646",
-            "driver": "\u0644\u0645 \u064a\u062d\u062f\u062f \u0628\u0639\u062f",
-            "timestamp": get_current_timestamp(),
-        }
-        payload.update(payload_extra)
-
-        if send_to_firebase("orders", payload):
-            st.session_state["my_active_order_id"] = order_id
-            send_system_email(email_subject.format(order_id=order_id), email_body)
-            st.success(f"\ud83c\udf89 \u062a\u0645 \u0628\u062b \u0627\u0644\u0637\u0644\u0628 \u0628\u0646\u062c\u0627\u062d! \u0643\u0648\u062f \u0627\u0644\u062a\u062a\u0628\u0639: {order_id}")
-            if st.session_state.get("audio_notifications_enabled", False):
-                trigger_audio_alert()
-        else:
-            st.error("\u274c \u0641\u0634\u0644 \u0628\u062b \u0627\u0644\u0637\u0644\u0628. \u062a\u062d\u0642\u0642 \u0645\u0646 \u0627\u0644\u0627\u062a\u0635\u0627\u0644.")
-    except Exception as e:
-        logger.error(f"Error creating {order_type} order: {str(e)}")
-        st.error(f"\u062d\u062f\u062b \u062e\u0637\u0623: {str(e)}")
-
-
-def _render_document_upload(doc_label, doc_type, uploader_key, username):
-    """
-    Render a file-uploader + upload-button block for a single KYC document.
-
-    Eliminates the three near-identical upload sections for national ID,
-    driving licence, and vehicle licence.
-    """
-    uploaded_file = st.file_uploader(
-        f"\u0627\u062e\u062a\u0631 \u0635\u0648\u0631\u0629 {doc_label}",
-        type=["jpg", "jpeg", "png", "pdf"],
-        key=uploader_key,
-        help=f"\u0627\u062e\u062a\u0631 \u0635\u0648\u0631\u0629 \u0648\u0627\u0636\u062d\u0629 \u0644\u0640{doc_label}",
-    )
-
-    if uploaded_file and st.button(f"\ud83d\udce4 \u0631\u0641\u0639 {doc_label}", key=f"upload_{doc_type}"):
-        try:
-            with st.spinner("\u062c\u0627\u0631\u064a \u0631\u0641\u0639 \u0627\u0644\u0648\u062b\u064a\u0642\u0629..."):
-                if upload_document_to_firebase(username, doc_type, uploaded_file):
-                    st.success(f"\u2705 \u062a\u0645 \u0631\u0641\u0639 {doc_label} \u0628\u0646\u062c\u0627\u062d!")
-                    send_system_email(
-                        f"\u0648\u062b\u064a\u0642\u0629 \u062c\u062f\u064a\u062f\u0629: {doc_label} - {username}",
-                        f"\u0627\u0644\u0645\u0646\u062f\u0648\u0628 {username} \u0631\u0641\u0639 \u0635\u0648\u0631\u0629 {doc_label} \u0644\u0644\u0645\u0631\u0627\u062c\u0639\u0629",
-                    )
-                else:
-                    st.error("\u274c \u0641\u0634\u0644 \u0631\u0641\u0639 \u0627\u0644\u0648\u062b\u064a\u0642\u0629. \u062d\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062e\u0631\u0649.")
-        except Exception as e:
-            logger.error(f"Error uploading {doc_type}: {str(e)}")
-            st.error(f"\u062e\u0637\u0623: {str(e)}")
-
-    return uploaded_file
-
-
-# ========================================================
 # 📱 شريط التوجيه ودمج الصفحات الموحد
 # ========================================================
 st.title("🤖 غرفة العمليات المركزية لـ منجز الذكية")
@@ -488,88 +510,18 @@ if st.session_state["current_page"] == "الرئيسية":
 
 # 2️⃣ بوابة الطرود تكميلي
 elif st.session_state["current_page"] == "الطرود":
-    st.markdown("## 📦 مركز بث طلبات الطرود والشحن التجاري")
-    with st.form("parcel_v10"):
-        details = st.text_area("تفاصيل الشحنة وعنوان الالتقاط والتوصيل بدقة:")
-        price = st.number_input("الميزانية المقترحة (ج.م):", min_value=10.0, value=70.0)
-        if st.form_submit_button("🚀 بث الطلب فوراً للشبكة") and details.strip():
-            _submit_order(
-                order_prefix="PRCL",
-                order_type="طرد تكميلي",
-                payload_extra={"details": details.strip(), "price": price},
-                email_subject="طلب طرد جديد {order_id}",
-                email_body=f"العميل {user_name} طلب توصيل طرد بقيمة {price} ج.م",
-            )
+    render_parcels_page(user_name, send_to_firebase, send_system_email, trigger_audio_alert)
 
 # 3️⃣ بوابة تاكسي أفراد
 elif st.session_state["current_page"] == "التاكسي":
-    st.markdown("## 🚕 مركز طلبات توصيل التاكسي والأفراد")
-    with st.form("taxi_v10"):
-        start = st.text_input("نقطة الانطلاق (منين؟):")
-        end = st.text_input("الوجهة المراد الوصول إليها (على فين؟):")
-        price = st.number_input("عرض السعر المقترح للرحلة:", min_value=20.0, value=120.0)
-        if st.form_submit_button("🚕 بث الرحلة فوراً لايف") and start.strip() and end.strip():
-            _submit_order(
-                order_prefix="TAXI",
-                order_type="تاكسي أفراد",
-                payload_extra={"from": start.strip(), "to": end.strip(), "price": price},
-                email_subject="طلب تاكسي جديد {order_id}",
-                email_body=f"الراكب {user_name} اطلب رحلة من {start} إلى {end}",
-            )
+    render_taxi_page(user_name, send_to_firebase, send_system_email, trigger_audio_alert)
 
 # 4️⃣ غرفة الدردشة الذكية (غرف الواتساب الثنائية المؤمنة لكل طلب)
 elif st.session_state["current_page"] == "الدردشة":
-    st.markdown("## 💬 غرف المحادثة والاتصال اللحظي الموحد (نظام واتساب)")
-    try:
-        orders = fetch_from_firebase("orders")
-        room_options = ["الشات العام للإدارة والموظفين"]
-        if orders:
-            for o in orders:
-                try:
-                    room_options.append(f"محادثة طلب {o.get('order_id', 'unknown')} - العميل: {o.get('customer', 'unknown')}")
-                except Exception as option_error:
-                    logger.warning(f"Error building room option: {str(option_error)}")
-                    continue
-        
-        selected_room = st.selectbox("🎯 اختر قناة أو غرفة المحادثة النشطة لمتابعتها وتحديثها:", room_options)
-        clean_room = selected_room.replace(" ", "_").replace(":", "_").replace("-", "_")
-        
-        with st.form("chat_form_v10", clear_on_submit=True):
-            msg_text = st.text_input("📝 اكتب رسالتك اللحظية هنا:")
-            if st.form_submit_button("💬 إرسال وبث") and msg_text.strip():
-                try:
-                    send_to_firebase(f"private_chats/{clean_room}", {
-                        "role": user_role, "sender": user_name, "message": msg_text.strip(), 
-                        "timestamp": datetime.now().strftime("%H:%M:%S")
-                    })
-                    time.sleep(0.2)
-                except Exception as chat_error:
-                    logger.error(f"Error sending chat message: {str(chat_error)}")
-                    st.error("❌ فشل إرسال الرسالة")
-        
-        # سحب وعرض الرسائل الحية للغرفة المحددة من الأحدث للأقدم
-        try:
-            chats = fetch_from_firebase(f"private_chats/{clean_room}")
-            if chats and len(chats) > 0:
-                for m in chats[-20:]:
-                    try:
-                        role_color = "#1E88E5" if m.get("role") == "إدارة وموظفين" else "#2ECC71" if m.get("role") == "عميل" else "#F1C40F"
-                        st.markdown(f"""
-                        <div style='background-color: #f4f6f7; padding: 10px; border-radius: 8px; margin-bottom: 6px; border-right: 5px solid {role_color}; text-align: right;'>
-                            <span style='color: {role_color}; font-weight: bold;'>[{m.get('role', 'Unknown')}] {m.get('sender', 'Unknown')}</span> 
-                            <span style='font-size: 0.75em; color: gray;'>({m.get('timestamp', '')})</span>: 
-                            <p style='margin-top: 4px; font-size: 1.1em; color: black;'>{m.get('message', '')}</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    except Exception as msg_error:
-                        logger.warning(f"Error rendering message: {str(msg_error)}")
-                        continue
-        except Exception as chat_fetch_error:
-            logger.error(f"Error fetching chat messages: {str(chat_fetch_error)}")
-            st.warning("⚠️ خطأ في جلب الرسائل")
-    except Exception as e:
-        logger.error(f"Error in chat page: {str(e)}")
-        st.error("حدث خطأ في صفحة الدردشة")
+    render_chat_page(user_name, user_role, send_to_firebase, fetch_from_firebase,
+                     update_firebase_node=update_firebase_node,
+                     log_accounting_entry=log_accounting_entry,
+                     fetch_firebase_raw=fetch_firebase_raw)
 
 # 5️⃣ 📡 رادار تتبع الحالات الحالي والالتقاط الميكانيكي (Satellite Tracking)
 elif st.session_state["current_page"] == "التتبع":
@@ -580,77 +532,14 @@ elif st.session_state["current_page"] == "التتبع":
         orders = fetch_from_firebase("orders")
         
         if user_role == "عميل":
-            st.subheader("🕵️‍♂️ مراقبة حالة طلبك الحالي:")
-            my_order = None
-            if orders and st.session_state["my_active_order_id"]:
-                my_order = next((o for o in orders if o.get("order_id") == st.session_state["my_active_order_id"]), None)
-            
-            if my_order:
-                st.info(f"🔢 رقم الطلب الحالي: {my_order.get('order_id')} | الحالة الجارية: **{my_order.get('status')}**")
-                if my_order.get("status") == "الكابتن في الطريق إليك":
-                    st.success(f"⚡ إشعار لايف: الكابتن ({my_order.get('driver')}) قبل طلبك وهو في طريقه لموقعك الآن!")
-                    # عرض المسافة الحية
-                    distance = get_live_distance_for_order(my_order)
-                    distance_text = format_distance_display(distance)
-                    st.metric(label="المسافة الحية بينك وبين السائق", value=distance_text)
-                st.metric(label="الفاتورة والحساب الجاري", value=f"{my_order.get('price')} ج.م")
-            else:
-                st.warning("📭 لا يوجد طلب نشط تحت التتبع حالياً لك. اذهب للأعلى وانشئ طرد أو تاكسي.")
+            render_customer_tracking(fetch_from_firebase, get_live_distance_for_order, format_distance_display)
 
         elif user_role == "مندوب / كابتن":
-            st.subheader("🚕 الطلبات المتاحة في رادار السوق للالتقاط فوراً:")
-            if orders and len(orders) > 0:
-                available_orders = [o for o in orders if o.get("status") == "جاري البحث عن كابتن"]
-                if available_orders:
-                    for o in available_orders:
-                        try:
-                            st.markdown(f"**📦 {o.get('type', 'طلب')} جديد!** | العميل: {o.get('customer', 'unknown')} | السعر: {o.get('price', 0)} ج.م")
-                            if o.get('from'): 
-                                st.write(f"📍 من: {o.get('from')} -> إلى: {o.get('to', 'unknown')}")
-                            if o.get('details'): 
-                                st.write(f"📝 التفاصيل: {o.get('details')}")
-                            
-                            if st.button(f"✅ وافق واستلم الطلب {o.get('order_id')}", key=o.get('order_id')):
-                                try:
-                                    url_patch = f"orders/{o.get('db_id')}"
-                                    if update_firebase_node(url_patch, {"status": "الكابتن في الطريق إليك", "driver": user_name}):
-                                        st.success("🚀 تم حجز وتعميد الطلب باسمك يا كابتن! انتقل لغرفة الشات للتواصل مع العميل.")
-                                        time.sleep(1)
-                                        st.rerun()
-                                    else:
-                                        st.error("❌ فشل حجز الطلب. حاول مرة أخرى.")
-                                except Exception as accept_error:
-                                    logger.error(f"Error accepting order: {str(accept_error)}")
-                                    st.error(f"خطأ: {str(accept_error)}")
-                        except Exception as order_display_error:
-                            logger.warning(f"Error displaying order: {str(order_display_error)}")
-                            continue
-                else:
-                    st.write("✅ الرادار نظيف، لا توجد طلبات معلقة حالياً في السوق.")
-            else:
-                st.write("✅ الرادار نظيف، لا توجد طلبات معلقة حالياً في السوق.")
+            render_driver_tracking(user_name, orders, update_firebase_node,
+                                   fetch_driver_kyc_documents)
 
         elif user_role == "إدارة وموظفين":
-            st.subheader("📊 لوحة الرقابة الشاملة للموظفين")
-            if orders and len(orders) > 0:
-                try:
-                    df = pd.DataFrame(orders)
-                    display_cols = ["order_id", "type", "customer", "status", "driver", "price"]
-                    available_cols = [col for col in display_cols if col in df.columns]
-                    st.table(df[available_cols])
-                    
-                    # عرض المسافات الحية لجميع الطلبات
-                    st.subheader("📍 المسافات الحية للطلبات النشطة")
-                    for order in orders:
-                        if order.get("status") == "الكابتن في الطريق إليك":
-                            distance = get_live_distance_for_order(order)
-                            distance_text = format_distance_display(distance)
-                            st.write(f"🚕 **{order.get('order_id')}** - السائق: {order.get('driver', 'unknown')} | المسافة: {distance_text}")
-                except Exception as table_error:
-                    logger.error(f"Error displaying table: {str(table_error)}")
-                    st.write(orders)
-            else:
-                st.info("لا توجد طلبات حالياً")
+            render_admin_tracking(orders, get_live_distance_for_order, format_distance_display)
     except Exception as e:
         logger.error(f"Error in tracking page: {str(e)}")
         st.error("حدث خطأ في صفحة التتبع")
@@ -775,344 +664,36 @@ elif st.session_state["current_page"] == "الإعدادات":
     # ========== TAB 2: إعدادات المندوب ==========
     if user_role == "مندوب / كابتن":
         with settings_tabs[1]:
-            st.subheader("🚕 إعدادات المندوب (Driver Settings)")
-            st.markdown("### 💰 تسجيل حسابات السحب والدفع")
-            st.caption("قم بتسجيل معلومات حسابك البنكي بأمان تام - البيانات مشفرة في الخادم")
-            
-            try:
-                # Fetch current driver account info
-                driver_account = fetch_driver_account(user_name)
-                
-                current_method = driver_account.get("payment_method") or "اختر الطريقة"
-                current_account = driver_account.get("account_number") or ""
-                
-                with st.form("driver_payout_form"):
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        payment_method = st.selectbox(
-                            "💳 طريقة الدفع المفضلة:",
-                            options=["اختر الطريقة", "Vodafone Cash 🟠", "InstaPay 💳", "Bank Transfer 🏦"],
-                            index=0,
-                            help="اختر طريقة تحويل الرصيد المفضلة لديك"
-                        )
-                    
-                    with col2:
-                        account_num = st.text_input(
-                            "📱 رقم الحساب / الهاتف:",
-                            value=current_account,
-                            placeholder="أدخل رقم هاتفك أو رقم حسابك البنكي",
-                            help="رقم محفظتك أو حسابك البنكي"
-                        )
-                    
-                    st.info("🔐 تحذير أمني: تأكد من صحة البيانات قبل الحفظ - لا يمكن الرجوع فيها بسهولة")
-                    
-                    if st.form_submit_button("✅ حفظ حساب السحب بأمان", use_container_width=True):
-                        try:
-                            if payment_method == "اختر الطريقة":
-                                st.error("❌ يجب اختيار طريقة دفع أولاً")
-                            elif not account_num.strip():
-                                st.error("❌ يجب إدخال رقم الحساب")
-                            else:
-                                account_data = {
-                                    "payment_method": payment_method,
-                                    "account_number": account_num.strip(),
-                                    "verified": False,
-                                    "last_updated": get_current_timestamp()
-                                }
-                                
-                                if save_driver_account(user_name, account_data):
-                                    st.success("✅ تم حفظ معلومات حسابك بنجاح! سيتم تحقق الفريق من البيانات")
-                                    send_system_email(
-                                        f"تسجيل حساب سحب جديد - {user_name}",
-                                        f"المندوب {user_name} قام بتسجيل حساب: {payment_method}"
-                                    )
-                                    logger.info(f"Driver account saved for: {user_name}")
-                                else:
-                                    st.error("❌ فشل حفظ البيانات. حاول مرة أخرى.")
-                        except Exception as e:
-                            logger.error(f"Error saving driver account: {str(e)}")
-                            st.error(f"خطأ: {str(e)}")
-                
-                # Display current account info (if exists)
-                if driver_account and driver_account.get("account_number"):
-                    st.divider()
-                    st.markdown("### 📋 معلومات الحساب الحالية")
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("طريقة الدفع", driver_account.get("payment_method", "غير محدد"))
-                    with col2:
-                        masked_account = "*" * (len(str(driver_account.get("account_number", ""))) - 4) + str(driver_account.get("account_number", ""))[-4:]
-                        st.metric("الحساب (مشفر)", masked_account)
-                    with col3:
-                        st.metric("الحالة", "✅ مسجل" if driver_account.get("verified") else "⏳ قيد التحقق")
-            
-            except Exception as e:
-                logger.error(f"Error in driver settings: {str(e)}")
-                st.warning("⚠️ خطأ في تحميل إعدادات المندوب")
+            render_driver_settings_tab(user_name, fetch_driver_account, save_driver_account, send_system_email)
+            render_wallet_topup(user_name, initiate_wallet_topup_fn=initiate_wallet_topup)
         
         # ========== TAB 3: KYC Verification System ==========
         with settings_tabs[2]:
-            st.subheader("🎖️ نظام التحقق من الهوية (Know Your Driver - KYC)")
-            
-            try:
-                # Fetch KYC status
-                kyc_docs = fetch_driver_kyc_documents(user_name)
-                
-                # Check if KYC record exists
-                if not kyc_docs or "metadata" not in kyc_docs:
-                    st.info("📝 أنت جديد في النظام. يجب تسجيل وثائقك للتفعيل الكامل.")
-                    if st.button("🆕 بدء عملية التحقق من الهوية"):
-                        try:
-                            if create_driver_kyc_record(user_name, user_role, car_type="Personal"):
-                                st.success("✅ تم إنشاء ملف التحقق الخاص بك! الآن قم برفع الوثائق المطلوبة.")
-                                st.session_state["driver_verification_status"] = "Pending Approval"
-                                time.sleep(1)
-                                st.rerun()
-                            else:
-                                st.error("❌ فشل إنشاء ملف التحقق")
-                        except Exception as e:
-                            logger.error(f"Error creating KYC record: {str(e)}")
-                            st.error(f"خطأ: {str(e)}")
-                else:
-                    # Display KYC status
-                    metadata = kyc_docs.get("metadata", {})
-                    verification_status = metadata.get("verification_status", "Unknown")
-                    
-                    st.markdown("### 📊 حالة التحقق من الهوية")
-                    
-                    # Status indicator
-                    if verification_status == "Active":
-                        st.success("✅ **حالتك مفعّلة** - يمكنك استخدام المنصة بالكامل!")
-                    elif verification_status == "Rejected":
-                        rejection_reason = metadata.get("rejection_reason", "لم يتم تحديد السبب")
-                        st.error(f"❌ **تم رفض طلبك** - السبب: {rejection_reason}")
-                    else:
-                        st.warning("⏳ **حالتك معلقة** - جاري المراجعة من قبل الفريق الإداري")
-                    
-                    # Display metadata
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("الحالة", verification_status)
-                    with col2:
-                        created_date = metadata.get("created_at", "N/A")
-                        st.metric("تاريخ الطلب", created_date[:10] if created_date else "N/A")
-                    with col3:
-                        st.metric("النوع", metadata.get("user_role", "Unknown"))
-                    
-                    st.divider()
-                    
-                    # Document Upload Section
-                    st.markdown("### 📄 رفع الوثائق المطلوبة")
-                    st.caption("يجب رفع جميع الوثائق أدناه لتفعيل حسابك بالكامل")
-                    
-                    # Each document type: (section heading, doc_type key, uploader widget key, display label)
-                    _kyc_documents = [
-                        ("🆔 صورة البطاقة الشخصية", "national_id", "national_id_uploader", "البطاقة الشخصية"),
-                        ("🚗 رخصة القيادة", "driving_license", "driving_license_uploader", "رخصة القيادة"),
-                        ("🛞 رخصة المركبة (إن وجدت)", "vehicle_license", "vehicle_license_uploader", "رخصة المركبة"),
-                    ]
-
-                    for heading, doc_type, uploader_key, display_label in _kyc_documents:
-                        st.markdown(f"#### {heading}")
-                        _render_document_upload(display_label, doc_type, uploader_key, user_name)
-
-                        if doc_type in kyc_docs and kyc_docs[doc_type].get("file_base64"):
-                            verified = kyc_docs[doc_type].get("verified", False)
-                            st.info(f"📋 {display_label}: {'✅ مسجلة' if verified else '⏳ قيد المراجعة'}")
-
-                        st.divider()
-            
-            except Exception as e:
-                logger.error(f"Error in KYC section: {str(e)}")
-                st.warning("⚠️ خطأ في قسم التحقق من الهوية")
+            render_driver_kyc_tab(user_name, user_role, fetch_driver_kyc_documents,
+                                  create_driver_kyc_record, upload_document_to_firebase,
+                                  send_system_email)
         
         # ========== TAB 4: المساعدة والدعم (للمندوب) ==========
-        settings_tab_index = 3
-        with settings_tabs[settings_tab_index]:
+        with settings_tabs[3]:
             st.subheader("📋 المساعدة والدعم (Support & Maintenance)")
-            
-            with st.expander("🔐 سياسة الخصوصية وحماية البيانات"):
-                st.markdown("""
-                #### سياسة الخصوصية 🔒
-                
-                **منصة منجز الذكية** تلتزم بحماية بيانات المستخدمين وفقاً لأعلى معايير الأمان:
-                
-                ✅ **تشفير المحادثات**: جميع الرسائل والمحادثات في الشات الخاص مشفرة بتقنية SSL/TLS
-                
-                ✅ **حماية البيانات الشخصية**: تُخزن جميع البيانات بشكل آمن في خوادم Firebase مع نسخ احتياطية
-                
-                ✅ **عدم المشاركة**: لن نشارك بيانات المستخدمين مع طرف ثالث بدون موافقة صريحة
-                
-                ✅ **الوصول المقيد**: الوصول إلى بيانات المستخدم محصور على موظفي الشركة الموثوقين فقط
-                
-                ✅ **الامتثال**: نمتثل لجميع القوانين المحلية والدولية المتعلقة بحماية البيانات
-                
-                **آخر تحديث**: 2026-01-13
-                """)
-            
-            with st.expander("📋 شروط الاستخدام"):
-                st.markdown("""
-                #### شروط الاستخدام 📋
-                
-                باستخدامك لمنصة منجز الذكية، فإنك توافق على:
-                
-                1️⃣ **الاستخدام المشروع**: استخدام المنصة فقط للأغراض المشروعة والقانونية
-                
-                2️⃣ **المسؤولية الشخصية**: أنت مسؤول عن جميع الأنشطة التي تحدث تحت حسابك
-                
-                3️⃣ **عدم الإساءة**: لا يُسمح بإساءة الاستخدام أو الاحتيال أو الأنشطة الضارة
-                
-                4️⃣ **الامتثال للقوانين**: التزام كامل بقوانين الدولة والمحافظة
-                
-                5️⃣ **الاتفاقية الملزمة**: هذه الشروط تشكل اتفاقية ملزمة بيننا وبينك
-                
-                **آخر تحديث**: 2026-01-13
-                """)
-            
+            render_privacy_policy()
+            render_terms_of_use()
             st.divider()
-            
-            st.markdown("### 📞 التواصل مع الدعم الفني")
-            st.info("""
-            🆘 **هل تحتاج إلى مساعدة؟**
-            
-            - 📧 **البريد الإلكتروني**: support@mongeza.app
-            - 📱 **الواتساب**: +20xxxxxxxxxx
-            - 🌐 **الموقع الرسمي**: www.mongeza.app
-            - ⏰ **ساعات العمل**: ٢٤/٧ خدمة العملاء
-            """)
+            render_support_contact()
     
     else:
         # For non-driver users, show basic support
         with settings_tabs[1]:
             st.subheader("📋 المساعدة والدعم (Support & Maintenance)")
-            
-            with st.expander("🔐 سياسة الخصوصية وحماية البيانات"):
-                st.markdown("""
-                #### سياسة الخصوصية 🔒
-                
-                **منصة منجز الذكية** تلتزم بحماية بيانات المستخدمين وفقاً لأعلى معايير الأمان.
-                """)
-            
+            render_privacy_policy_brief()
             st.divider()
-            st.markdown("### 📞 التواصل مع الدعم الفني")
-            st.info("للتواصل مع فريق الدعم، استخدم البيانات أعلاه.")
+            render_support_contact()
 
-# ========== ADMIN CONSOLE: Pending Verification Radar ==========
+# ========== ADMIN CONSOLE: Verification Radar + Commission Engine ==========
 if user_role == "إدارة وموظفين" and st.session_state["current_page"] == "الإعدادات":
-    st.markdown("---")
-    st.markdown("## 🔍 لوحة تحكم التحقق من الهوية (Admin KYC Console)")
-    
-    try:
-        # Fetch all KYC records
-        kyc_records = fetch_from_firebase("driver_kyc")
-        
-        if kyc_records and len(kyc_records) > 0:
-            # Filter pending drivers
-            pending_drivers = []
-            for record in kyc_records:
-                try:
-                    metadata = record.get("metadata", {})
-                    if metadata.get("verification_status") == "Pending Approval":
-                        pending_drivers.append({
-                            "db_id": record.get("db_id"),
-                            "driver_name": metadata.get("driver_name", "Unknown"),
-                            "created_at": metadata.get("created_at", "N/A"),
-                            "documents": record
-                        })
-                except Exception as e:
-                    logger.warning(f"Error processing KYC record: {str(e)}")
-                    continue
-            
-            if pending_drivers:
-                st.subheader(f"📡 رادار المحتاجين للمراجعة ({len(pending_drivers)} معلقة)")
-                
-                for driver in pending_drivers:
-                    try:
-                        driver_name = driver.get("driver_name", "Unknown")
-                        created_at = driver.get("created_at", "N/A")
-                        
-                        with st.expander(f"👤 {driver_name} - المُرسل: {created_at}"):
-                            # Show documents status
-                            col1, col2, col3 = st.columns(3)
-                            
-                            with col1:
-                                nat_id_exists = "national_id" in driver.get("documents", {})
-                                st.metric("🆔 البطاقة", "✅ موجودة" if nat_id_exists else "❌ مفقودة")
-                            
-                            with col2:
-                                lic_exists = "driving_license" in driver.get("documents", {})
-                                st.metric("🚗 الرخصة", "✅ موجودة" if lic_exists else "❌ مفقودة")
-                            
-                            with col3:
-                                veh_exists = "vehicle_license" in driver.get("documents", {})
-                                st.metric("🛞 المركبة", "✅ موجودة" if veh_exists else "❌ مفقودة")
-                            
-                            st.divider()
-                            
-                            # Action buttons
-                            st.markdown("### 🎯 الإجراءات الإدارية")
-                            
-                            col_approve, col_reject = st.columns(2)
-                            
-                            with col_approve:
-                                if st.button(f"🟢 موافقة وتفعيل الحساب - {driver_name}", key=f"approve_{driver_name}"):
-                                    try:
-                                        if update_driver_verification_status(driver_name, "Active"):
-                                            st.success(f"✅ تم تفعيل حساب {driver_name} بنجاح!")
-                                            send_system_email(
-                                                f"✅ تم الموافقة على حسابك - {driver_name}",
-                                                "تم الموافقة على طلب التحقق من هويتك. يمكنك الآن استخدام المنصة بالكامل والقبول على الطلبات!"
-                                            )
-                                            logger.info(f"Driver {driver_name} approved")
-                                            time.sleep(1)
-                                            st.rerun()
-                                        else:
-                                            st.error("❌ فشلت عملية التفعيل")
-                                    except Exception as e:
-                                        logger.error(f"Error approving driver: {str(e)}")
-                                        st.error(f"خطأ: {str(e)}")
-                            
-                            with col_reject:
-                                rejection_reason = st.text_input(
-                                    "سبب الرفض (إن وجد):",
-                                    placeholder="مثال: الوثائق غير واضحة",
-                                    key=f"reject_reason_{driver_name}"
-                                )
-                                
-                                if st.button(f"🔴 رفض الطلب - {driver_name}", key=f"reject_{driver_name}"):
-                                    try:
-                                        if not rejection_reason.strip():
-                                            st.error("❌ يجب إدخال سبب الرفض")
-                                        else:
-                                            if update_driver_verification_status(driver_name, "Rejected", rejection_reason.strip()):
-                                                st.success(f"✅ تم رفض طلب {driver_name}")
-                                                send_system_email(
-                                                    f"❌ تم رفض طلبك - {driver_name}",
-                                                    f"للأسف، تم رفض طلب التحقق من هويتك. السبب: {rejection_reason}\n\nيمكنك إعادة محاولة رفع الوثائق مرة أخرى."
-                                                )
-                                                logger.info(f"Driver {driver_name} rejected")
-                                                time.sleep(1)
-                                                st.rerun()
-                                            else:
-                                                st.error("❌ فشلت عملية الرفض")
-                                    except Exception as e:
-                                        logger.error(f"Error rejecting driver: {str(e)}")
-                                        st.error(f"خطأ: {str(e)}")
-                    
-                    except Exception as display_error:
-                        logger.warning(f"Error displaying driver: {str(display_error)}")
-                        continue
-            
-            else:
-                st.info("✅ لا توجد طلبات معلقة للمراجعة - جميع المندوبين تم مراجعتهم!")
-        
-        else:
-            st.info("📭 لا توجد طلبات KYC حتى الآن")
-    
-    except Exception as e:
-        logger.error(f"Error in admin KYC console: {str(e)}")
-        st.error("⚠️ خطأ في تحميل لوحة التحكم")
+    render_admin_kyc_console(fetch_from_firebase, update_driver_verification_status, send_system_email)
+    render_commission_engine(fetch_from_firebase, update_firebase_node,
+                            credit_driver_wallet, log_accounting_entry)
 
 # زر التحديث اليدوي السريع لضمان حركة التدفق الفوري للرادار
 if st.button("🔄 تحديث الرادار والمحادثات"):
