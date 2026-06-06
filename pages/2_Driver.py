@@ -130,27 +130,32 @@ with driver_tabs[1]:
                         
                 elif status == "🚚 جاري التوصيل":
                     if st.button("🏁 إنهاء وتوصيل الطلب بنجاح للوجهة", key=f"status_btn_deliver_{m_id}", use_container_width=True):
-                        # 1. تحديث قاعدة البيانات أولاً
-                        db.collection("orders").document(m_id).update({"status": "✅ في انتظار تقييم الطرفين"})
-                        
-                        # 2. إرسال الفاتورة السيادية فوراً عبر الإيميل الجديد للعميل تلقائياً 🚀
-                        invoice_html = f"""
-                        <div style="direction: rtl; text-align: right; font-family: sans-serif; border: 1px solid #10B981; padding: 20px; border-radius: 8px;">
-                            <h2 style="color: #10B981;">📋 فاتورة رحلة من منصة مُنجز</h2>
-                            <p>أهلاً بك يا <b>{m_data.get('client_name')}</b>، تم إنهاء رحلتك بنجاح.</p>
-                            <hr>
-                            <p><b>👤 الكابتن المسؤول:</b> {DRIVER_NAME}</p>
-                            <p><b>📦 الشحنة الموصلة:</b> {m_data.get('order_details')}</p>
-                            <p style="font-size: 18px; color: #1E3A8A;"><b>💰 إجمالي الحساب الصافي: {m_data.get('suggested_price')} جنيه</b></p>
-                            <hr>
-                            <p style="font-size: 12px; color: #6B7280; text-align: center;">شكراً لاستخدامك منصة منجز السيادية 2026 ✨</p>
-                        </div>
-                        """
-                        # نقوم بالإرسال لإيميل العميل (هنا نضع إيميل تجريبي أو إيميلك الشخصي للفحص حالياً)
-                        send_monjez_email("ahmed.mustafa@monjez-app.icu", "📦 فاتورة رحلتك وتوصيل شحنتك من منصة مُنجز", invoice_html)
-                        
-                        st.success("🎯 تم إنهاء المشوار وإرسال الفاتورة الرسمية للعميل بريدياً!")
-                        st.rerun()
+                        try:
+                            # 1. تحديث قاعدة البيانات أولاً
+                            db.collection("orders").document(m_id).update({"status": "✅ في انتظار تقييم الطرفين"})
+                            
+                            # 2. إرسال الفاتورة السيادية فوراً عبر الإيميل الجديد للعميل تلقائياً
+                            invoice_html = f"""
+                            <div style="direction: rtl; text-align: right; font-family: sans-serif; border: 1px solid #10B981; padding: 20px; border-radius: 8px;">
+                                <h2 style="color: #10B981;">📋 فاتورة رحلة من منصة مُنجز</h2>
+                                <p>أهلاً بك يا <b>{m_data.get('client_name')}</b>، تم إنهاء رحلتك بنجاح.</p>
+                                <hr>
+                                <p><b>👤 الكابتن المسؤول:</b> {DRIVER_NAME}</p>
+                                <p><b>📦 الشحنة الموصلة:</b> {m_data.get('order_details')}</p>
+                                <p style="font-size: 18px; color: #1E3A8A;"><b>💰 إجمالي الحساب الصافي: {m_data.get('suggested_price')} جنيه</b></p>
+                                <hr>
+                                <p style="font-size: 12px; color: #6B7280; text-align: center;">شكراً لاستخدامك منصة منجز السيادية 2026 ✨</p>
+                            </div>
+                            """
+                            email_sent = send_monjez_email("ahmed.mustafa@monjez-app.icu", "📦 فاتورة رحلتك وتوصيل شحنتك من منصة مُنجز", invoice_html)
+                            
+                            if email_sent:
+                                st.success("🎯 تم إنهاء المشوار وإرسال الفاتورة الرسمية للعميل بريدياً!")
+                            else:
+                                st.warning("🎯 تم إنهاء المشوار بنجاح، لكن فشل إرسال الفاتورة بالبريد. يرجى المتابعة يدوياً.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ خطأ أثناء إنهاء الطلب: {e}")
                         
                 elif status == "✅ في انتظار تقييم الطرفين":
                     st.warning("🏁 الرحلة وصلت. فضلاً قيّم العميل لإغلاق الحساب وتقييد الأرباح في الخزينة:")

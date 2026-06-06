@@ -110,21 +110,29 @@ with tab_staff:
 with tab_ban_list:
     st.subheader("🛑 جدول الحسابات المحظورة والمجمدة حالياً")
     if db is not None:
-        banned_docs = db.collection("banned_users").stream()
-        banned_list = []
-        for b in banned_docs:
-            b_data = b.to_dict()
-            banned_list.append({
-                "الحساب المحظور": b_data.get("username"),
-                "سبب الحظر": b_data.get("reason"),
-                "المسؤول عن الحظر": b_data.get("banned_by")
-            })
-        if banned_list:
-            st.table(banned_list)
-            if st.button("🔄 فك حظر الجميع وتصفير القائمة السوداء"):
-                for b in db.collection("banned_users").stream():
-                    db.collection("banned_users").document(b.id).delete()
-                st.success("✅ تم تنظيف القائمة السوداء وإعادة الصلاحية لكافة الحسابات!")
-                st.rerun()
-        else:
-            st.info("🕊️ القائمة بيضاء، لا يوجد أي مستخدم محظور حالياً.")
+        try:
+            banned_docs = db.collection("banned_users").stream()
+            banned_list = []
+            for b in banned_docs:
+                b_data = b.to_dict()
+                banned_list.append({
+                    "الحساب المحظور": b_data.get("username"),
+                    "سبب الحظر": b_data.get("reason"),
+                    "المسؤول عن الحظر": b_data.get("banned_by")
+                })
+            if banned_list:
+                st.table(banned_list)
+                if st.button("🔄 فك حظر الجميع وتصفير القائمة السوداء"):
+                    try:
+                        for b in db.collection("banned_users").stream():
+                            db.collection("banned_users").document(b.id).delete()
+                        st.success("✅ تم تنظيف القائمة السوداء وإعادة الصلاحية لكافة الحسابات!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ فشل في مسح القائمة السوداء: {e}")
+            else:
+                st.info("🕊️ القائمة بيضاء، لا يوجد أي مستخدم محظور حالياً.")
+        except Exception as e:
+            st.error(f"❌ خطأ في تحميل القائمة السوداء: {e}")
+    else:
+        st.warning("⚠️ قاعدة البيانات غير متصلة — لا يمكن عرض القائمة السوداء.")

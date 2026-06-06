@@ -89,8 +89,18 @@ if restaurant_name and manager_name:
         orders_file = Path("delivery_orders.json")
         
         if orders_file.exists():
-            with open(orders_file, 'r', encoding='utf-8') as f:
-                orders_list = json.load(f)
+            try:
+                with open(orders_file, 'r', encoding='utf-8') as f:
+                    orders_list = json.load(f)
+                if not isinstance(orders_list, list):
+                    st.warning("⚠️ ملف الطلبات بصيغة غير متوقعة — تم إعادة التهيئة.")
+                    orders_list = []
+            except json.JSONDecodeError as e:
+                st.error(f"❌ ملف الطلبات تالف ولا يمكن قراءته: {e}")
+                orders_list = []
+            except PermissionError:
+                st.error("❌ لا يمكن قراءة ملف الطلبات — تحقق من الصلاحيات.")
+                orders_list = []
         else:
             orders_list = []
         

@@ -46,20 +46,25 @@ if client_menu == "🚖 اطلب مشوار / توصيل الآن":
         
         submit_btn = st.form_submit_button("🚀 نشر الطلب لاستقبال عروض السائقين")
         
-        if submit_btn and db:
-            if o_details.strip() == "":
+        if submit_btn:
+            if db is None:
+                st.error("❌ لا يمكن إرسال الطلب — فشل الاتصال بقاعدة البيانات. يرجى تحديث الصفحة أو التواصل مع الدعم.")
+            elif o_details.strip() == "":
                 st.warning("⚠️ يرجى كتابة تفاصيل الشحنة أولاً قبل النشر!")
             else:
-                db.collection("orders").add({
-                    "client_name": c_name,
-                    "order_details": o_details,
-                    "suggested_price": s_price,
-                    "phone": c_phone,
-                    "status": "processing",
-                    "driver_assigned": "",
-                    "timestamp": firestore.SERVER_TIMESTAMP
-                })
-                st.success("🎯 عظيم يا هندسة! تم قيد ونشر طلبك في الميدان بنجاح.")
+                try:
+                    db.collection("orders").add({
+                        "client_name": c_name,
+                        "order_details": o_details,
+                        "suggested_price": s_price,
+                        "phone": c_phone,
+                        "status": "processing",
+                        "driver_assigned": "",
+                        "timestamp": firestore.SERVER_TIMESTAMP
+                    })
+                    st.success("🎯 عظيم يا هندسة! تم قيد ونشر طلبك في الميدان بنجاح.")
+                except Exception as e:
+                    st.error(f"❌ فشل إرسال الطلب: {e}")
 
     # رادار تتبع الحالات النشطة (يمنع التكرار نهائياً)
     st.markdown("---")

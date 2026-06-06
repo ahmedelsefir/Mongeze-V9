@@ -95,22 +95,35 @@ def fetch_from_firebase(node):
         url = f"{FIREBASE_URL.rstrip('/')}/{node.strip('/')}.json"
         res = requests.get(url, timeout=10)
         
-        if res.ok:
-            data = res.json()
-            if data and isinstance(data, dict):
-                # Safely construct list of items
-                items = []
-                for k, v in data.items():
-                    try:
-                        if isinstance(v, dict):
-                            item = {"db_id": k}
-                            item.update(v)
-                            items.append(item)
-                    except Exception as item_error:
-                        logger.warning(f"Error processing item {k}: {str(item_error)}")
-                        continue
-                return items
-        return []
+        if not res.ok:
+            logger.error(f"Firebase GET {node} returned HTTP {res.status_code}: {res.text[:200]}")
+            return []
+        
+        data = res.json()
+        if data is None:
+            return []
+        
+        if isinstance(data, dict):
+            # Safely construct list of items
+            items = []
+            for k, v in data.items():
+                try:
+                    if isinstance(v, dict):
+                        item = {"db_id": k}
+                        item.update(v)
+                        items.append(item)
+                    else:
+                        logger.warning(f"Skipping non-dict item in {node}/{k}: type={type(v).__name__}")
+                except Exception as item_error:
+                    logger.warning(f"Error processing item {k}: {str(item_error)}")
+                    continue
+            return items
+        elif isinstance(data, list):
+            logger.info(f"Firebase node {node} returned a list ({len(data)} items) instead of dict")
+            return [item for item in data if item is not None]
+        else:
+            logger.warning(f"Firebase node {node} returned unexpected type: {type(data).__name__}")
+            return []
     except requests.exceptions.Timeout:
         logger.error(f"Timeout fetching from Firebase node: {node}")
         return []
@@ -130,8 +143,22 @@ def fetch_user_settings(username):
         url = f"{FIREBASE_URL.rstrip('/')}/users/{username.replace(' ', '_')}.json"
         res = requests.get(url, timeout=10)
         
-        if res.ok and res.json():
-            return res.json()
+        if not res.ok:
+            logger.warning(f"Failed to fetch settings for {username}: HTTP {res.status_code}")
+            return {}
+        
+        data = res.json()
+        if data and isinstance(data, dict):
+            return data
+        return {}
+    except requests.exceptions.Timeout:
+        logger.warning(f"Timeout fetching user settings for {username}")
+        return {}
+    except requests.exceptions.RequestException as e:
+        logger.warning(f"Network error fetching user settings for {username}: {str(e)}")
+        return {}
+    except json.JSONDecodeError as e:
+        logger.warning(f"Invalid JSON in user settings for {username}: {str(e)}")
         return {}
     except Exception as e:
         logger.warning(f"Error fetching user settings for {username}: {str(e)}")
@@ -178,14 +205,21 @@ def delete_user_from_firebase(username):
     """Delete all user data from Firebase with cascading deletion"""
     try:
         sanitized_username = username.replace(" ", "_").replace(".", "_")
+        deletion_errors = []
         
         # Delete from users node
         url_users = f"{FIREBASE_URL.rstrip('/')}/users/{sanitized_username}.json"
-        requests.delete(url_users, timeout=10)
+        res_users = requests.delete(url_users, timeout=10)
+        if not res_users.ok:
+            deletion_errors.append(f"users node (HTTP {res_users.status_code})")
+            logger.warning(f"Failed to delete users/{sanitized_username}: HTTP {res_users.status_code}")
         
         # Delete from drivers_accounts if driver
         url_driver = f"{FIREBASE_URL.rstrip('/')}/drivers_accounts/{sanitized_username}.json"
-        requests.delete(url_driver, timeout=10)
+        res_driver = requests.delete(url_driver, timeout=10)
+        if not res_driver.ok:
+            deletion_errors.append(f"drivers_accounts node (HTTP {res_driver.status_code})")
+            logger.warning(f"Failed to delete drivers_accounts/{sanitized_username}: HTTP {res_driver.status_code}")
         
         # Delete from private_chats
         url_chats = f"{FIREBASE_URL.rstrip('/')}/private_chats.json"
@@ -195,10 +229,26 @@ def delete_user_from_firebase(username):
             for chat_key in chats:
                 if sanitized_username in str(chat_key).lower():
                     delete_url = f"{FIREBASE_URL.rstrip('/')}/private_chats/{chat_key}.json"
-                    requests.delete(delete_url, timeout=10)
+                    res_chat = requests.delete(delete_url, timeout=10)
+                    if not res_chat.ok:
+                        deletion_errors.append(f"private_chats/{chat_key} (HTTP {res_chat.status_code})")
+                        logger.warning(f"Failed to delete private_chats/{chat_key}: HTTP {res_chat.status_code}")
+        elif not res.ok:
+            deletion_errors.append(f"private_chats fetch failed (HTTP {res.status_code})")
+            logger.warning(f"Failed to fetch private_chats for cleanup: HTTP {res.status_code}")
+        
+        if deletion_errors:
+            logger.warning(f"User {username} deletion completed with errors: {deletion_errors}")
+            return False
         
         logger.info(f"User {username} completely deleted from Firebase")
         return True
+    except requests.exceptions.Timeout:
+        logger.error(f"Timeout while deleting user {username}")
+        return False
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Network error deleting user {username}: {str(e)}")
+        return False
     except Exception as e:
         logger.error(f"Error deleting user: {str(e)}")
         return False
