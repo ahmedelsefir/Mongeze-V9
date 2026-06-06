@@ -7,7 +7,7 @@ from datetime import datetime
 def handle_error(e, context="System"):
     """Captures and displays errors professionally in the UI."""
     error_details = f"[{datetime.now().strftime('%H:%M:%S')}] {context} Error: {str(e)}"
-    print(error_log) # For terminal debugging
+    print(error_details) # For terminal debugging
     st.error(f"⚠️ {context} issue detected. Please check your connection or secrets.")
 
 # 2. Functional Smart Sync (Replacing 'pass' with real logic)

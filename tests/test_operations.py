@@ -53,11 +53,8 @@ class TestHandleError:
     """
 
     def test_handle_error_calls_st_error(self, ns):
-        # The function has a NameError on `print(error_log)` but should still
-        # try to call st.error. Since the NameError occurs before st.error(),
-        # it will actually raise.
-        with pytest.raises(NameError):
-            ns["handle_error"](ValueError("something broke"), context="TestCtx")
+        ns["handle_error"](ValueError("something broke"), context="TestCtx")
+        ns["st"].error.assert_called()
 
 
 class TestSmartSync:
@@ -77,11 +74,8 @@ class TestSmartSync:
 
     def test_failure_returns_false(self, ns):
         ns["st"].secrets = {}
-        # smart_sync catches the KeyError but then calls handle_error which has
-        # a NameError bug (references `error_log` instead of `error_details`).
-        # Verify the function propagates this bug.
-        with pytest.raises(NameError):
-            ns["smart_sync"]({"name": "TestUser", "amount": 50})
+        result = ns["smart_sync"]({"name": "TestUser", "amount": 50})
+        assert result is False
 
 
 class TestAccountingDashboard:
@@ -102,8 +96,6 @@ class TestAccountingDashboard:
 
     def test_handles_missing_amount_column(self, ns):
         df = pd.DataFrame({"name": ["a", "b"]})
-        # The accounting_dashboard calls handle_error which has a NameError bug
-        # (references `error_log` instead of `error_details`), so the inner
-        # exception propagates. We verify the function doesn't silently succeed.
-        with pytest.raises(NameError):
-            ns["accounting_dashboard"](df)
+        # Should handle gracefully via handle_error
+        ns["accounting_dashboard"](df)
+        ns["st"].error.assert_called()

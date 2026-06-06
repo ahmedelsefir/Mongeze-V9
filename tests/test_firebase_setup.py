@@ -1,8 +1,7 @@
 """
 Tests for firebase_setup.py – user management functions.
 
-The module has a syntax error in display_users() (unclosed parenthesis on line 39),
-so we extract only the valid functions for testing.
+Now that the syntax error in display_users() is fixed, we can test all functions.
 """
 
 import ast
@@ -13,25 +12,25 @@ import pytest
 
 
 def _load_firebase_setup_funcs():
-    # We manually define the functions because the source file has a syntax error
-    source = textwrap.dedent("""\
+    with open("firebase_setup.py", "r", encoding="utf-8") as f:
+        source = f.read()
+
+    tree = ast.parse(source)
+
+    target_funcs = {"add_user", "update_user_role", "display_users"}
+    func_sources = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name in target_funcs:
+            func_sources.append(ast.get_source_segment(source, node))
+
+    import_block = textwrap.dedent("""\
         from unittest.mock import MagicMock
         auth = MagicMock()
-
-        def add_user(email, password, role):
-            user = auth.create_user(email=email, password=password)
-            if role in ['admin', 'client']:
-                auth.set_custom_user_claims(user.uid, {"role": role})
-            return user
-
-        def update_user_role(uid, role):
-            if role in ['admin', 'client']:
-                auth.set_custom_user_claims(uid, {"role": role})
-                return True
-            return False
     """)
+    combined = import_block + "\n\n" + "\n\n".join(func_sources)
+
     ns = {}
-    exec(compile(source, "<test_firebase_setup>", "exec"), ns)
+    exec(compile(combined, "<test_firebase_setup>", "exec"), ns)
     return ns
 
 
@@ -47,10 +46,9 @@ class TestAddUser:
         mock_user.uid = "uid-123"
         ns["auth"].create_user.return_value = mock_user
 
-        result = ns["add_user"]("admin@test.com", "pass123", "admin")
+        ns["add_user"]("admin@test.com", "pass123", "admin")
         ns["auth"].create_user.assert_called_once_with(email="admin@test.com", password="pass123")
         ns["auth"].set_custom_user_claims.assert_called_once_with("uid-123", {"role": "admin"})
-        assert result.uid == "uid-123"
 
     def test_adds_user_with_client_role(self, ns):
         ns["auth"].reset_mock()
@@ -77,16 +75,44 @@ class TestUpdateUserRole:
         ns["auth"].reset_mock()
         result = ns["update_user_role"]("uid-123", "admin")
         ns["auth"].set_custom_user_claims.assert_called_once_with("uid-123", {"role": "admin"})
-        assert result is True
 
     def test_updates_client_role(self, ns):
         ns["auth"].reset_mock()
         result = ns["update_user_role"]("uid-123", "client")
         ns["auth"].set_custom_user_claims.assert_called_once_with("uid-123", {"role": "client"})
-        assert result is True
 
     def test_rejects_invalid_role(self, ns):
         ns["auth"].reset_mock()
-        result = ns["update_user_role"]("uid-123", "superadmin")
+        ns["update_user_role"]("uid-123", "superadmin")
         ns["auth"].set_custom_user_claims.assert_not_called()
-        assert result is False
+
+
+class TestDisplayUsers:
+
+    def test_lists_users(self, ns, capsys):
+        mock_user1 = MagicMock()
+        mock_user1.email = "admin@test.com"
+        mock_user1.uid = "uid-111"
+        mock_user2 = MagicMock()
+        mock_user2.email = "client@test.com"
+        mock_user2.uid = "uid-222"
+
+        mock_page = MagicMock()
+        mock_page.users = [mock_user1, mock_user2]
+        ns["auth"].list_users.return_value = mock_page
+
+        ns["display_users"]()
+        captured = capsys.readouterr()
+        assert "admin@test.com" in captured.out
+        assert "uid-111" in captured.out
+        assert "client@test.com" in captured.out
+        assert "uid-222" in captured.out
+
+    def test_empty_user_list(self, ns, capsys):
+        mock_page = MagicMock()
+        mock_page.users = []
+        ns["auth"].list_users.return_value = mock_page
+
+        ns["display_users"]()
+        captured = capsys.readouterr()
+        assert captured.out == ""

@@ -36,7 +36,7 @@ def update_user_role(uid, role):
 def display_users():
     users = auth.list_users().users
     for user in users:
-        print(f'User {user.email} 
+        print(f'User {user.email} - UID: {user.uid}')
 
 # Example usage:
 # add_user('user@example.com', 'password123', 'client')
