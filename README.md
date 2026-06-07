@@ -331,7 +331,7 @@ git push origin feature/your-feature
 
 ## 📄 الترخيص
 
-هذا المشروع مرخص تحت [MIT License](LICENSE)Updated)
+هذا المشروع مرخص تحت [MIT License](LICENSE)
 
 ---
 
