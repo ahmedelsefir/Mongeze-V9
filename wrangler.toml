@@ -1,0 +1,6 @@
+name = "mongeze-platform"
+main = "main.py"
+compatibility_date = "2026-05-23"
+
+[compatibility_flags]
+- "python_workers"
