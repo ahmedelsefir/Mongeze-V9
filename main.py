@@ -37,7 +37,7 @@ from firebase_helpers import (
 import html
 import pandas as pd
 from paymob import initiate_wallet_topup
- import Policies
+import Policies
 from Policies import (
     render_privacy_policy,
     render_privacy_policy_brief,
