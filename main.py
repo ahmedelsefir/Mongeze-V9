@@ -730,4 +730,4 @@ if user_role == "إدارة وموظفين" and st.session_state["current_page"]
 
 # زر التحديث اليدوي السريع
 if st.button("🔄 تحديث الرادار والمحادثات"):
-    st.rerun()
+    st.rerun() 
