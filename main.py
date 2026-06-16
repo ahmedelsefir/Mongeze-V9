@@ -1,5 +1,4 @@
-# استدعاء وكيل Gemini الذكي لتفعيل الشات والوظائف اللوجستية
-from gemini_agent import listen_to_chat_messages, cancel_order
+"""
 Mongeze Logistics Platform - Core Backend Intelligent Module
 ============================================================
 Developed for: Eng. Ahmed Mostafa (Founder & CTO)
@@ -11,7 +10,7 @@ This module implements the core secure logistics operational logic:
    until the order status changes to "Accepted".
 3. Transactional Firebase Order Creation and Acceptance workflows.
 4. Comprehensive Order Cancellation and Driver Withdrawal system with strict reasons logging.
-5. Real-time Async Firestore Chat Listening support for Mutimodal messages (Text, Vision, Audio).
+5. Real-time Async Firestore Chat Listening support for Multimodal messages (Text, Vision, Audio).
 
 This file is clean, production-ready, highly secure, and optimized for GitHub.
 """
@@ -40,7 +39,6 @@ def get_firebase_db() -> firestore.client:
     Initializes and returns a secure connection to the Firebase Firestore Client.
     Safely utilizes Streamlit secrets (st.secrets) or environment variables (.env).
     """
-    # Check if Firebase application is already initialized to avoid duplicate initialization errors
     if not firebase_admin._apps:
         # Check Strategy A: Standard Streamlit Secrets Object
         try:
@@ -71,7 +69,6 @@ def get_firebase_db() -> firestore.client:
             cred = credentials.Certificate(service_account_info)
             firebase_admin.initialize_app(cred)
         else:
-            # Check Strategy C: Fallback to application default credentials
             logger.warning("No explicit service credentials found. Initializing with default Application Credentials.")
             try:
                 cred = credentials.ApplicationDefault()
@@ -113,7 +110,6 @@ def mask_order_privacy(order_data: Dict[str, Any], viewer_id: str, viewer_role: 
     masked_order = order_data.copy()
     status = masked_order.get("status", "Pending")
     
-    # Check if the transaction is unlocked (Accepted represents order execution mode)
     is_unlocked = (status.lower() in ["accepted", "ongoing", "arrived", "completed"])
     
     # Client compliance masking
@@ -143,16 +139,15 @@ def create_order(
     client_name: str,
     client_phone: str,
     client_email: str,
-    pickup_location: Dict[str, float],   # e.g. {"lat": 30.044, "lon": 31.235}
-    dropoff_location: Dict[str, float],  # e.g. {"lat": 30.013, "lon": 31.208}
-    cargo_type: str,                     # 'fragile', 'standard', 'heavy'
+    pickup_location: Dict[str, float],
+    dropoff_location: Dict[str, float],
+    cargo_type: str,
     cargo_weight_kg: float,
     fare_amount: float,
     currency: str = "EGP"
 ) -> str:
     """
     Creates a new logistics delivery trip tracking document in Firestore.
-    The order initiates in "Pending" status with client details encapsulated securely.
     """
     if not db:
         raise RuntimeError("Database connection not active.")
@@ -215,7 +210,6 @@ def accept_order(
     order_ref = db.collection("orders").document(order_id)
     room_ref = db.collection("chat_rooms").document(f"room_{order_id}")
     
-    # Transactional execution loop to verify order is still available
     @firestore.transactional
     def update_in_transaction(transaction):
         snapshot = order_ref.get(transaction=transaction)
@@ -226,7 +220,6 @@ def accept_order(
         if current_data.get("status") != "Pending":
             raise ValueError(f"Order ORD-{order_id} has already been claimed or cancelled. Status: {current_data.get('status')}")
             
-        # 1. Update trip order with driver allocation metrics
         historical_entry = {
             "event": "order_accepted",
             "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -243,7 +236,6 @@ def accept_order(
             "historical_logs": firestore.ArrayUnion([historical_entry])
         })
         
-        # 2. Setup the designated chat room document securely
         room_payload = {
             "room_id": f"room_{order_id}",
             "order_id": order_id,
@@ -259,7 +251,6 @@ def accept_order(
         }
         transaction.set(room_ref, room_payload)
         
-        # 3. Create a welcoming system message in the chat room messages subcollection
         msg_ref = room_ref.collection("messages").document()
         msg_payload = {
             "message_id": msg_ref.id,
@@ -274,7 +265,6 @@ def accept_order(
         
         logger.info(f"Transaction committed: ORD-{order_id} with driver {driver_name}. ChatRoom: room_{order_id} is active.")
         
-        # Retrieve the updated data
         current_data["status"] = "Accepted"
         current_data["driver_id"] = driver_id
         current_data["driver_name"] = driver_name
@@ -284,16 +274,12 @@ def accept_order(
 
     transaction = db.transaction()
     updated_order = update_in_transaction(transaction)
-    
-    # Return unmasked details since status is now 'Accepted'
     return mask_order_privacy(updated_order, driver_id, "driver")
 
 
 # =====================================================================
 # 4️⃣ STRUCTURED ORDER CANCELLATION & WITHDRAWAL LOGIC
 # =====================================================================
-
-# Strict allowed withdrawal reason definitions to keep Firestore logs pristine
 CLIENT_CANCELLATION_REASONS = {
     1: "تأخر السائق في الاستجابة أو الحضور",
     2: "تغيير في تفاصيل أو وجهة الطلب",
@@ -310,14 +296,13 @@ DRIVER_WITHDRAWAL_REASONS = {
 
 def cancel_order(
     order_id: str,
-    canceler_role: str,  # 'client' or 'driver'
+    canceler_role: str,
     canceler_id: str,
     reason_code: int,
     additional_notes: str = ""
 ) -> bool:
     """
-    Cancels an active or pending order. Registers the strict reason code translation key
-    directly into Firestore records for logistics audit trails.
+    Cancels an active or pending order and registers strict translation codes.
     """
     if not db:
         raise RuntimeError("Database connection not active.")
@@ -334,28 +319,24 @@ def cancel_order(
     if current_status in ["completed", "cancelled"]:
         raise ValueError(f"Cannot alter status. Order is already in a terminal state: {current_status}")
 
-    # Validate and translate the reason code based on the initiator's role
     if canceler_role == "client":
         if reason_code not in CLIENT_CANCELLATION_REASONS:
-            raise ValueError(f"Invalid Client cancellation code: {reason_code}. Must be 1, 2, 3, or 4.")
+            raise ValueError(f"Invalid Client cancellation code: {reason_code}.")
         translated_reason = CLIENT_CANCELLATION_REASONS[reason_code]
     elif canceler_role == "driver":
         if reason_code not in DRIVER_WITHDRAWAL_REASONS:
-            raise ValueError(f"Invalid Driver withdrawal code: {reason_code}. Must be 1, 2, 3, or 4.")
+            raise ValueError(f"Invalid Driver withdrawal code: {reason_code}.")
         translated_reason = DRIVER_WITHDRAWAL_REASONS[reason_code]
     else:
         raise ValueError("Role must strictly be 'client' or 'driver'.")
 
     cancellation_stamp = datetime.utcnow().isoformat() + "Z"
-    
-    # Assembly of descriptive log item
     historical_entry = {
         "event": "order_cancelled",
         "timestamp": cancellation_stamp,
-        "message": f"تم إلغاء الطلب بواسطة {canceler_role}. السبب: {translated_reason}. تفاصيل إضافية: {additional_notes}"
+        "message": f"تم إلغاء الطلب بواسطة {canceler_role}. السبب: {translated_reason}."
     }
     
-    # Save the cancellation data atomically to Firestore
     order_ref.update({
         "status": "Cancelled",
         "cancellation_meta": {
@@ -370,7 +351,6 @@ def cancel_order(
         "historical_logs": firestore.ArrayUnion([historical_entry])
     })
     
-    # Archive parent chat room if active to prevent further messaging leakage
     room_ref = db.collection("chat_rooms").document(f"room_{order_id}")
     if room_ref.get().exists:
         room_ref.update({
@@ -381,18 +361,17 @@ def cancel_order(
                 "sent_at": firestore.SERVER_TIMESTAMP
             }
         })
-        # Post cancellation notification inside the chat collection
         room_ref.collection("messages").document().set({
             "message_id": "cancellation_notice_" + order_id,
             "sender_id": "system_dispatcher",
             "sender_role": "system",
             "sender_name": "نظام الإلغاء الآمن",
             "type": "text",
-            "content": f"تنبيه: تم إلغاء هذه الرحلة رسمياً بطلب من {canceler_role}. السبب المسجل: {translated_reason}",
+            "content": f"تنبيه: تم إلغاء هذه الرحلة رسمياً بطلب من {canceler_role}. السبب: {translated_reason}",
             "timestamp": firestore.SERVER_TIMESTAMP
         })
         
-    logger.info(f"Order ORD-{order_id} cancellation logged successfully. Initiated by {canceler_role} to Firestore.")
+    logger.info(f"Order ORD-{order_id} cancellation logged successfully.")
     return True
 
 
@@ -404,14 +383,13 @@ def send_chat_message(
     sender_id: str,
     sender_role: str,
     sender_name: str,
-    message_type: str,  # 'text', 'image', 'voice'
-    content: str,       # Message text or path/link references
+    message_type: str,
+    content: str,
     file_url: Optional[str] = None,
     metadata_payload: Optional[Dict[str, Any]] = None
 ) -> str:
     """
-    Submits a message directly to Firestore subcollection.
-    Message_type supports text, voice-notes, and cargo image verifications cleanly.
+    Submits a multimodal message (text, voice, image) directly to Firestore.
     """
     if not db:
         raise RuntimeError("Database connection not active.")
@@ -435,7 +413,6 @@ def send_chat_message(
         "timestamp": firestore.SERVER_TIMESTAMP
     }
     
-    # Write atomicity (Write the message and update parent room's quick-check index concurrently)
     batch = db.batch()
     batch.set(msg_ref, msg_data)
     
@@ -456,12 +433,10 @@ def send_chat_message(
 def listen_to_chat_messages(room_id: str, callback: Callable[[List[Dict[str, Any]]], None]):
     """
     Starts an asynchronous real-time snap-stream listener for incoming client/driver correspondence.
-    The callback function is triggered as soon as fresh records enter the Firestore subcollection.
     """
     if not db:
         raise RuntimeError("Database connection not active.")
         
-    # Order query ascendingly by timestamp for clear messaging continuity
     messages_query = (
         db.collection("chat_rooms")
         .document(room_id)
@@ -473,7 +448,6 @@ def listen_to_chat_messages(room_id: str, callback: Callable[[List[Dict[str, Any
         messages_list = []
         for doc in doc_snapshot:
             data = doc.to_dict()
-            # Convert ServerTimestamp to iso strings safely if ready
             if data.get("timestamp"):
                 try:
                     data["timestamp"] = data["timestamp"].isoformat()
@@ -484,7 +458,6 @@ def listen_to_chat_messages(room_id: str, callback: Callable[[List[Dict[str, Any
         logger.info(f"Live-Stream Callback triggered. Count of fetched texts: {len(messages_list)}")
         callback(messages_list)
 
-    # Begin the Firestore on_snapshot listener thread
     listener_watch = messages_query.on_snapshot(on_snapshot_triggered)
     logger.info(f"Real-time stream listener active for Mongeze Chat Room: {room_id}")
     return listener_watch
