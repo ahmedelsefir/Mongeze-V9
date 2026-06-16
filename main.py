@@ -1,5 +1,5 @@
-# -*- coding: utf-8 -*-
-"""
+# استدعاء وكيل Gemini الذكي لتفعيل الشات والوظائف اللوجستية
+from gemini_agent import listen_to_chat_messages, cancel_order
 Mongeze Logistics Platform - Core Backend Intelligent Module
 ============================================================
 Developed for: Eng. Ahmed Mostafa (Founder & CTO)
