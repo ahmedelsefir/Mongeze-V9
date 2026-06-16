@@ -241,3 +241,63 @@ def update_driver_verification_status(username, status, rejection_reason=None):
     except Exception as e:
         logger.error(f"Error updating driver verification status: {str(e)}")
         return False
+# ========================================================
+# 🗺️ محرك التوجيه وعرض الصفحات الديناميكي (Routing Engine)
+# ========================================================
+
+# القائمة الجانبية لاختيار القسم الرئيسي
+menu_choice = st.sidebar.radio(
+    "انتقل إلى أقسام المنصة:",
+    ["الرئيسية", "حساب العميل (Client)", "حساب السائق (Driver)", "لوحة الإدارة (Admin)", "السياسات والدعم"]
+)
+
+# 1. عرض الصفحة الرئيسية للمنصة
+if menu_choice == "الرئيسية":
+    st.title("🤖 مرحباً بك في منصة منجز الذكية")
+    st.subheader("بوابة المهندس أحمد مصطفى لإدارة قاعدة البيانات والاختبار الذكي")
+    st.info("اختر القسم المطلوب من القائمة الجانبية لبدء تجربة الأدوات الذكية الموثقة سحابياً.")
+
+# 2. توجيه وعرض صفحات العميل (من ملف Client.py)
+elif menu_choice == "حساب العميل (Client)":
+    st.sidebar.markdown(f"### 👋 مرحباً كابتن: {st.session_state['user_name']}")
+    client_sub = st.sidebar.selectbox("اختر الخدمة:", ["اطلب مشوار / توصيل", "غرفة الشات الذكي", "تتبع الشحنات"])
+    
+    if client_sub == "اطلب مشوار / توصيل":
+        render_taxi_page()
+    elif client_sub == "غرفة الشات الذكي":
+        render_chat_page()
+    elif client_sub == "تتبع الشحنات":
+        render_customer_tracking()
+
+# 3. توجيه وعرض صفحات السائق (من ملف Driver.py)
+elif menu_choice == "حساب السائق (Driver)":
+    driver_sub = st.sidebar.selectbox("إعدادات الكابتن:", ["شحن المحفظة", "توثيق الحساب (KYC)", "إعدادات الحساب"])
+    
+    if driver_sub == "شحن المحفظة":
+        render_wallet_topup()
+    elif driver_sub == "توثيق الحساب (KYC)":
+        render_driver_kyc_tab()
+    elif driver_sub == "إعدادات الحساب":
+        render_driver_settings_tab()
+
+# 4. توجيه وعرض لوحة الإدارة (من ملف Admin.py)
+elif menu_choice == "لوحة الإدارة (Admin)":
+    admin_sub = st.sidebar.selectbox("أدوات المسؤول:", ["مراجعة توثيق السائقين", "محرك العمولات", "تتبع حي للرحلات"])
+    
+    if admin_sub == "مراجعة توثيق السائقين":
+        render_admin_kyc_console()
+    elif admin_sub == "محرك العمولات":
+        render_commission_engine()
+    elif admin_sub == "تتبع حي للرحلات":
+        render_admin_tracking()
+
+# 5. توجيه وعرض السياسات (من ملف Policies.py)
+elif menu_choice == "السياسات والدعم":
+    policy_sub = st.sidebar.selectbox("الشروط والدعم:", ["شروط الاستخدام", "سياسة الخصوصية", "اتصل بالدعم"])
+    
+    if policy_sub == "شروط الاستخدام":
+        render_terms_of_use()
+    elif policy_sub == "سياسة الخصوصية":
+        render_privacy_policy()
+    elif policy_sub == "اتصل بالدعم":
+        render_support_contact()
