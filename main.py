@@ -58,18 +58,51 @@ logger = logging.getLogger(__name__)
 # جلب رابط الـ API الموثق أوتوماتيكياً من الأسرار السحابية التي قمت بتهيئتها
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://monjez-app.icu")
 
-if "current_page" not in st.session_state:
-    st.session_state["current_page"] = "الرئيسية"
-if "my_active_order_id" not in st.session_state:
-    st.session_state["my_active_order_id"] = ""
-if "user_name" not in st.session_state:
-    st.session_state["user_name"] = "أحمد مصطفى"
-if "audio_notifications_enabled" not in st.session_state:
-    st.session_state["audio_notifications_enabled"] = False
-if "language" not in st.session_state:
-    st.session_state["language"] = "العربية"
-if "driver_verification_status" not in st.session_state:
-    st.session_state["driver_verification_status"] = "Pending Manual Review"
+SESSION_GUARD_VERSION = "monjez-mobile-session-guard-v1"
+
+
+def initialize_session_guard():
+    """Clean stale transient session state to reduce browser-side SessionInfo conflicts on mobile reloads."""
+    protected_keys = {
+        "current_page",
+        "my_active_order_id",
+        "user_name",
+        "audio_notifications_enabled",
+        "language",
+        "driver_verification_status",
+        "_session_guard_version",
+    }
+
+    for key in [
+        "current_page",
+        "my_active_order_id",
+        "user_name",
+        "audio_notifications_enabled",
+        "language",
+        "driver_verification_status",
+    ]:
+        if key not in st.session_state:
+            if key == "current_page":
+                st.session_state[key] = "الرئيسية"
+            elif key == "my_active_order_id":
+                st.session_state[key] = ""
+            elif key == "user_name":
+                st.session_state[key] = "أحمد مصطفى"
+            elif key == "audio_notifications_enabled":
+                st.session_state[key] = False
+            elif key == "language":
+                st.session_state[key] = "العربية"
+            elif key == "driver_verification_status":
+                st.session_state[key] = "Pending Manual Review"
+
+    if st.session_state.get("_session_guard_version") != SESSION_GUARD_VERSION:
+        for key in list(st.session_state.keys()):
+            if key not in protected_keys:
+                st.session_state.pop(key, None)
+        st.session_state["_session_guard_version"] = SESSION_GUARD_VERSION
+
+
+initialize_session_guard()
 
 # ========================================================
 # 🔒 جلب التكوينات وإعداد الاتصال السحابي بالـ Firebase

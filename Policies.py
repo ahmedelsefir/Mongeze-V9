@@ -57,9 +57,9 @@ def render_support_contact():
     st.info("""
     🆘 **هل تحتاج إلى مساعدة؟**
     
-    - 📧 **البريد الإلكتروني**: support@mongeza.app
-    - 📱 **الواتساب**: +20xxxxxxxxxx
-    - 🌐 **الموقع الرسمي**: www.mongeza.app
+    - 📧 **البريد الإلكتروني**: ahmed.mustafa@monjez-app.icu
+    - 📱 **الواتساب**: +20 111 132 5395
+    - 🌐 **الموقع الرسمي**: https://monjez-app.icu
     - ⏰ **ساعات العمل**: ٢٤/٧ خدمة العملاء
     """)
 
