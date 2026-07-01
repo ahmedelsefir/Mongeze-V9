@@ -30,53 +30,53 @@ def render_driver_tracking(user_name, orders, update_firebase_node,
     # Block unverified drivers from picking up orders
     driver_status = st.session_state.get("driver_verification_status", "Pending Manual Review")
     if driver_status != "Active":
-        st.error("🔒 **حسابك مقفل — Pending Manual Review**")
-        st.warning("⏳ لا يمكنك قبول طلبات حتى يتم تفعيل حسابك من قبل الإدارة. اذهب إلى إعدادات ← التحقق من الهوية لرفع وثائقك.")
+        st.error("🔒 **Account Locked — Pending Manual Review**")
+        st.warning("⏳ You cannot accept orders until your account is activated by the admin team. Go to Settings → Identity Verification to proceed.")
         return
 
-    st.subheader("🚕 الطلبات المتاحة في رادار السوق للالتقاط فوراً:")
+    st.subheader("🚕 Available Orders in Network:")
     if orders and len(orders) > 0:
-        available_orders = [o for o in orders if o.get("status") == "جاري البحث عن كابتن"]
+        available_orders = [o for o in orders if o.get("status") == "Searching for Driver"]
         if available_orders:
             for o in available_orders:
                 try:
-                    st.markdown(f"**📦 {o.get('type', 'طلب')} جديد!** | العميل: {o.get('customer', 'unknown')} | السعر: {o.get('price', 0)} ج.م")
+                    st.markdown(f"**📦 New {o.get('type', 'Order')}!** | Customer: {o.get('customer', 'unknown')} | Fare: EGP {o.get('price', 0)}")
                     if o.get('from'):
-                        st.write(f"📍 من: {o.get('from')} -> إلى: {o.get('to', 'unknown')}")
+                        st.write(f"📍 From: {o.get('from')} → To: {o.get('to', 'unknown')}")
                     if o.get('details'):
-                        st.write(f"📝 التفاصيل: {o.get('details')}")
+                        st.write(f"📝 Details: {o.get('details')}")
 
-                    if st.button(f"✅ وافق واستلم الطلب {o.get('order_id')}", key=o.get('order_id')):
+                    if st.button(f"✅ Accept Order {o.get('order_id')}", key=o.get('order_id')):
                         try:
                             url_patch = f"orders/{o.get('db_id')}"
-                            if update_firebase_node(url_patch, {"status": "الكابتن في الطريق إليك", "driver": user_name}):
-                                st.success("🚀 تم حجز وتعميد الطلب باسمك يا كابتن! انتقل لغرفة الشات للتواصل مع العميل.")
+                            if update_firebase_node(url_patch, {"status": "Driver En Route", "driver": user_name}):
+                                st.success("🚀 Order accepted! Go to Chat to communicate with the customer.")
                                 time.sleep(1)
                                 st.rerun()
                             else:
-                                st.error("❌ فشل حجز الطلب. حاول مرة أخرى.")
+                                st.error("❌ Failed to accept order. Please try again.")
                         except Exception as accept_error:
                             logger.error(f"Error accepting order: {str(accept_error)}")
-                            st.error(f"خطأ: {str(accept_error)}")
+                            st.error(f"Error: {str(accept_error)}")
                 except Exception as order_display_error:
                     logger.warning(f"Error displaying order: {str(order_display_error)}")
                     continue
         else:
-            st.write("✅ الرادار نظيف، لا توجد طلبات معلقة حالياً في السوق.")
+            st.write("✅ Network is clear. No pending orders available at this time.")
     else:
-        st.write("✅ الرادار نظيف، لا توجد طلبات معلقة حالياً في السوق.")
+        st.write("✅ Network is clear. No pending orders available at this time.")
 
 
 def render_driver_settings_tab(user_name, fetch_driver_account, save_driver_account, send_system_email):
     """Render driver wallet/payout settings tab."""
-    st.subheader("🚕 إعدادات المندوب (Driver Settings)")
-    st.markdown("### 💰 تسجيل حسابات السحب والدفع")
-    st.caption("قم بتسجيل معلومات حسابك البنكي بأمان تام - البيانات مشفرة في الخادم")
+    st.subheader("🚕 Driver Settings")
+    st.markdown("### 💰 Payment Account Registration")
+    st.caption("Register your bank account details securely — all data is encrypted on the server")
 
     try:
         driver_account = fetch_driver_account(user_name)
 
-        current_method = driver_account.get("payment_method") or "اختر الطريقة"
+        current_method = driver_account.get("payment_method") or "Select Method"
         current_account = driver_account.get("account_number") or ""
 
         with st.form("driver_payout_form"):
@@ -84,28 +84,28 @@ def render_driver_settings_tab(user_name, fetch_driver_account, save_driver_acco
 
             with col1:
                 payment_method = st.selectbox(
-                    "💳 طريقة الدفع المفضلة:",
-                    options=["اختر الطريقة", "Vodafone Cash 🟠", "InstaPay 💳", "Bank Transfer 🏦"],
+                    "💳 Preferred Payment Method:",
+                    options=["Select Method", "Vodafone Cash 🟠", "InstaPay 💳", "Bank Transfer 🏦"],
                     index=0,
-                    help="اختر طريقة تحويل الرصيد المفضلة لديك"
+                    help="Choose your preferred method for fund transfers"
                 )
 
             with col2:
                 account_num = st.text_input(
-                    "📱 رقم الحساب / الهاتف:",
+                    "📱 Account / Phone Number:",
                     value=current_account,
-                    placeholder="أدخل رقم هاتفك أو رقم حسابك البنكي",
-                    help="رقم محفظتك أو حسابك البنكي"
+                    placeholder="Enter your phone number or bank account number",
+                    help="Your wallet or bank account number"
                 )
 
-            st.info("🔐 تحذير أمني: تأكد من صحة البيانات قبل الحفظ - لا يمكن الرجوع فيها بسهولة")
+            st.info("🔐 Security Notice: Verify your details before saving — changes cannot be easily reversed")
 
-            if st.form_submit_button("✅ حفظ حساب السحب بأمان", use_container_width=True):
+            if st.form_submit_button("✅ Save Payment Account", use_container_width=True):
                 try:
-                    if payment_method == "اختر الطريقة":
-                        st.error("❌ يجب اختيار طريقة دفع أولاً")
+                    if payment_method == "Select Method":
+                        st.error("❌ Please select a payment method first")
                     elif not account_num.strip():
-                        st.error("❌ يجب إدخال رقم الحساب")
+                        st.error("❌ Please enter an account number")
                     else:
                         account_data = {
                             "payment_method": payment_method,
@@ -115,34 +115,34 @@ def render_driver_settings_tab(user_name, fetch_driver_account, save_driver_acco
                         }
 
                         if save_driver_account(user_name, account_data):
-                            st.success("✅ تم حفظ معلومات حسابك بنجاح! سيتم تحقق الفريق من البيانات")
+                            st.success("✅ Payment account saved successfully! Admin team will verify the details")
                             send_system_email(
-                                f"تسجيل حساب سحب جديد - {user_name}",
-                                f"المندوب {user_name} قام بتسجيل حساب: {payment_method}"
+                                f"New Payout Account Registration - {user_name}",
+                                f"Driver {user_name} registered a new payment account: {payment_method}"
                             )
                             logger.info(f"Driver account saved for: {user_name}")
                         else:
-                            st.error("❌ فشل حفظ البيانات. حاول مرة أخرى.")
+                            st.error("❌ Failed to save account details. Please try again.")
                 except Exception as e:
                     logger.error(f"Error saving driver account: {str(e)}")
-                    st.error(f"خطأ: {str(e)}")
+                    st.error(f"Error: {str(e)}")
 
         # Display current account info (if exists)
         if driver_account and driver_account.get("account_number"):
             st.divider()
-            st.markdown("### 📋 معلومات الحساب الحالية")
+            st.markdown("### 📋 Current Account Information")
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("طريقة الدفع", driver_account.get("payment_method", "غير محدد"))
+                st.metric("Payment Method", driver_account.get("payment_method", "Not Set"))
             with col2:
                 masked_account = "*" * (len(str(driver_account.get("account_number", ""))) - 4) + str(driver_account.get("account_number", ""))[-4:]
-                st.metric("الحساب (مشفر)", masked_account)
+                st.metric("Account (Masked)", masked_account)
             with col3:
-                st.metric("الحالة", "✅ مسجل" if driver_account.get("verified") else "⏳ قيد التحقق")
+                st.metric("Status", "✅ Verified" if driver_account.get("verified") else "⏳ Under Review")
 
     except Exception as e:
         logger.error(f"Error in driver settings: {str(e)}")
-        st.warning("⚠️ خطأ في تحميل إعدادات المندوب")
+        st.warning("⚠️ Error loading driver settings")
 
 
 def render_wallet_topup(user_name, initiate_wallet_topup_fn=None):
@@ -153,8 +153,8 @@ def render_wallet_topup(user_name, initiate_wallet_topup_fn=None):
         initiate_wallet_topup_fn: callable from paymob.initiate_wallet_topup.
     """
     st.divider()
-    st.markdown("### 💳 شحن المحفظة عبر Paymob")
-    st.caption("ادفع عبر Vodafone Cash أو بطاقة ائتمان لشحن رصيدك فوراً")
+    st.markdown("### 💳 Top Up Wallet via Paymob")
+    st.caption("Pay with Vodafone Cash or credit card to instantly add funds to your wallet")
 
     try:
         with st.form("wallet_topup_form"):
@@ -162,28 +162,28 @@ def render_wallet_topup(user_name, initiate_wallet_topup_fn=None):
 
             with col1:
                 topup_amount = st.number_input(
-                    "💵 المبلغ (ج.م):",
+                    "💵 Amount (EGP):",
                     min_value=10.0,
                     max_value=50000.0,
                     value=100.0,
                     step=10.0,
-                    help="أدخل المبلغ الذي تريد شحنه بالجنيه المصري"
+                    help="Enter the amount you want to deposit in Egyptian Pounds"
                 )
 
             with col2:
                 topup_method = st.selectbox(
-                    "📱 طريقة الدفع:",
-                    options=["💳 بطاقة ائتمان (Credit Card)", "📲 فودافون كاش (Vodafone Cash)"],
-                    help="اختر طريقة الدفع المفضلة"
+                    "📱 Payment Method:",
+                    options=["💳 Credit Card", "📲 Vodafone Cash"],
+                    help="Choose your preferred payment method"
                 )
 
-            if st.form_submit_button("🚀 متابعة لصفحة الدفع", use_container_width=True):
+            if st.form_submit_button("🚀 Proceed to Payment", use_container_width=True):
                 if not initiate_wallet_topup_fn:
-                    st.warning("⚠️ خدمة Paymob غير متاحة حالياً — يرجى التواصل مع الإدارة")
+                    st.warning("⚠️ Paymob service is currently unavailable — please contact admin")
                     logger.warning("initiate_wallet_topup_fn not provided — Paymob not configured")
                 else:
                     try:
-                        payment_method = "wallet" if "فودافون" in topup_method else "card"
+                        payment_method = "wallet" if "Vodafone" in topup_method else "card"
                         driver_info = {
                             "first_name": user_name.split()[0] if user_name else "Driver",
                             "last_name": user_name.split()[-1] if user_name and len(user_name.split()) > 1 else "Monjez",
@@ -191,7 +191,7 @@ def render_wallet_topup(user_name, initiate_wallet_topup_fn=None):
                             "phone_number": "+20000000000",
                         }
 
-                        with st.spinner("⏳ جاري تجهيز صفحة الدفع..."):
+                        with st.spinner("⏳ Preparing payment gateway..."):
                             result = initiate_wallet_topup_fn(
                                 driver_username=user_name,
                                 amount_egp=topup_amount,
@@ -200,57 +200,57 @@ def render_wallet_topup(user_name, initiate_wallet_topup_fn=None):
                             )
 
                         if result and result.get("checkout_url"):
-                            st.success(f"✅ تم تجهيز الدفع — المبلغ: {topup_amount} ج.م")
+                            st.success(f"✅ Payment ready — Amount: EGP {topup_amount}")
                             st.markdown(
                                 f'<a href="{html.escape(str(result["checkout_url"]))}" target="_blank">'
                                 f'<button style="background-color:#4CAF50;color:white;padding:12px 24px;'
                                 f'border:none;border-radius:8px;cursor:pointer;font-size:16px;width:100%">'
-                                f'💳 انتقل لصفحة الدفع الآمنة</button></a>',
+                                f'💳 Go to Secure Payment Gateway</button></a>',
                                 unsafe_allow_html=True,
                             )
-                            st.info(f"🔑 رقم الطلب: {result.get('order_id', 'N/A')}")
+                            st.info(f"🔑 Order ID: {result.get('order_id', 'N/A')}")
                             logger.info(f"Wallet topup checkout ready: {user_name}, {topup_amount} EGP via {payment_method}")
                         elif result:
-                            st.warning("⚠️ تم تجهيز الدفع ولكن رابط الدفع غير متاح — تحقق من إعداد PAYMOB_IFRAME_ID")
+                            st.warning("⚠️ Payment prepared but payment gateway URL unavailable — check PAYMOB_IFRAME_ID configuration")
                         else:
-                            st.error("❌ فشل تجهيز عملية الدفع — تحقق من إعدادات Paymob")
+                            st.error("❌ Failed to prepare payment — check Paymob settings")
                     except Exception as e:
                         logger.error(f"Error initiating wallet topup: {e}")
-                        st.error(f"❌ خطأ في عملية الدفع: {e}")
+                        st.error(f"❌ Payment error: {e}")
 
     except Exception as e:
         logger.error(f"Error in wallet topup section: {e}")
-        st.warning("⚠️ خطأ في قسم شحن المحفظة")
+        st.warning("⚠️ Error loading wallet top-up section")
 
 
 def render_driver_kyc_tab(user_name, user_role, fetch_driver_kyc_documents,
                           create_driver_kyc_record, upload_document_to_firebase,
                           send_system_email):
     """Render driver KYC/document verification tab with account lock until approved."""
-    st.subheader("🎖️ نظام التحقق من الهوية (Know Your Driver - KYC)")
+    st.subheader("🎖️ Identity Verification System (Know Your Driver - KYC)")
 
     try:
         kyc_docs = fetch_driver_kyc_documents(user_name)
 
         if not kyc_docs or "metadata" not in kyc_docs:
             # New driver — account locked, must register
-            st.error("🔒 **حسابك مقفل — Pending Manual Review**")
+            st.error("🔒 **Account Locked — Pending Manual Review**")
             st.warning(
-                "يجب تسجيل وثائقك والحصول على موافقة الإدارة قبل قبول أي طلبات. "
-                "ارفع الوثائق المطلوبة أدناه لبدء عملية التحقق."
+                "You must register your documents and receive admin approval before accepting any orders. "
+                "Upload the required documents below to start the verification process."
             )
-            if st.button("🆕 بدء عملية التحقق من الهوية"):
+            if st.button("🆕 Start Identity Verification"):
                 try:
                     if create_driver_kyc_record(user_name, user_role, car_type="Personal"):
-                        st.success("✅ تم إنشاء ملف التحقق الخاص بك! الآن قم برفع الوثائق المطلوبة.")
+                        st.success("✅ Verification profile created! Now upload your required documents.")
                         st.session_state["driver_verification_status"] = "Pending Manual Review"
                         time.sleep(1)
                         st.rerun()
                     else:
-                        st.error("❌ فشل إنشاء ملف التحقق")
+                        st.error("❌ Failed to create verification profile")
                 except Exception as e:
                     logger.error(f"Error creating KYC record: {str(e)}")
-                    st.error(f"خطأ: {str(e)}")
+                    st.error(f"Error: {str(e)}")
         else:
             metadata = kyc_docs.get("metadata", {})
             verification_status = metadata.get("verification_status", "Pending Manual Review")
@@ -258,38 +258,38 @@ def render_driver_kyc_tab(user_name, user_role, fetch_driver_kyc_documents,
             # Update session state for use in tracking page lock
             st.session_state["driver_verification_status"] = verification_status
 
-            st.markdown("### 📊 حالة التحقق من الهوية")
+            st.markdown("### 📊 Verification Status")
 
             if verification_status == "Active":
-                st.success("✅ **حالتك مفعّلة** - يمكنك استخدام المنصة بالكامل!")
+                st.success("✅ **Status: Active** - You have full platform access!")
             elif verification_status == "Rejected":
-                rejection_reason = metadata.get("rejection_reason", "لم يتم تحديد السبب")
-                st.error(f"❌ **تم رفض طلبك** - السبب: {rejection_reason}")
-                st.info("يمكنك إعادة رفع الوثائق بعد تصحيح المشكلة وستتم مراجعتها مجدداً.")
+                rejection_reason = metadata.get("rejection_reason", "Reason not specified")
+                st.error(f"❌ **Application Rejected** - Reason: {rejection_reason}")
+                st.info("You can resubmit your documents after correcting the issue for re-review.")
             else:
-                st.error("🔒 **حسابك مقفل — Pending Manual Review**")
-                st.warning("⏳ جاري المراجعة من قبل الفريق الإداري. لا يمكنك قبول طلبات حتى يتم التفعيل.")
+                st.error("🔒 **Account Locked — Pending Manual Review**")
+                st.warning("⏳ Your application is under review by the admin team. You cannot accept orders until approved.")
 
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("الحالة", verification_status)
+                st.metric("Status", verification_status)
             with col2:
                 created_date = metadata.get("created_at", "N/A")
-                st.metric("تاريخ الطلب", created_date[:10] if created_date else "N/A")
+                st.metric("Application Date", created_date[:10] if created_date else "N/A")
             with col3:
-                st.metric("النوع", metadata.get("user_role", "Unknown"))
+                st.metric("Role", metadata.get("user_role", "Unknown"))
 
             st.divider()
 
-            st.markdown("### 📄 رفع الوثائق المطلوبة")
-            st.caption("يجب رفع جميع الوثائق أدناه لتفعيل حسابك بالكامل")
+            st.markdown("### 📄 Upload Required Documents")
+            st.caption("All documents must be uploaded to fully activate your account")
 
             # Document upload slots
             _render_doc_upload(
                 user_name, kyc_docs, "national_id",
-                "🆔 صورة البطاقة الشخصية (National ID)",
-                "اختر صورة البطاقة الشخصية",
-                "اختر صورة واضحة لبطاقتك الشخصية (الوجه + الخلف)",
+                "🆔 National ID Card",
+                "Select National ID image",
+                "Choose a clear image of both sides of your national ID card",
                 upload_document_to_firebase, send_system_email
             )
 
@@ -297,9 +297,9 @@ def render_driver_kyc_tab(user_name, user_role, fetch_driver_kyc_documents,
 
             _render_doc_upload(
                 user_name, kyc_docs, "driving_license",
-                "🚗 رخصة القيادة (Driving License)",
-                "اختر صورة رخصة القيادة",
-                "اختر صورة واضحة لرخصة القيادة",
+                "🚗 Driving License",
+                "Select Driving License image",
+                "Choose a clear image of your valid driving license",
                 upload_document_to_firebase, send_system_email
             )
 
@@ -307,15 +307,15 @@ def render_driver_kyc_tab(user_name, user_role, fetch_driver_kyc_documents,
 
             _render_doc_upload(
                 user_name, kyc_docs, "vehicle_license",
-                "🛞 رخصة المركبة (Vehicle Registration)",
-                "اختر صورة رخصة المركبة",
-                "اختر صورة واضحة لرخصة المركبة",
+                "🛞 Vehicle Registration",
+                "Select Vehicle Registration image",
+                "Choose a clear image of your vehicle registration certificate",
                 upload_document_to_firebase, send_system_email
             )
 
     except Exception as e:
         logger.error(f"Error in KYC section: {str(e)}")
-        st.warning("⚠️ خطأ في قسم التحقق من الهوية")
+        st.warning("⚠️ Error loading identity verification section")
 
 
 def _render_doc_upload(user_name, kyc_docs, doc_type, title, label, help_text,
@@ -330,22 +330,22 @@ def _render_doc_upload(user_name, kyc_docs, doc_type, title, label, help_text,
         help=help_text
     )
 
-    if uploaded_file and st.button(f"📤 رفع {title.split(' ', 1)[-1]}", key=f"upload_{doc_type}"):
+    if uploaded_file and st.button(f"📤 Upload {title.split(' ', 1)[-1]}", key=f"upload_{doc_type}"):
         try:
-            with st.spinner("جاري رفع الوثيقة..."):
+            with st.spinner("Uploading document..."):
                 if upload_document_to_firebase(user_name, doc_type, uploaded_file):
-                    st.success(f"✅ تم رفع {title} بنجاح!")
+                    st.success(f"✅ {title} uploaded successfully!")
                     send_system_email(
-                        f"وثيقة جديدة: {doc_type} - {user_name}",
-                        f"المندوب {user_name} رفع وثيقة {doc_type} للمراجعة"
+                        f"New Document: {doc_type} - {user_name}",
+                        f"Driver {user_name} uploaded {doc_type} for review"
                     )
                 else:
-                    st.error("❌ فشل رفع الوثيقة. حاول مرة أخرى.")
+                    st.error("❌ Failed to upload document. Please try again.")
         except Exception as e:
             logger.error(f"Error uploading {doc_type}: {str(e)}")
-            st.error(f"خطأ: {str(e)}")
+            st.error(f"Error: {str(e)}")
 
     existing_doc = kyc_docs.get(doc_type, {})
     if isinstance(existing_doc, dict) and existing_doc.get("file_base64"):
         is_verified = existing_doc.get("verified", False)
-        st.info(f"📋 {title}: {'✅ تم التحقق' if is_verified else '⏳ قيد المراجعة'}")
+        st.info(f"📋 {title}: {'✅ Verified' if is_verified else '⏳ Under Review'}")
