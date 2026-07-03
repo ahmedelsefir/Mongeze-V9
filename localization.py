@@ -505,3 +505,44 @@ def translate(ar_text: str, en_text: str, language: str = None) -> str:
         language = st.session_state.get("language", "العربية")
     
     return ar_text if language == "العربية" else en_text
+def init_system_language(user_id: str, db_client) -> str:
+    """
+    ميكانيكا إقلاع النظام: تقرأ لغة المستخدم المخزنة في Firebase 
+    وتحقنها في الـ session_state لمنع تصفيرها عند الـ Refresh.
+    """
+    import streamlit as st
+    
+    if "language" not in st.session_state:
+        try:
+            # سحب بروفايل المستخدم من الفايربيز
+            user_ref = db_client.collection("users").document(user_id).get()
+            if user_ref.exists:
+                saved_lang = user_ref.to_dict().get("interface_language", "العربية")
+                st.session_state["language"] = saved_lang
+            else:
+                st.session_state["language"] = "العربية"
+        except Exception:
+            st.session_state["language"] = "العربية" # حماية التطبيق من السقوط في حال انقطاع السيرفر
+            
+    return st.session_state["language"]
+
+
+def update_system_language(new_lang: str, user_id: str, db_client):
+    """
+    ميكانيكا الحفظ اللحظي: تحدد اللغة الجديدة في الكاش وتضخها 
+    في Firebase فوراً، ثم تعمل Rerun لتحديث كامل واجهات المنصة.
+    """
+    import streamlit as st
+    
+    if st.session_state.get("language") != new_lang:
+        st.session_state["language"] = new_lang
+        try:
+            # تحديث مستند المستخدم في السحابة
+            db_client.collection("users").document(user_id).update({
+                "interface_language": new_lang
+            })
+        except Exception:
+            pass
+            
+        # إعادة تشغيل السكريبت لحظياً لتطبيق اللغات في الواجهات
+        st.rerun()
