@@ -87,7 +87,7 @@ LANG_TEXTS = {
         "profile_error": "❌ فشل حفظ التعديلات. حاول مرة أخرى.",
         "support_title": "📋 المساعدة والدعم (Support & Maintenance)",
         "tab_general": "🌍 الإعدادات العامة",
-        "tab_driver": "🚕 إعدادات المندوب",
+        "tab_driver": "🚕 إعدادات Mندوب",
         "tab_kyc": "🎖️ التحقق من الهوية (KYC)",
         "tab_support": "📋 المساعدة والدعم",
     },
@@ -182,10 +182,6 @@ def initialize_session_guard():
 
 initialize_session_guard()
 
-# جلب متوافقات اللغة الحالية المختارة
-current_lang = st.session_state.get("language", "العربية")
-t = LANG_TEXTS[current_lang]
-
 # ========================================================
 # 🔒 جلب التكوينات وإعداد الاتصال السحابي بالـ Firebase
 # ========================================================
@@ -246,6 +242,32 @@ def delete_user_from_firebase(username):
     except Exception as e:
         logger.error(f"Error deleting user: {str(e)}")
         return False
+
+
+# ========================================================
+# 🌐 محرك الحفظ والمزامنة السحابية الذكية للغة لمنع التصفير
+# ========================================================
+def init_system_language(username: str) -> str:
+    """قراءة اللغة المخزنة من الفايربيز وحقنها في الجلسة لمنع التصفير عند الـ Refresh"""
+    if "language" not in st.session_state or st.session_state.get("language") == "العربية":
+        try:
+            current_settings = fetch_user_settings(username)
+            if current_settings and "language" in current_settings:
+                st.session_state["language"] = current_settings["language"]
+        except Exception:
+            pass
+    return st.session_state.get("language", "العربية")
+
+
+def update_system_language(new_lang: str, username: str):
+    """حفظ اللغة لحظياً في الفايربيز وإعادة تشغيل الواجهة فوراً"""
+    if st.session_state.get("language") != new_lang:
+        st.session_state["language"] = new_lang
+        try:
+            update_firebase_node(f"users/{sanitize_username(username)}", {"language": new_lang})
+        except Exception:
+            pass
+        st.rerun()
 
 
 # ========================================================
@@ -465,6 +487,12 @@ def format_distance_display(distance_km):
 # ========================================================
 # 📱 شريط التوجيه والديناميكية اللغوية الموحدة
 # ========================================================
+
+# الاستدعاء السحابي الذكي لمنع التصفير عند عمل Refresh للمتصفح
+init_user = st.session_state.get("user_name", "أحمد مصطفى")
+current_lang = init_system_language(init_user)
+t = LANG_TEXTS[current_lang]
+
 st.title(t["app_title"])
 st.caption(f"{t['api_caption']} {API_BASE_URL}")
 
@@ -661,7 +689,7 @@ elif st.session_state["current_page"] == "الإعدادات":
 
         st.divider()
 
-        # إعدادات اللغة الديناميكية الفورية
+        # إعدادات اللغة الديناميكية الفورية السحابية
         st.markdown(t["lang_settings_title"])
         language_option = st.selectbox(
             t["lang_select_lbl"],
@@ -669,11 +697,9 @@ elif st.session_state["current_page"] == "الإعدادات":
             index=0 if st.session_state.get("language", "العربية") == "العربية" else 1,
         )
         if language_option != st.session_state.get("language"):
-            st.session_state["language"] = language_option
-            st.success(t["lang_success_msg"])
-            st.rerun()
+            update_system_language(language_option, user_name)
 
-    # ========== باقی الـ Tabs للمندوب والعملاء ==========
+    # ========== باقي الـ Tabs للمندوب والعملاء ==========
     if user_role == "مندوب / كابتن":
         with settings_tabs[1]:
             render_driver_settings_tab(
