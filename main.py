@@ -571,7 +571,8 @@ elif st.session_state["current_page"] == "الطرود":
 # 3️⃣ بوابة تاكسي أفراد
 elif st.session_state["current_page"] == "التاكسي":
     render_taxi_page(
-        user_name, send_to_firebase, send_system_email, trigger_audio_alert
+        user_name, send_to_firebase, send_system_email, trigger_audio_alert,
+        fetch_from_firebase=fetch_from_firebase,
     )
 
 # 4️⃣ غرفة الدردشة الذكية

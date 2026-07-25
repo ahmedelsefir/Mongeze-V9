@@ -40,20 +40,79 @@ def render_parcels_page(user_name, send_to_firebase, send_system_email, trigger_
                 st.error(f"Error: {str(e)}")
 
 
-def render_taxi_page(user_name, send_to_firebase, send_system_email, trigger_audio_alert):
-    """Render the taxi ordering page for customers."""
+def render_taxi_page(user_name, send_to_firebase, send_system_email, trigger_audio_alert,
+                     fetch_from_firebase=None):
+    """Render the taxi ordering page for customers with dynamic fare estimation."""
+    from pricing_engine import estimate_trip
+
     st.markdown("## 🚕 Taxi Ride Request Center")
+
+    # Live supply/demand counts for surge pricing
+    active_orders_count = 0
+    available_drivers_count = 0
+    if fetch_from_firebase:
+        try:
+            orders = fetch_from_firebase("orders")
+            active_orders_count = len([o for o in orders if o.get("status") == "Searching for Driver"]) if orders else 0
+        except Exception as e:
+            logger.warning(f"Could not fetch orders for surge calc: {str(e)}")
+
     with st.form("taxi_v10"):
         start = st.text_input("Pickup Location:")
         end = st.text_input("Destination:")
-        price = st.number_input("Estimated Fare (EGP):", min_value=20.0, value=120.0)
+
+        col_gps1, col_gps2, col_gps3, col_gps4 = st.columns(4)
+        with col_gps1:
+            pickup_lat = st.number_input("Pickup Latitude:", value=30.0444, format="%.4f", help="Cairo default")
+        with col_gps2:
+            pickup_lon = st.number_input("Pickup Longitude:", value=31.2357, format="%.4f", help="Cairo default")
+        with col_gps3:
+            dest_lat = st.number_input("Destination Latitude:", value=30.0131, format="%.4f")
+        with col_gps4:
+            dest_lon = st.number_input("Destination Longitude:", value=31.1089, format="%.4f")
+
+        # Dynamic fare estimate preview (live, before submit)
+        estimate = estimate_trip(
+            pickup_lat, pickup_lon, dest_lat, dest_lon,
+            active_orders=active_orders_count,
+            available_drivers=available_drivers_count,
+        )
+        if estimate:
+            fare = estimate["fare"]
+            surge_label = f"⚡ Surge x{estimate['surge_factor']}" if estimate["surge_factor"] > 1.0 else "✅ Normal rates"
+            st.info(
+                f"📍 Distance: **{estimate['distance_km']} km** | "
+                f"⏱️ ETA: **{estimate['time_minutes']} min** | {surge_label}\n\n"
+                f"💰 Base: {fare['base_fare']} + Distance: {fare['distance_cost']} + Time: {fare['time_cost']} "
+                f"= {fare['subtotal']} → **Total: {fare['total_fare']} EGP**"
+            )
+            suggested_price = float(fare["total_fare"])
+        else:
+            st.warning("⚠️ Invalid coordinates — cannot estimate fare.")
+            suggested_price = 120.0
+
+        price = st.number_input(
+            "Offered Fare (EGP):",
+            min_value=10.0,
+            value=suggested_price,
+            help="Auto-calculated from distance, time, and current demand. You can adjust your offer.",
+        )
+
         if st.form_submit_button("🚕 Post Ride to Network") and start.strip() and end.strip():
             try:
                 order_id = f"TAXI-{int(time.time())}"
                 payload = {
                     "order_id": order_id, "type": "Taxi Ride", "customer": user_name,
                     "from": start.strip(), "to": end.strip(), "price": price, "status": "Searching for Driver",
-                    "driver": "Not Assigned", "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    "driver": "Not Assigned",
+                    "customer_lat": float(pickup_lat),
+                    "customer_lon": float(pickup_lon),
+                    "dest_lat": float(dest_lat),
+                    "dest_lon": float(dest_lon),
+                    "estimated_distance_km": estimate["distance_km"] if estimate else None,
+                    "estimated_time_min": estimate["time_minutes"] if estimate else None,
+                    "surge_factor": estimate["surge_factor"] if estimate else 1.0,
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
                 if send_to_firebase("orders", payload):
                     st.session_state["my_active_order_id"] = order_id
