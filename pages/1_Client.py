@@ -1,5 +1,6 @@
 import html as html_mod
 import requests
+import time
 import streamlit as st
 from firebase_admin import firestore
 from firebase_helpers import init_firestore
@@ -20,7 +21,7 @@ st.sidebar.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# قائمة التحكم المتطابقة مع الصورة
+# قائمة التحكم المتطابقة مع الواجهة
 client_menu = st.sidebar.radio("📌 انتقل إلى:", [
     "🚖 اطلب مشوار / توصيل الآن", 
     "📜 مشاويري السابقة", 
@@ -29,6 +30,9 @@ client_menu = st.sidebar.radio("📌 انتقل إلى:", [
     "⚙️ إعدادات التطبيق"
 ])
 
+# ---------------------------------------------------------
+# 1️⃣ قسم طلب المشوار والتوصيل
+# ---------------------------------------------------------
 if client_menu == "🚖 اطلب مشوار / توصيل الآن":
     st.markdown("<h2 style='color: #1E3A8A; text-align: right;'>🛒 طلب خدمة توصيل ومزايدة حية</h2>", unsafe_allow_html=True)
     
@@ -85,10 +89,16 @@ if client_menu == "🚖 اطلب مشوار / توصيل الآن":
         if not active_found:
             st.info("💡 لا توجد لديك طلبات نشطة في الوقت الحالي. رحلاتك القادمة ستظهر هنا فورا.")
 
+# ---------------------------------------------------------
+# 2️⃣ قسم سجل المشاوير
+# ---------------------------------------------------------
 elif client_menu == "📜 مشاويري السابقة":
     st.subheader("📜 دفتر سجل رحلاتك")
     st.caption("يتيح لك مراجعة الأماكن والأسعار السابقة لرحلاتك مع منجز.")
 
+# ---------------------------------------------------------
+# 3️⃣ قسم المحفظة واختبار الربط مع Paymob
+# ---------------------------------------------------------
 elif client_menu == "💳 محفظة الدفع الإلكتروني":
     st.subheader("💳 رصيد حسابك الذكي")
     st.metric("الرصيد المتاح للعميل", "0.00 ج.م")
@@ -110,7 +120,7 @@ elif client_menu == "💳 محفظة الدفع الإلكتروني":
             auth_res.raise_for_status()
             auth_token = auth_res.json().get("token")
             
-            # 3. إنشاء طلب جديد (Order)
+            # 3. إنشاء طلب جديد (Order) رقم المعاملة باستخدام وقت النظام الحقيقي
             order_res = requests.post(
                 "https://accept.paymob.com/api/ecommerce/orders",
                 json={
@@ -118,13 +128,13 @@ elif client_menu == "💳 محفظة الدفع الإلكتروني":
                     "delivery_needed": "false",
                     "amount_cents": str(int(amount * 100)),
                     "currency": "EGP",
-                    "merchant_order_id": f"TOPUP-CLIENT-{int(firestore.SERVER_TIMESTAMP.timestamp() if hasattr(firestore, 'SERVER_TIMESTAMP') else 1001)}"
+                    "merchant_order_id": f"TOPUP-CLIENT-{int(time.time())}"
                 }
             )
             order_res.raise_for_status()
             paymob_order_id = order_res.json().get("id")
             
-            st.success("✅ تم الاتصال بـ Paymob بنجاح والمفاتيح شغال تمام 100%!")
+            st.success("✅ تم الاتصال بـ Paymob بنجاح والمفاتيح شغالة تمام 100%!")
             st.info(f"🆔 رقم المعاملة المولد من Paymob: `{paymob_order_id}`")
             
         except KeyError:
@@ -132,9 +142,15 @@ elif client_menu == "💳 محفظة الدفع الإلكتروني":
         except Exception as e:
             st.error(f"❌ خطأ أثناء الاتصال بـ Paymob: {e}")
 
+# ---------------------------------------------------------
+# 4️⃣ قسم الطوارئ والسلامة
+# ---------------------------------------------------------
 elif client_menu == "🛡️ مركز السلامة والطوارئ":
     st.subheader("🛡️ نظام الأمان والسلامة")
     st.error("🚨 زر الاستغاثة (SOS): بمجرد الضغط عليه، يتم إرسال موقعك الجغرافي الحي فوراً لغرفة عمليات وموظفي منجز للتدخل الصارم لحمايتك.")
 
+# ---------------------------------------------------------
+# 5️⃣ قسم إعدادات التطبيق
+# ---------------------------------------------------------
 elif client_menu == "⚙️ إعدادات التطبيق":
     st.subheader("⚙️ تفضيلات المستخدم والخصومات")
