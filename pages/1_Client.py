@@ -1,4 +1,5 @@
 import html as html_mod
+import requests
 import streamlit as st
 from firebase_admin import firestore
 from firebase_helpers import init_firestore
@@ -55,7 +56,7 @@ if client_menu == "🚖 اطلب مشوار / توصيل الآن":
                 })
                 st.success("🎯 عظيم يا هندسة! تم قيد ونشر طلبك في الميدان بنجاح.")
 
-    # رادار تتبع الحالات النشطة (يمنع التكرار نهائياً)
+    # رادار تتبع الحالات النشطة
     st.markdown("---")
     st.markdown("<h3 style='color: #10B981; text-align: right;'>📋 مراقبة وتتبع طلباتك الحالية</h3>", unsafe_allow_html=True)
     
@@ -67,7 +68,6 @@ if client_menu == "🚖 اطلب مشوار / توصيل الآن":
             data = doc.to_dict()
             status = data.get("status")
             
-            # نعرض فقط الطلبات المفتوحة والنشطة
             if status != "⭐ تم الإغلاق والتقييم بالكامل":
                 active_found = True
                 driver = data.get("driver_assigned", "جاري البحث عن كابتن...")
@@ -92,6 +92,45 @@ elif client_menu == "📜 مشاويري السابقة":
 elif client_menu == "💳 محفظة الدفع الإلكتروني":
     st.subheader("💳 رصيد حسابك الذكي")
     st.metric("الرصيد المتاح للعميل", "0.00 ج.م")
+    st.markdown("---")
+    
+    st.subheader("🚀 اختبار الشحن والتكامل مع Paymob")
+    amount = st.number_input("حدد مبلغ الشحن التجريبي (ج.م):", min_value=10, value=50, step=10)
+    
+    if st.button("💳 بدء تجربة الاتصال والدفع عبر Paymob"):
+        try:
+            # 1. قراءة المفاتيح من st.secrets
+            api_key = st.secrets["paymob"]["PAYMOB_API_KEY"]
+            
+            # 2. المصادقة للحصول على Auth Token
+            auth_res = requests.post(
+                "https://accept.paymob.com/api/auth/tokens",
+                json={"api_key": api_key}
+            )
+            auth_res.raise_for_status()
+            auth_token = auth_res.json().get("token")
+            
+            # 3. إنشاء طلب جديد (Order)
+            order_res = requests.post(
+                "https://accept.paymob.com/api/ecommerce/orders",
+                json={
+                    "auth_token": auth_token,
+                    "delivery_needed": "false",
+                    "amount_cents": str(int(amount * 100)),
+                    "currency": "EGP",
+                    "merchant_order_id": f"TOPUP-CLIENT-{int(firestore.SERVER_TIMESTAMP.timestamp() if hasattr(firestore, 'SERVER_TIMESTAMP') else 1001)}"
+                }
+            )
+            order_res.raise_for_status()
+            paymob_order_id = order_res.json().get("id")
+            
+            st.success("✅ تم الاتصال بـ Paymob بنجاح والمفاتيح شغال تمام 100%!")
+            st.info(f"🆔 رقم المعاملة المولد من Paymob: `{paymob_order_id}`")
+            
+        except KeyError:
+            st.error("❌ لم يتم العثور على مفاتيح Paymob داخل secrets.toml! تأكد من حفظ قسم [paymob].")
+        except Exception as e:
+            st.error(f"❌ خطأ أثناء الاتصال بـ Paymob: {e}")
 
 elif client_menu == "🛡️ مركز السلامة والطوارئ":
     st.subheader("🛡️ نظام الأمان والسلامة")
