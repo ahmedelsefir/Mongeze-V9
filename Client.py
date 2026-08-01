@@ -13,39 +13,100 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def render_parcels_page(user_name, send_to_firebase, send_system_email, trigger_audio_alert):
-    """Render the parcels ordering page for customers."""
+def render_parcels_page(user_name, send_to_firebase, send_system_email, trigger_audio_alert,
+                       fetch_user_settings=None, initiate_wallet_topup=None):
+    """Render the parcels ordering page for customers with payment method selection."""
     st.markdown("## 📦 Parcel Shipment Center")
+    
+    # Fetch user wallet balance
+    user_wallet = 0.0
+    if fetch_user_settings:
+        try:
+            user_data = fetch_user_settings(user_name)
+            user_wallet = float(user_data.get("wallet_balance", 0.0)) if user_data else 0.0
+        except Exception as e:
+            logger.warning(f"Could not fetch wallet balance: {str(e)}")
+    
     with st.form("parcel_v10"):
         details = st.text_area("Shipment Details & Pickup/Delivery Addresses:")
         price = st.number_input("Estimated Budget (EGP):", min_value=10.0, value=70.0)
+        
+        st.divider()
+        
+        # Payment Method Selection
+        st.markdown("### 💳 Payment Method")
+        payment_method = st.radio(
+            "طريقة الدفع المفضلة:",
+            ["💵 كاش (عند الوصول)", "👛 خصم من رصيد المحفظة", "💳 فيزا / أونلاين (Paymob)"],
+            horizontal=False
+        )
+        
+        # Display wallet balance if wallet payment is selected
+        if payment_method == "👛 خصم من رصيد المحفظة":
+            st.info(f"💰 رصيد محفظتك الحالي: **{user_wallet:.2f} EGP**")
+        
         if st.form_submit_button("🚀 Post Order to Network") and details.strip():
-            try:
-                order_id = f"PRCL-{int(time.time())}"
-                payload = {
-                    "order_id": order_id, "type": "Parcel Delivery", "customer": user_name,
-                    "details": details.strip(), "price": price, "status": "Searching for Driver",
-                    "driver": "Not Assigned", "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                }
-                if send_to_firebase("orders", payload):
-                    st.session_state["my_active_order_id"] = order_id
-                    send_system_email(f"New Parcel Order {order_id}", f"Customer {user_name} requested parcel delivery worth EGP {price}")
-                    st.success(f"🎉 Order posted successfully! Tracking Code: {order_id}")
-                    if st.session_state.get("audio_notifications_enabled", False):
-                        trigger_audio_alert()
-                else:
-                    st.error("❌ Failed to post order. Please check your connection.")
-            except Exception as e:
-                logger.error(f"Error creating parcel order: {str(e)}")
-                st.error(f"Error: {str(e)}")
+            # Validation Logic
+            payment_valid = True
+            error_msg = None
+            
+            if payment_method == "👛 خصم من رصيد المحفظة":
+                if user_wallet < price:
+                    payment_valid = False
+                    error_msg = f"❌ رصيد محفظتك ({user_wallet:.2f} EGP) غير كافٍ. الرسوم المطلوبة: {price} EGP"
+            
+            if not payment_valid:
+                st.error(error_msg)
+            elif payment_method == "💳 فيزا / أونلاين (Paymob)" and user_wallet < price * 0.1:
+                # Suggest topup if balance is very low for online payment
+                st.warning(f"⚠️ رصيدك منخفض ({user_wallet:.2f} EGP). هل تريد إضافة رصيد؟")
+                if initiate_wallet_topup and st.button("💳 إضافة رصيد الآن"):
+                    initiate_wallet_topup(user_name)
+            else:
+                try:
+                    order_id = f"PRCL-{int(time.time())}"
+                    payload = {
+                        "order_id": order_id, 
+                        "type": "Parcel Delivery", 
+                        "customer": user_name,
+                        "details": details.strip(), 
+                        "price": price, 
+                        "status": "Searching for Driver",
+                        "driver": "Not Assigned", 
+                        "payment_method": payment_method,
+                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }
+                    if send_to_firebase("orders", payload):
+                        st.session_state["my_active_order_id"] = order_id
+                        send_system_email(
+                            f"New Parcel Order {order_id}", 
+                            f"Customer {user_name} requested parcel delivery worth EGP {price} - Payment: {payment_method}"
+                        )
+                        st.success(f"🎉 Order posted successfully! Tracking Code: {order_id}")
+                        if st.session_state.get("audio_notifications_enabled", False):
+                            trigger_audio_alert()
+                    else:
+                        st.error("❌ Failed to post order. Please check your connection.")
+                except Exception as e:
+                    logger.error(f"Error creating parcel order: {str(e)}")
+                    st.error(f"Error: {str(e)}")
 
 
 def render_taxi_page(user_name, send_to_firebase, send_system_email, trigger_audio_alert,
-                     fetch_from_firebase=None):
-    """Render the taxi ordering page for customers with dynamic fare estimation."""
+                     fetch_from_firebase=None, fetch_user_settings=None, initiate_wallet_topup=None):
+    """Render the taxi ordering page for customers with dynamic fare estimation and payment selection."""
     from pricing_engine import estimate_trip
 
     st.markdown("## 🚕 Taxi Ride Request Center")
+
+    # Fetch user wallet balance
+    user_wallet = 0.0
+    if fetch_user_settings:
+        try:
+            user_data = fetch_user_settings(user_name)
+            user_wallet = float(user_data.get("wallet_balance", 0.0)) if user_data else 0.0
+        except Exception as e:
+            logger.warning(f"Could not fetch wallet balance: {str(e)}")
 
     # Live supply/demand counts for surge pricing
     active_orders_count = 0
@@ -98,33 +159,74 @@ def render_taxi_page(user_name, send_to_firebase, send_system_email, trigger_aud
             help="Auto-calculated from distance, time, and current demand. You can adjust your offer.",
         )
 
+        st.divider()
+        
+        # Payment Method Selection
+        st.markdown("### 💳 Payment Method")
+        payment_method = st.radio(
+            "طريقة الدفع المفضلة:",
+            ["💵 كاش (عند الوصول)", "👛 خصم من رصيد المحفظة", "💳 فيزا / أونلاين (Paymob)"],
+            horizontal=False,
+            key="taxi_payment"
+        )
+        
+        # Display wallet balance if wallet payment is selected
+        if payment_method == "👛 خصم من رصيد المحفظة":
+            st.info(f"💰 رصيد محفظتك الحالي: **{user_wallet:.2f} EGP**")
+
         if st.form_submit_button("🚕 Post Ride to Network") and start.strip() and end.strip():
-            try:
-                order_id = f"TAXI-{int(time.time())}"
-                payload = {
-                    "order_id": order_id, "type": "Taxi Ride", "customer": user_name,
-                    "from": start.strip(), "to": end.strip(), "price": price, "status": "Searching for Driver",
-                    "driver": "Not Assigned",
-                    "customer_lat": float(pickup_lat),
-                    "customer_lon": float(pickup_lon),
-                    "dest_lat": float(dest_lat),
-                    "dest_lon": float(dest_lon),
-                    "estimated_distance_km": estimate["distance_km"] if estimate else None,
-                    "estimated_time_min": estimate["time_minutes"] if estimate else None,
-                    "surge_factor": estimate["surge_factor"] if estimate else 1.0,
-                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                }
-                if send_to_firebase("orders", payload):
-                    st.session_state["my_active_order_id"] = order_id
-                    send_system_email(f"New Taxi Request {order_id}", f"Passenger {user_name} requested ride from {start} to {end}")
-                    st.success(f"🎉 Ride posted successfully! Tracking Code: {order_id}")
-                    if st.session_state.get("audio_notifications_enabled", False):
-                        trigger_audio_alert()
-                else:
-                    st.error("❌ Failed to post ride. Please check your connection.")
-            except Exception as e:
-                logger.error(f"Error creating taxi order: {str(e)}")
-                st.error(f"Error: {str(e)}")
+            # Validation Logic
+            payment_valid = True
+            error_msg = None
+            
+            if payment_method == "👛 خصم من رصيد المحفظة":
+                if user_wallet < price:
+                    payment_valid = False
+                    error_msg = f"❌ رصيد محفظتك ({user_wallet:.2f} EGP) غير كافٍ. الرسوم المطلوبة: {price} EGP"
+            
+            if not payment_valid:
+                st.error(error_msg)
+            elif payment_method == "💳 فيزا / أونلاين (Paymob)" and user_wallet < price * 0.1:
+                # Suggest topup if balance is very low for online payment
+                st.warning(f"⚠️ رصيدك منخفض ({user_wallet:.2f} EGP). هل تريد إضافة رصيد؟")
+                if initiate_wallet_topup and st.button("💳 إضافة رصيد الآن", key="topup_taxi"):
+                    initiate_wallet_topup(user_name)
+            else:
+                try:
+                    order_id = f"TAXI-{int(time.time())}"
+                    payload = {
+                        "order_id": order_id, 
+                        "type": "Taxi Ride", 
+                        "customer": user_name,
+                        "from": start.strip(), 
+                        "to": end.strip(), 
+                        "price": price, 
+                        "status": "Searching for Driver",
+                        "driver": "Not Assigned",
+                        "customer_lat": float(pickup_lat),
+                        "customer_lon": float(pickup_lon),
+                        "dest_lat": float(dest_lat),
+                        "dest_lon": float(dest_lon),
+                        "estimated_distance_km": estimate["distance_km"] if estimate else None,
+                        "estimated_time_min": estimate["time_minutes"] if estimate else None,
+                        "surge_factor": estimate["surge_factor"] if estimate else 1.0,
+                        "payment_method": payment_method,
+                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }
+                    if send_to_firebase("orders", payload):
+                        st.session_state["my_active_order_id"] = order_id
+                        send_system_email(
+                            f"New Taxi Request {order_id}", 
+                            f"Passenger {user_name} requested ride from {start} to {end} - Payment: {payment_method}"
+                        )
+                        st.success(f"🎉 Ride posted successfully! Tracking Code: {order_id}")
+                        if st.session_state.get("audio_notifications_enabled", False):
+                            trigger_audio_alert()
+                    else:
+                        st.error("❌ Failed to post ride. Please check your connection.")
+                except Exception as e:
+                    logger.error(f"Error creating taxi order: {str(e)}")
+                    st.error(f"Error: {str(e)}")
 
 
 def _extract_order_id_from_room(selected_room):
@@ -459,6 +561,10 @@ def render_customer_tracking(fetch_from_firebase, get_live_distance_for_order, f
             distance = get_live_distance_for_order(my_order)
             distance_text = format_distance_display(distance)
             st.metric(label="Live Distance to Driver", value=distance_text)
+        
+        # Display payment method badge
+        payment_method = my_order.get("payment_method", "Unknown")
+        st.markdown(f"**💳 نوع الدفع:** {payment_method}")
         st.metric(label="Fare Amount", value=f"EGP {my_order.get('price')}")
     else:
         st.warning("📭 No active order to track. Create a parcel or taxi order to get started.")
