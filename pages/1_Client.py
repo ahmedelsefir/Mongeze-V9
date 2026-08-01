@@ -48,7 +48,7 @@ if client_menu == "🚖 اطلب مشوار / توصيل الآن":
         )
 
         c_name = st.text_input("👤 اسم العميل الافتراضي", value="أحمد مصطفى")
-        o_details = st.text_area("📝 ما الذي تريد توصيله؟ (اكتب تفاصيل الوجهة والشحنة بدقة)", placeholder="مثال: مطلوب استلام طرد من العنوان X وتسليمه إلى Y، الوزن التقريبي 2 كجم، حساس")
+        o_details = st.text_area("📝 ما الذي تريد توصيله؟ (اكتب تفاصيل الوجهة والشحنة بدقة)", placeholder="مثال: مطلوب استلام طرد من...")
         s_price = st.number_input("💰 ميزانيتك المقترحة للطلب (جنيه)", min_value=10, value=30, step=5)
         c_phone = st.text_input("📱 رقم هاتف التواصل الحركي", value="+20 1000000000")
 
@@ -158,58 +158,89 @@ elif client_menu == "📜 مشاويري السابقة":
     st.caption("يتيح لك مراجعة الأماكن والأسعار السابقة لرحلاتك مع منجز.")
 
 # ---------------------------------------------------------
-# 3️⃣ قسم المحفظة واختبار الربط مع Paymob
+# 3️⃣ قسم المحفظة - محسّن مع Popover
 # ---------------------------------------------------------
 elif client_menu == "💳 محفظة الدفع الإلكتروني":
-    st.subheader("💳 رصيد حسابك الذكي")
-    st.metric("الرصيد المتاح للعميل", "0.00 ج.م")
-    st.markdown("---")
+    st.subheader("💳 محفظة الدفع الذكية")
     
-    st.subheader("🚀 اختبار الشحن والتكامل مع Paymob")
-    amount = st.number_input("حدد مبلغ الشحن التجريبي (ج.م):", min_value=10, value=50, step=10)
-    
-    if st.button("💳 بدء تجربة الاتصال والدفع عبر Paymob"):
+    # Fetch current balance from Firebase
+    current_balance = 0.0
+    if db:
         try:
-            # 1. قراءة المفاتيح من st.secrets
-            api_key = st.secrets["paymob"]["PAYMOB_API_KEY"]
+            users_q = db.collection("users").where("full_name", "==", "أحمد مصطفى").limit(1).get()
+            if users_q and len(users_q) > 0:
+                user_doc = users_q[0]
+                user_data = user_doc.to_dict()
+                current_balance = float(user_data.get("wallet_balance", 0.0))
+        except Exception:
+            current_balance = 0.0
+    
+    # Clean layout: Balance card with popover button
+    col_bal, col_btn = st.columns([3, 1])
+    
+    with col_bal:
+        st.markdown(f"""
+        <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white; padding: 20px; border-radius: 12px; margin-bottom: 16px;'>
+            <p style='margin: 0; font-size: 14px; opacity: 0.9;'>رصيد الحساب الحالي</p>
+            <p style='margin: 8px 0 0 0; font-size: 32px; font-weight: bold;'>{current_balance:.2f} ج.م</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col_btn:
+        with st.popover("➕ إضافة", use_container_width=True):
+            st.subheader("💳 أضف رصيد للمحفظة")
+            st.caption("طريقة الدفع: بطاقة أئتمان / خصم عبر Paymob")
             
-            # 2. المصادقة للحصول على Auth Token
-            auth_res = requests.post(
-                "https://accept.paymob.com/api/auth/tokens",
-                json={"api_key": api_key}
+            topup_amount = st.number_input(
+                "أدخل المبلغ المراد إضافته إلى رصيدك (جنيه)",
+                min_value=10,
+                max_value=50000,
+                value=100,
+                step=10
             )
-            auth_res.raise_for_status()
-            auth_token = auth_res.json().get("token")
             
-            # 3. إنشاء طلب جديد (Order) رقم المعاملة باستخدام وقت النظام الحقيقي
-            order_res = requests.post(
-                "https://accept.paymob.com/api/ecommerce/orders",
-                json={
-                    "auth_token": auth_token,
-                    "delivery_needed": "false",
-                    "amount_cents": str(int(amount * 100)),
-                    "currency": "EGP",
-                    "merchant_order_id": f"TOPUP-CLIENT-{int(time.time())}"
-                }
-            )
-            order_res.raise_for_status()
-            paymob_order_id = order_res.json().get("id")
-            
-            st.success("✅ تم الاتصال بـ Paymob بنجاح والمفاتيح شغالة تمام 100%!"
-            )
-            st.info(f"🆔 رقم المعاملة المولد من Paymob: `{paymob_order_id}`")
-            
-        except KeyError:
-            st.error("❌ لم يتم العثور على مفاتيح Paymob داخل secrets.toml! تأكد من حفظ قسم [paymob].")
-        except Exception as e:
-            st.error(f"❌ خطأ أثناء الاتصال بـ Paymob: {e}")
+            if st.button("دفع", type="primary", use_container_width=True):
+                try:
+                    # 1. قراءة المفاتيح من st.secrets
+                    api_key = st.secrets["paymob"]["PAYMOB_API_KEY"]
+                    
+                    # 2. المصادقة للحصول على Auth Token
+                    auth_res = requests.post(
+                        "https://accept.paymob.com/api/auth/tokens",
+                        json={"api_key": api_key}
+                    )
+                    auth_res.raise_for_status()
+                    auth_token = auth_res.json().get("token")
+                    
+                    # 3. إنشاء طلب جديد (Order)
+                    order_res = requests.post(
+                        "https://accept.paymob.com/api/ecommerce/orders",
+                        json={
+                            "auth_token": auth_token,
+                            "delivery_needed": "false",
+                            "amount_cents": str(int(topup_amount * 100)),
+                            "currency": "EGP",
+                            "merchant_order_id": f"TOPUP-CLIENT-{int(time.time())}"
+                        }
+                    )
+                    order_res.raise_for_status()
+                    paymob_order_id = order_res.json().get("id")
+                    
+                    st.success(f"✅ تم تحضير الدفع بنجاح — المبلغ: {topup_amount} ج.م")
+                    st.info(f"🆔 رقم المعاملة: `{paymob_order_id}`")
+                    
+                except KeyError:
+                    st.error("❌ لم يتم العثور على مفاتيح Paymob! تأكد من حفظ قسم [paymob] في secrets.toml")
+                except Exception as e:
+                    st.error(f"❌ خطأ في الاتصال بـ Paymob: {e}")
 
 # ---------------------------------------------------------
 # 4️⃣ قسم الطوارئ والسلامة
 # ---------------------------------------------------------
 elif client_menu == "🛡️ مركز السلامة والطوارئ":
     st.subheader("🛡️ نظام الأمان والسلامة")
-    st.error("🚨 زر الاستغاثة (SOS): بمجرد الضغط عليه، يتم إرسال موقعك الجغرافي الحي فوراً لغرفة عمليات وموظفي منجز...")
+    st.error("🚨 زر الاستغاثة (SOS): بمجرد الضغط عليه، يتم إرسال موقعك الجغرافي الحي فوراً لغرفة عمليات وموظفي منجز.")
 
 # ---------------------------------------------------------
 # 5️⃣ قسم إعدادات التطبيق
