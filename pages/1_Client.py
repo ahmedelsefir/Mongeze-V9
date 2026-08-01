@@ -38,45 +38,106 @@ if client_menu == "🚖 اطلب مشوار / توصيل الآن":
     
     # واجهة إدخال الطلب المحدثة
     with st.form("new_order_form", clear_on_submit=True):
+        # خدمة صريحة بالاختيار (Ride vs Delivery)
+        service_option = st.selectbox(
+            "اختر نوع الخدمة:",
+            [
+                "🚖 طلب تاكسي / توصيل أفراد",
+                "📦 توصيل طرود / مرسول (أطلب أي شيء)"
+            ]
+        )
+
         c_name = st.text_input("👤 اسم العميل الافتراضي", value="أحمد مصطفى")
-        o_details = st.text_area("📝 ما الذي تريد توصيله؟ (اكتب تفاصيل الوجهة والشحنة بدقة)", placeholder="مثال: مطلوب استلام طرد من ماكدونالدز فرع الزمالك وتوصيله إلى المهندسين...")
+        o_details = st.text_area("📝 ما الذي تريد توصيله؟ (اكتب تفاصيل الوجهة والشحنة بدقة)", placeholder="مثال: مطلوب استلام طرد من العنوان X وتسليمه إلى Y، الوزن التقريبي 2 كجم، حساس")
         s_price = st.number_input("💰 ميزانيتك المقترحة للطلب (جنيه)", min_value=10, value=30, step=5)
         c_phone = st.text_input("📱 رقم هاتف التواصل الحركي", value="+20 1000000000")
-        
+
+        # --- Wallet guard: attempt to fetch user's wallet balance from users collection ---
+        wallet_balance = None
+        if db:
+            try:
+                # Attempt to find a user document matching the provided name
+                users_q = db.collection("users").where("full_name", "==", c_name).limit(1).get()
+                if users_q and len(users_q) > 0:
+                    user_doc = users_q[0]
+                    user_data = user_doc.to_dict()
+                    wallet_balance = user_data.get("wallet_balance", 0.0)
+                else:
+                    # try alternative field
+                    users_q2 = db.collection("users").where("name", "==", c_name).limit(1).get()
+                    if users_q2 and len(users_q2) > 0:
+                        user_doc = users_q2[0]
+                        user_data = user_doc.to_dict()
+                        wallet_balance = user_data.get("wallet_balance", 0.0)
+                    else:
+                        wallet_balance = 0.0
+            except Exception:
+                wallet_balance = 0.0
+
+        # Display balance and warnings inline (but keep styling intact)
+        if wallet_balance is None:
+            st.info("رصيد المحفظة: غير متوفر حالياً")
+        else:
+            st.metric("الرصيد الحالي لمحفظتك", f"{wallet_balance} ج.م")
+            # Warn if negative balance -> block submission later
+            if isinstance(wallet_balance, (int, float)) and wallet_balance < 0:
+                st.warning("⚠️ رصيد محفظتك سالب. لا يمكنك إرسال طلبات حتى تتم عملية شحن المحفظة.")
+
+            # Warn if estimated fare (suggested price) is higher than balance
+            if isinstance(wallet_balance, (int, float)) and wallet_balance < float(s_price):
+                st.warning("⚠️ رصيدك الحالي أقل من السعر التقديري للرحلة؛ قد تحتاج لشحن المحفظة قبل التأكيد.")
+
         submit_btn = st.form_submit_button("🚀 نشر الطلب لاستقبال عروض السائقين")
         
         if submit_btn and db:
             if o_details.strip() == "":
                 st.warning("⚠️ يرجى كتابة تفاصيل الشحنة أولاً قبل النشر!")
             else:
-                db.collection("orders").add({
-                    "client_name": c_name,
-                    "order_details": o_details,
-                    "suggested_price": s_price,
-                    "phone": c_phone,
-                    "status": "processing",
-                    "driver_assigned": "",
-                    "timestamp": firestore.SERVER_TIMESTAMP
-                })
-                st.success("🎯 عظيم يا هندسة! تم قيد ونشر طلبك في الميدان بنجاح.")
+                # Block submission if wallet balance is explicitly negative
+                if wallet_balance is not None and isinstance(wallet_balance, (int, float)) and wallet_balance < 0:
+                    st.error("❌ تم إيقاف إرسال الطلب لأن رصيد المحفظة سالب. يرجى شحن المحفظة أولاً.")
+                else:
+                    # Build payload common fields
+                    payload = {
+                        "client_name": c_name,
+                        "order_details": o_details,
+                        "suggested_price": s_price,
+                        "phone": c_phone,
+                        "status": "processing",
+                        "driver_assigned": "",
+                        "timestamp": firestore.SERVER_TIMESTAMP,
+                    }
+
+                    try:
+                        if service_option == "🚖 طلب تاكسي / توصيل أفراد":
+                            # save under rides collection
+                            db.collection("rides").add(payload)
+                        else:
+                            # save under deliveries collection
+                            db.collection("deliveries").add(payload)
+
+                        st.success("🎯 عظيم يا هندسة! تم قيد ونشر طلبك في الميدان بنجاح.")
+                    except Exception as e:
+                        st.error(f"❌ حدث خطأ أثناء حفظ الطلب: {e}")
 
     # رادار تتبع الحالات النشطة
     st.markdown("---")
     st.markdown("<h3 style='color: #10B981; text-align: right;'>📋 مراقبة وتتبع طلباتك الحالية</h3>", unsafe_allow_html=True)
     
     if db:
-        orders_stream = db.collection("orders").where("client_name", "==", "أحمد مصطفى").stream()
+        # Check both collections for active orders for this client
+        orders_stream = list(db.collection("orders").where("client_name", "==", "أحمد مصطفى").stream())
+        rides_stream = list(db.collection("rides").where("client_name", "==", "أحمد مصطفى").stream())
+        deliveries_stream = list(db.collection("deliveries").where("client_name", "==", "أحمد مصطفى").stream())
+
         active_found = False
-        
-        for doc in orders_stream:
+        for doc in orders_stream + rides_stream + deliveries_stream:
             data = doc.to_dict()
             status = data.get("status")
-            
             if status != "⭐ تم الإغلاق والتقييم بالكامل":
                 active_found = True
                 driver = data.get("driver_assigned", "جاري البحث عن كابتن...")
                 price = data.get("suggested_price", 30)
-                
                 st.markdown(f"""
                 <div style='background-color: #EFF6FF; padding: 15px; border-radius: 8px; border-right: 5px solid #3B82F6; margin-bottom: 10px; text-align: right;'>
                     <b style='color: #1E3A8A; font-size: 16px;'>✔️ تم قبول طلبك وبدأ التنفيذ الحقيقي!</b><br>
@@ -85,7 +146,7 @@ if client_menu == "🚖 اطلب مشوار / توصيل الآن":
                     <span style='color: #DC2626;'>🚨 حالة التحرك الحية الآن: 🚖 {html_mod.escape(str(status))}</span>
                 </div>
                 """, unsafe_allow_html=True)
-                
+
         if not active_found:
             st.info("💡 لا توجد لديك طلبات نشطة في الوقت الحالي. رحلاتك القادمة ستظهر هنا فورا.")
 
@@ -134,7 +195,8 @@ elif client_menu == "💳 محفظة الدفع الإلكتروني":
             order_res.raise_for_status()
             paymob_order_id = order_res.json().get("id")
             
-            st.success("✅ تم الاتصال بـ Paymob بنجاح والمفاتيح شغالة تمام 100%!")
+            st.success("✅ تم الاتصال بـ Paymob بنجاح والمفاتيح شغالة تمام 100%!"
+            )
             st.info(f"🆔 رقم المعاملة المولد من Paymob: `{paymob_order_id}`")
             
         except KeyError:
@@ -147,7 +209,7 @@ elif client_menu == "💳 محفظة الدفع الإلكتروني":
 # ---------------------------------------------------------
 elif client_menu == "🛡️ مركز السلامة والطوارئ":
     st.subheader("🛡️ نظام الأمان والسلامة")
-    st.error("🚨 زر الاستغاثة (SOS): بمجرد الضغط عليه، يتم إرسال موقعك الجغرافي الحي فوراً لغرفة عمليات وموظفي منجز للتدخل الصارم لحمايتك.")
+    st.error("🚨 زر الاستغاثة (SOS): بمجرد الضغط عليه، يتم إرسال موقعك الجغرافي الحي فوراً لغرفة عمليات وموظفي منجز...")
 
 # ---------------------------------------------------------
 # 5️⃣ قسم إعدادات التطبيق
