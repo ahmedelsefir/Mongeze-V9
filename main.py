@@ -565,14 +565,16 @@ if st.session_state["current_page"] == "الرئيسية":
 # 2️⃣ بوابة الطرود
 elif st.session_state["current_page"] == "الطرود":
     render_parcels_page(
-        user_name, send_to_firebase, send_system_email, trigger_audio_alert
+        user_name, send_to_firebase, send_system_email, trigger_audio_alert,
+        fetch_user_settings=fetch_user_settings, initiate_wallet_topup=initiate_wallet_topup
     )
 
 # 3️⃣ بوابة تاكسي أفراد
 elif st.session_state["current_page"] == "التاكسي":
     render_taxi_page(
         user_name, send_to_firebase, send_system_email, trigger_audio_alert,
-        fetch_from_firebase=fetch_from_firebase,
+        fetch_from_firebase=fetch_from_firebase, fetch_user_settings=fetch_user_settings,
+        initiate_wallet_topup=initiate_wallet_topup
     )
 
 # 4️⃣ غرفة الدردشة الذكية
@@ -707,7 +709,8 @@ elif st.session_state["current_page"] == "الإعدادات":
                 user_name, fetch_driver_account, save_driver_account, send_system_email
             )
             render_wallet_topup(
-                user_name, initiate_wallet_topup_fn=initiate_wallet_topup
+                user_name, initiate_wallet_topup_fn=initiate_wallet_topup,
+                fetch_user_settings=fetch_user_settings
             )
         with settings_tabs[2]:
             render_driver_kyc_tab(
