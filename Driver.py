@@ -40,7 +40,11 @@ def render_driver_tracking(user_name, orders, update_firebase_node,
         if available_orders:
             for o in available_orders:
                 try:
+                    # Display payment method badge on order card
+                    payment_method = o.get("payment_method", "Unknown")
                     st.markdown(f"**📦 New {o.get('type', 'Order')}!** | Customer: {o.get('customer', 'unknown')} | Fare: EGP {o.get('price', 0)}")
+                    st.markdown(f"💳 **نوع الدفع:** {payment_method}")
+                    
                     if o.get('from'):
                         st.write(f"📍 From: {o.get('from')} → To: {o.get('to', 'unknown')}")
                     if o.get('details'):
@@ -145,45 +149,63 @@ def render_driver_settings_tab(user_name, fetch_driver_account, save_driver_acco
         st.warning("⚠️ Error loading driver settings")
 
 
-def render_wallet_topup(user_name, initiate_wallet_topup_fn=None):
-    """Render Paymob wallet top-up section for drivers.
-
+def render_wallet_topup(user_name, initiate_wallet_topup_fn=None, fetch_user_settings=None):
+    """Render redesigned wallet top-up section with balance card and popover dialog.
+    
+    Matches commercial app standards with:
+    - Balance card showing current amount
+    - Popover dialog for adding funds
+    - Integrated Paymob payment flow
+    
     Args:
         user_name: The driver's username.
         initiate_wallet_topup_fn: callable from paymob.initiate_wallet_topup.
+        fetch_user_settings: callable to fetch user wallet data.
     """
     st.divider()
-    st.markdown("### 💳 Top Up Wallet via Paymob")
-    st.caption("Pay with Vodafone Cash or credit card to instantly add funds to your wallet")
-
-    try:
-        with st.form("wallet_topup_form"):
-            col1, col2 = st.columns(2)
-
-            with col1:
-                topup_amount = st.number_input(
-                    "💵 Amount (EGP):",
-                    min_value=10.0,
-                    max_value=50000.0,
-                    value=100.0,
-                    step=10.0,
-                    help="Enter the amount you want to deposit in Egyptian Pounds"
-                )
-
-            with col2:
-                topup_method = st.selectbox(
-                    "📱 Payment Method:",
-                    options=["💳 Credit Card", "📲 Vodafone Cash"],
-                    help="Choose your preferred payment method"
-                )
-
-            if st.form_submit_button("🚀 Proceed to Payment", use_container_width=True):
+    st.markdown("### 💳 Your Wallet")
+    
+    # Fetch wallet balance
+    user_wallet = 0.0
+    if fetch_user_settings:
+        try:
+            user_data = fetch_user_settings(user_name)
+            user_wallet = float(user_data.get("wallet_balance", 0.0)) if user_data else 0.0
+        except Exception as e:
+            logger.warning(f"Could not fetch wallet balance: {str(e)}")
+    
+    # Display Balance Card with Add Funds Button
+    col_balance, col_add = st.columns([3, 1])
+    
+    with col_balance:
+        st.markdown(f"""
+        <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white; padding: 20px; border-radius: 12px; margin-bottom: 16px;'>
+            <p style='margin: 0; font-size: 14px; opacity: 0.9;'>رصيد الحساب</p>
+            <p style='margin: 8px 0 0 0; font-size: 32px; font-weight: bold;'>{user_wallet:.2f} جنيه</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col_add:
+        with st.popover("➕ إضافة", use_container_width=True):
+            st.markdown("#### أضف الرصيد")
+            st.caption("طريقة الدفع: إضافة بطاقة أئتمان أو خصم (Paymob)")
+            
+            topup_amount = st.number_input(
+                "أدخل المبلغ المراد إضافته إلى رصيدك",
+                min_value=10,
+                max_value=50000,
+                value=100,
+                step=10,
+                help="الحد الأدنى: 10 جنيه | الحد الأقصى: 50,000 جنيه"
+            )
+            
+            if st.button("دفع", type="primary", use_container_width=True):
                 if not initiate_wallet_topup_fn:
-                    st.warning("⚠️ Paymob service is currently unavailable — please contact admin")
+                    st.warning("⚠️ خدمة الدفع غير متاحة حالياً — يرجى التواصل مع الدعم")
                     logger.warning("initiate_wallet_topup_fn not provided — Paymob not configured")
                 else:
                     try:
-                        payment_method = "wallet" if "Vodafone" in topup_method else "card"
                         driver_info = {
                             "first_name": user_name.split()[0] if user_name else "Driver",
                             "last_name": user_name.split()[-1] if user_name and len(user_name.split()) > 1 else "Monjez",
@@ -191,36 +213,33 @@ def render_wallet_topup(user_name, initiate_wallet_topup_fn=None):
                             "phone_number": "+20000000000",
                         }
 
-                        with st.spinner("⏳ Preparing payment gateway..."):
+                        with st.spinner("⏳ جاري تحضير بوابة الدفع..."):
                             result = initiate_wallet_topup_fn(
                                 driver_username=user_name,
                                 amount_egp=topup_amount,
                                 driver_info=driver_info,
-                                payment_method=payment_method,
+                                payment_method="card",
                             )
 
                         if result and result.get("checkout_url"):
-                            st.success(f"✅ Payment ready — Amount: EGP {topup_amount}")
+                            st.success(f"✅ تم تحضير الدفع — المبلغ: {topup_amount} جنيه")
                             st.markdown(
                                 f'<a href="{html.escape(str(result["checkout_url"]))}" target="_blank">'
-                                f'<button style="background-color:#4CAF50;color:white;padding:12px 24px;'
-                                f'border:none;border-radius:8px;cursor:pointer;font-size:16px;width:100%">'
-                                f'💳 Go to Secure Payment Gateway</button></a>',
+                                f'<button style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);'
+                                f'color:white;padding:12px 24px;border:none;border-radius:8px;cursor:pointer;'
+                                f'font-size:16px;width:100%;font-weight:bold;">'
+                                f'💳 الذهاب إلى بوابة الدفع الآمنة</button></a>',
                                 unsafe_allow_html=True,
                             )
-                            st.info(f"🔑 Order ID: {result.get('order_id', 'N/A')}")
-                            logger.info(f"Wallet topup checkout ready: {user_name}, {topup_amount} EGP via {payment_method}")
+                            st.info(f"🔑 رقم الطلب: {result.get('order_id', 'N/A')}")
+                            logger.info(f"Wallet topup checkout ready: {user_name}, {topup_amount} EGP")
                         elif result:
-                            st.warning("⚠️ Payment prepared but payment gateway URL unavailable — check PAYMOB_IFRAME_ID configuration")
+                            st.warning("⚠️ تم تحضير الدفع لكن بوابة الدفع غير متاحة — تحقق من إعدادات PAYMOB_IFRAME_ID")
                         else:
-                            st.error("❌ Failed to prepare payment — check Paymob settings")
+                            st.error("❌ فشل تحضير الدفع — تحقق من إعدادات Paymob")
                     except Exception as e:
                         logger.error(f"Error initiating wallet topup: {e}")
-                        st.error(f"❌ Payment error: {e}")
-
-    except Exception as e:
-        logger.error(f"Error in wallet topup section: {e}")
-        st.warning("⚠️ Error loading wallet top-up section")
+                        st.error(f"❌ خطأ في الدفع: {e}")
 
 
 def render_driver_kyc_tab(user_name, user_role, fetch_driver_kyc_documents,
