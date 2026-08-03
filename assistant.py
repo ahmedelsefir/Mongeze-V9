@@ -12,7 +12,7 @@ def get_gemini_api_key():
 
 def ask_mongeze_ai(prompt: str, system_role: str = "مساعد عام لتطبيق منجز") -> str:
     """
-    استدعاء 'عقل مُنجز' مع اكتشاف النماذج المتاحة تلقائياً من سيرفر جوجل
+    استدعاء 'عقل مُنجز' عبر النموذج الرسمي المعتمد gemini-1.5-flash
     """
     api_key = get_gemini_api_key()
     if not api_key:
@@ -21,25 +21,14 @@ def ask_mongeze_ai(prompt: str, system_role: str = "مساعد عام لتطبي
     try:
         genai.configure(api_key=api_key)
 
-        # 1. استعلام مباشر من سيرفر جوجل عن الموديلات المتاحة لمفتاحك
-        available_models = []
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                available_models.append(m.name)
-
-        if not available_models:
-            return "⚠️ المفتاح مقبول، ولكن لا توجد نماذج توليد نصوص مفعّلة حالياً على هذا المشروع."
-
-        # 2. اختيار أول موديل متاح من جوجل تلقائياً
-        chosen_model = available_models[0]
-
         instruction = (
             f"أنت 'عقل مُنجز' - الذكاء الاصطناعي التابع لمنظومة منجز ديليفري. "
             f"دورك الحالي: {system_role}. أجب بلباقة وبالعامية المصرية الراقية وبدقة شديدة."
         )
 
+        # استخدام النموذج الرسمي والمدعوم عالمياً بدون أخطاء 404
         model = genai.GenerativeModel(
-            model_name=chosen_model,
+            model_name='gemini-1.5-flash',
             system_instruction=instruction
         )
 
