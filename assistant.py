@@ -12,7 +12,7 @@ def get_gemini_api_key():
 
 def ask_mongeze_ai(prompt: str, system_role: str = "مساعد عام لتطبيق منجز") -> str:
     """
-    استدعاء 'عقل مُنجز' مع اكتشاف النماذج المتاحة تلقائياً بدون أخطاء 404
+    استدعاء 'عقل مُنجز' مع اكتشاف النماذج المتاحة تلقائياً من سيرفر جوجل
     """
     api_key = get_gemini_api_key()
     if not api_key:
@@ -20,18 +20,18 @@ def ask_mongeze_ai(prompt: str, system_role: str = "مساعد عام لتطبي
 
     try:
         genai.configure(api_key=api_key)
-        
-        # 1. الاستعلام الديناميكي المباشر من جوجل عن النماذج المتاحة للمفتاح
-        supported_models = []
+
+        # 1. استعلام مباشر من سيرفر جوجل عن الموديلات المتاحة لمفتاحك
+        available_models = []
         for m in genai.list_models():
             if 'generateContent' in m.supported_generation_methods:
-                supported_models.append(m.name)
+                available_models.append(m.name)
 
-        if not supported_models:
-            return "⚠️ المفتاح مقبول، ولكن لا توجد نماذج توليد نصوص مفعّلة حالياً لهذا المشروع."
+        if not available_models:
+            return "⚠️ المفتاح مقبول، ولكن لا توجد نماذج توليد نصوص مفعّلة حالياً على هذا المشروع."
 
-        # 2. اختيار أول نموذج متاح ومفعل تلقائياً
-        target_model = supported_models[0]
+        # 2. اختيار أول موديل متاح من جوجل تلقائياً
+        chosen_model = available_models[0]
 
         instruction = (
             f"أنت 'عقل مُنجز' - الذكاء الاصطناعي التابع لمنظومة منجز ديليفري. "
@@ -39,7 +39,7 @@ def ask_mongeze_ai(prompt: str, system_role: str = "مساعد عام لتطبي
         )
 
         model = genai.GenerativeModel(
-            model_name=target_model,
+            model_name=chosen_model,
             system_instruction=instruction
         )
 
