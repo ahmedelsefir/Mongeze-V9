@@ -12,7 +12,7 @@ def get_gemini_api_key():
 
 def ask_mongeze_ai(prompt: str, system_role: str = "مساعد عام لتطبيق منجز") -> str:
     """
-    الدالة الرئيسية لاستدعاء 'عقل مُنجز'
+    استدعاء 'عقل مُنجز' مع اكتشاف النماذج المتاحة تلقائياً بدون أخطاء 404
     """
     api_key = get_gemini_api_key()
     if not api_key:
@@ -21,35 +21,31 @@ def ask_mongeze_ai(prompt: str, system_role: str = "مساعد عام لتطبي
     try:
         genai.configure(api_key=api_key)
         
+        # 1. الاستعلام الديناميكي المباشر من جوجل عن النماذج المتاحة للمفتاح
+        supported_models = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                supported_models.append(m.name)
+
+        if not supported_models:
+            return "⚠️ المفتاح مقبول، ولكن لا توجد نماذج توليد نصوص مفعّلة حالياً لهذا المشروع."
+
+        # 2. اختيار أول نموذج متاح ومفعل تلقائياً
+        target_model = supported_models[0]
+
         instruction = (
             f"أنت 'عقل مُنجز' - الذكاء الاصطناعي التابع لمنظومة منجز ديليفري. "
             f"دورك الحالي: {system_role}. أجب بلباقة وبالعامية المصرية الراقية وبدقة شديدة."
         )
 
-        # تجربة النماذج المتاحة بالترتيب لضمان توافق مشروعك
-        candidate_models = [
-            'gemini-2.0-flash',
-            'gemini-1.5-flash-latest',
-            'gemini-1.5-flash',
-            'gemini-1.5-pro'
-        ]
+        model = genai.GenerativeModel(
+            model_name=target_model,
+            system_instruction=instruction
+        )
 
-        last_error = None
-        for model_name in candidate_models:
-            try:
-                model = genai.GenerativeModel(
-                    model_name=model_name,
-                    system_instruction=instruction
-                )
-                response = model.generate_content(prompt)
-                if response and response.text:
-                    return response.text
-            except Exception as e:
-                last_error = e
-                continue
-
-        return f"❌ خطأ في الاتصال بالنموذج: {str(last_error)}"
+        response = model.generate_content(prompt)
+        return response.text if response and response.text else "⚠️ لم يتم استلام رد من الموديل."
 
     except Exception as e:
         logger.error(f"Error in ask_mongeze_ai: {str(e)}")
-        return f"❌ خطأ في الإعدادات: {str(e)}"
+        return f"❌ خطأ في الاتصال بالذكاء الاصطناعي: {str(e)}"
