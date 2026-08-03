@@ -3,9 +3,20 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import logging
 from math import asin, cos, radians, sin, sqrt
-import os  # 🌐 تم إضافة os لقراءة أسرار ومتغيرات السيرفر السحابي
+import os
 import smtplib
+import html
+import pandas as pd
+import streamlit as st
 
+# ========================================================
+# 🤖 استيراد عقل مُنجز (AI Agent)
+# ========================================================
+from assistant import ask_mongeze_ai, get_gemini_api_key
+
+# ========================================================
+# 📦 استيراد موديولات النظام المخصصة
+# ========================================================
 from Admin import (
     render_admin_kyc_console,
     render_admin_tracking,
@@ -34,8 +45,6 @@ from firebase_helpers import (
     send_to_firebase,
     update_firebase_node,
 )
-import html
-import pandas as pd
 from paymob import initiate_wallet_topup
 import Policies
 from Policies import (
@@ -44,7 +53,6 @@ from Policies import (
     render_support_contact,
     render_terms_of_use,
 )
-import streamlit as st
 
 # ========================================================
 # 🌐 قاموس الترجمة الموحد لمنصة منجز الذكية (Localization)
@@ -56,6 +64,7 @@ LANG_TEXTS = {
         "btn_monitor": "🏠 شاشة المراقبة",
         "btn_parcels": "📦 بوابة الطرود",
         "btn_taxi": "🚕 توصيل تاكسي",
+        "btn_ai": "🤖 عقل مُنجز (AI)",
         "btn_chat": "💬 شات منجز الخاص 🟢",
         "btn_tracking": "🛰️ رادار تتبع الطلبات (لايف)",
         "btn_settings": "⚙️ الإعدادات والملف الشخصي",
@@ -87,7 +96,7 @@ LANG_TEXTS = {
         "profile_error": "❌ فشل حفظ التعديلات. حاول مرة أخرى.",
         "support_title": "📋 المساعدة والدعم (Support & Maintenance)",
         "tab_general": "🌍 الإعدادات العامة",
-        "tab_driver": "🚕 إعدادات Mندوب",
+        "tab_driver": "🚕 إعدادات المندوب",
         "tab_kyc": "🎖️ التحقق من الهوية (KYC)",
         "tab_support": "📋 المساعدة والدعم",
     },
@@ -97,6 +106,7 @@ LANG_TEXTS = {
         "btn_monitor": "🏠 Operations Monitor",
         "btn_parcels": "📦 Parcels Portal",
         "btn_taxi": "🚕 Taxi Delivery",
+        "btn_ai": "🤖 Mongeze AI Agent",
         "btn_chat": "💬 Private Mongeze Chat 🟢",
         "btn_tracking": "🛰️ Live Tracking Radar",
         "btn_settings": "⚙️ Settings & Profile",
@@ -147,7 +157,7 @@ SESSION_GUARD_VERSION = "monjez-mobile-session-guard-v1"
 
 
 def initialize_session_guard():
-    """Clean stale transient session state to reduce browser-side SessionInfo conflicts on mobile reloads."""
+    """تطهير وتنشيط جلسة المستخدم لمنع تضارب الـ Session عند إعادة تحميل الهاتف."""
     protected_keys = {
         "current_page",
         "my_active_order_id",
@@ -155,6 +165,7 @@ def initialize_session_guard():
         "audio_notifications_enabled",
         "language",
         "driver_verification_status",
+        "ai_messages",
         "_session_guard_version",
     }
 
@@ -169,9 +180,9 @@ def initialize_session_guard():
     if "language" not in st.session_state:
         st.session_state["language"] = "العربية"
     if "driver_verification_status" not in st.session_state:
-        st.session_state["driver_verification_status"] = (
-            "Pending Manual Review"
-        )
+        st.session_state["driver_verification_status"] = "Pending Manual Review"
+    if "ai_messages" not in st.session_state:
+        st.session_state["ai_messages"] = []
 
     if st.session_state.get("_session_guard_version") != SESSION_GUARD_VERSION:
         for key in list(st.session_state.keys()):
@@ -208,9 +219,7 @@ def fetch_user_settings(username):
 
 
 def save_user_settings(username, settings):
-    return update_firebase_node(
-        f"users/{sanitize_username(username)}", settings
-    )
+    return update_firebase_node(f"users/{sanitize_username(username)}", settings)
 
 
 def fetch_driver_account(username):
@@ -245,10 +254,9 @@ def delete_user_from_firebase(username):
 
 
 # ========================================================
-# 🌐 محرك الحفظ والمزامنة السحابية الذكية للغة لمنع التصفير
+# 🌐 محرك الحفظ والمزامنة السحابية الذكية للغة
 # ========================================================
 def init_system_language(username: str) -> str:
-    """قراءة اللغة المخزنة من الفايربيز وحقنها في الجلسة لمنع التصفير عند الـ Refresh"""
     if "language" not in st.session_state or st.session_state.get("language") == "العربية":
         try:
             current_settings = fetch_user_settings(username)
@@ -260,7 +268,6 @@ def init_system_language(username: str) -> str:
 
 
 def update_system_language(new_lang: str, username: str):
-    """حفظ اللغة لحظياً في الفايربيز وإعادة تشغيل الواجهة فوراً"""
     if st.session_state.get("language") != new_lang:
         st.session_state["language"] = new_lang
         try:
@@ -293,9 +300,7 @@ def upload_document_to_firebase(username, document_type, file_data):
             "verified": False,
         }
 
-        if update_firebase_node(f"driver_kyc/{safe_name}/{document_type}", doc_data):
-            return True
-        return False
+        return bool(update_firebase_node(f"driver_kyc/{safe_name}/{document_type}", doc_data))
     except Exception as e:
         logger.error(f"Error uploading document: {str(e)}")
         return False
@@ -319,9 +324,7 @@ def create_driver_kyc_record(username, user_role, car_type=None):
             "car_type": car_type if car_type else "Personal",
         }
         if update_firebase_node(f"driver_kyc/{sanitize_username(username)}/metadata", kyc_record):
-            save_user_settings(
-                username, {"verification_status": "Pending Manual Review"}
-            )
+            save_user_settings(username, {"verification_status": "Pending Manual Review"})
             return True
         return False
     except Exception as e:
@@ -358,7 +361,6 @@ def credit_driver_wallet(username, amount):
         if firebase_admin._apps:
             try:
                 from firebase_admin import db as fb_db
-
                 ref = fb_db.reference(f"drivers/{safe_name}/wallet_balance")
 
                 def increment_balance(current_value):
@@ -384,10 +386,8 @@ def credit_driver_wallet(username, amount):
                 current_balance = 0.0
 
         new_balance = round(current_balance + float(amount), 2)
-        response = firebase_request(
-            "patch", f"drivers/{safe_name}", {"wallet_balance": new_balance}
-        )
-        return response and response.ok
+        response = firebase_request("patch", f"drivers/{safe_name}", {"wallet_balance": new_balance})
+        return bool(response and response.ok)
     except Exception as e:
         logger.error(f"Error crediting wallet: {str(e)}")
         return False
@@ -396,7 +396,7 @@ def credit_driver_wallet(username, amount):
 def log_accounting_entry(trip_id, entry_data):
     try:
         sanitized_trip_id = str(trip_id).replace(" ", "_").replace("/", "_")
-        return update_firebase_node(f"accounting_logs/{sanitized_trip_id}", entry_data)
+        return bool(update_firebase_node(f"accounting_logs/{sanitized_trip_id}", entry_data))
     except Exception as e:
         logger.error(f"Error logging ledger: {str(e)}")
         return False
@@ -487,8 +487,6 @@ def format_distance_display(distance_km):
 # ========================================================
 # 📱 شريط التوجيه والديناميكية اللغوية الموحدة
 # ========================================================
-
-# الاستدعاء السحابي الذكي لمنع التصفير عند عمل Refresh للمتصفح
 init_user = st.session_state.get("user_name", "أحمد مصطفى")
 current_lang = init_system_language(init_user)
 t = LANG_TEXTS[current_lang]
@@ -496,8 +494,8 @@ t = LANG_TEXTS[current_lang]
 st.title(t["app_title"])
 st.caption(f"{t['api_caption']} {API_BASE_URL}")
 
-# أزرار التنقل مع ربط الترجمة تلقائياً وبشكل فوري
-col1, col2, col3, col4, col5, col6 = st.columns(6)
+# أزرار التنقل السبعة (شاملة الـ AI Agent)
+col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
 with col1:
     if st.button(t["btn_monitor"], use_container_width=True):
         st.session_state["current_page"] = "الرئيسية"
@@ -508,12 +506,15 @@ with col3:
     if st.button(t["btn_taxi"], use_container_width=True):
         st.session_state["current_page"] = "التاكسي"
 with col4:
+    if st.button(t["btn_ai"], use_container_width=True):
+        st.session_state["current_page"] = "المساعد"
+with col5:
     if st.button(t["btn_chat"], use_container_width=True):
         st.session_state["current_page"] = "الدردشة"
-with col5:
+with col6:
     if st.button(t["btn_tracking"], use_container_width=True):
         st.session_state["current_page"] = "التتبع"
-with col6:
+with col7:
     if st.button(t["btn_settings"], use_container_width=True):
         st.session_state["current_page"] = "الإعدادات"
 
@@ -528,7 +529,6 @@ role_options = (
 )
 selected_role_display = st.sidebar.selectbox(t["sidebar_role_lbl"], role_options)
 
-# ربط القيمة الداخلية لعدم كسر الباك-إند القديم
 role_mapping = {
     "عميل": "عميل",
     "Client": "عميل",
@@ -544,7 +544,11 @@ user_name = st.sidebar.text_input(
 )
 st.session_state["user_name"] = user_name
 
-# 1️⃣ الشاشة الرئيسية (شاشة مراقبة العمليات لايف)
+# ========================================================
+# 🔀 توجيه الشاشات والصفحات
+# ========================================================
+
+# 1️⃣ الشاشة الرئيسية
 if st.session_state["current_page"] == "الرئيسية":
     st.markdown(t["main_dashboard_title"])
     try:
@@ -577,7 +581,45 @@ elif st.session_state["current_page"] == "التاكسي":
         initiate_wallet_topup=initiate_wallet_topup
     )
 
-# 4️⃣ غرفة الدردشة الذكية
+# 4️⃣ بوابة عقل مُنجز الذكي (AI Agent) 🤖
+elif st.session_state["current_page"] == "المساعد":
+    st.markdown("## 🤖 عقل مُنجز الذكي (AI Agent)")
+    st.caption("مساعد الذكاء الاصطناعي المباشر لمنظومة مُنجز لحساب الرحلات والأجرة والدعم المباشر.")
+
+    # صندوق اختبار مفتاح الـ API والربط
+    with st.expander("🧪 فحص حالة مفتاح الاتصال بـ Gemini API"):
+        if st.button("اختبار الاتصال بالذكاء الاصطناعي"):
+            key = get_gemini_api_key()
+            if key:
+                st.success(f"✅ تم العثور على المفتاح بنجاح! بداية المفتاح: ({key[:7]}...)")
+                with st.spinner("جاري اختبار الاتصال والموديل..."):
+                    test_response = ask_mongeze_ai("أهلاً يا مُنجز، هل أنت جاهز للعمل؟", system_role=f"مساعد لـ {user_role}")
+                    st.info(f"🤖 رد الموديل المباشر: {test_response}")
+            else:
+                st.error("❌ لم يتم العثور على مفتاح GOOGLE_API_KEY داخل Streamlit Secrets!")
+
+    st.write("---")
+
+    # عرض المحادثات السابقة
+    for msg in st.session_state["ai_messages"]:
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
+
+    # استقبال سؤال أو طلب العميل/السائق
+    prompt = st.chat_input("تحدث مع عقل مُنجز أو اسأله عن الأجرة والخدمات...")
+    if prompt:
+        st.session_state["ai_messages"].append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.write(prompt)
+
+        with st.chat_message("assistant"):
+            with st.spinner("جاري معالجة الطلب عبر عقل مُنجز..."):
+                sys_role = f"مساعد خدمة العملاء والعمليات الخاصة بـ {user_role} في منصة منجز"
+                reply = ask_mongeze_ai(prompt, system_role=sys_role)
+                st.write(reply)
+                st.session_state["ai_messages"].append({"role": "assistant", "content": reply})
+
+# 5️⃣ غرفة الدردشة الخاصة
 elif st.session_state["current_page"] == "الدردشة":
     render_chat_page(
         user_name,
@@ -589,7 +631,7 @@ elif st.session_state["current_page"] == "الدردشة":
         fetch_firebase_raw=fetch_firebase_raw,
     )
 
-# 5️⃣ رادار تتبع الحالات الحالي والالتقاط الميكانيكي
+# 6️⃣ رادار تتبع الحالات
 elif st.session_state["current_page"] == "التتبع":
     st.markdown(t["tracking_radar_title"])
     st.caption(t["tracking_radar_cap"])
@@ -603,7 +645,6 @@ elif st.session_state["current_page"] == "التتبع":
             )
         elif user_role == "مندوب / كابتن":
             from Driver import render_driver_tracking
-
             render_driver_tracking(
                 user_name,
                 orders,
@@ -618,7 +659,7 @@ elif st.session_state["current_page"] == "التتبع":
         logger.error(f"Error in tracking page: {str(e)}")
         st.error(t["error_fetch"])
 
-# 6️⃣ نظام الإعدادات الشامل مع تكامل Firebase الكامل + قاموس اللغات والـ Tabs
+# 7️⃣ نظام الإعدادات والملف الشخصي
 elif st.session_state["current_page"] == "الإعدادات":
     st.markdown(t["settings_center_title"])
 
@@ -629,7 +670,7 @@ elif st.session_state["current_page"] == "الإعدادات":
     else:
         settings_tabs = st.tabs([t["tab_general"], t["tab_support"]])
 
-    # ========== TAB 1: الإعدادات العامة ==========
+    # Tab 1: الإعدادات العامة
     with settings_tabs[0]:
         st.subheader(t["global_settings_sub"])
         st.markdown(t["edit_profile_title"])
@@ -648,10 +689,10 @@ elif st.session_state["current_page"] == "الإعدادات":
             )
 
             with st.form("profile_edit_form"):
-                col1, col2 = st.columns(2)
-                with col1:
+                col_a, col_b = st.columns(2)
+                with col_a:
                     new_name = st.text_input(t["form_full_name"], value=default_name)
-                with col2:
+                with col_b:
                     whatsapp_num = st.text_input(
                         t["form_whatsapp"],
                         value=default_whatsapp,
@@ -676,7 +717,7 @@ elif st.session_state["current_page"] == "الإعدادات":
 
         st.divider()
 
-        # إعدادات التنبيهات الصوتية
+        # الصوتيات
         st.markdown(t["audio_settings_title"])
         audio_enabled = st.checkbox(
             t["audio_checkbox"],
@@ -692,7 +733,7 @@ elif st.session_state["current_page"] == "الإعدادات":
 
         st.divider()
 
-        # إعدادات اللغة الديناميكية الفورية السحابية
+        # اللغة
         st.markdown(t["lang_settings_title"])
         language_option = st.selectbox(
             t["lang_select_lbl"],
@@ -702,7 +743,7 @@ elif st.session_state["current_page"] == "الإعدادات":
         if language_option != st.session_state.get("language"):
             update_system_language(language_option, user_name)
 
-    # ========== باقي الـ Tabs للمندوب والعملاء ==========
+    # باقي الـ Tabs للمندوب والعميل
     if user_role == "مندوب / كابتن":
         with settings_tabs[1]:
             render_driver_settings_tab(
@@ -734,7 +775,7 @@ elif st.session_state["current_page"] == "الإعدادات":
             st.divider()
             render_support_contact()
 
-# ========== ADMIN CONSOLE ==========
+# لوحة الإدارة (Admin Console)
 if user_role == "إدارة وموظفين" and st.session_state["current_page"] == "الإعدادات":
     render_admin_kyc_console(
         fetch_from_firebase, update_driver_verification_status, send_system_email
@@ -746,6 +787,6 @@ if user_role == "إدارة وموظفين" and st.session_state["current_page"]
         log_accounting_entry,
     )
 
-# زر التحديث اليدوي الموحد للغة والبيانات
+# زر التحديث اليدوي الموحد
 if st.button(t["manual_refresh_btn"]):
     st.rerun()
