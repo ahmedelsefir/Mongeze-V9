@@ -1,7 +1,7 @@
 """
 Client.py - Customer-facing views for the Monjez platform.
 Contains: Parcels, Taxi, Customer Chat, and Customer Tracking views.
-Refactored with Object-Oriented Principles (OOP) and Flexible Signatures.
+Refactored with Object-Oriented Principles (OOP), Flexible Signatures, and Streamlit-Safe Forms.
 """
 
 import html
@@ -204,11 +204,23 @@ def render_parcels_page(user_name, send_to_firebase, send_system_email, trigger_
             user_wallet = float(user_data.get("wallet_balance", 0.0)) if user_data else 0.0
         except Exception as e:
             logger.warning(f"Could not fetch wallet balance: {str(e)}")
-    
+
+    # عرض مربع الشحن خارج النموذج لتجنب StreamlitAPIException
+    if st.session_state.get("show_parcel_topup", False):
+        st.warning(f"⚠️ رصيدك منخفض ({user_wallet:.2f} EGP). هل تريد إضافة رصيد؟")
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            if initiate_wallet_topup and st.button("💳 إضافة رصيد الآن", key="topup_parcel_btn"):
+                initiate_wallet_topup(user_name)
+                st.session_state["show_parcel_topup"] = False
+        with col2:
+            if st.button("إلغاء ✖️", key="cancel_parcel_topup"):
+                st.session_state["show_parcel_topup"] = False
+                st.rerun()
+
     with st.form("parcel_v10"):
         details = st.text_area("Shipment Details & Pickup/Delivery Addresses:")
         
-        # إضافة إحداثيات الخريطة للطرد لحساب المسافة والوقت وعرضها للسائق
         with st.expander("📍 Location Coordinates (GPS) for Map Tracking", expanded=False):
             col_g1, col_g2, col_g3, col_g4 = st.columns(4)
             with col_g1:
@@ -234,7 +246,6 @@ def render_parcels_page(user_name, send_to_firebase, send_system_email, trigger_
             st.info(f"💰 رصيد محفظتك الحالي: **{user_wallet:.2f} EGP**")
         
         if st.form_submit_button("🚀 Post Order to Network") and details.strip():
-            # إنشاء كائن الطلب واستخدام وظائفه للتحقق
             order_obj = ParcelOrder(
                 customer=user_name,
                 details=details.strip(),
@@ -251,21 +262,15 @@ def render_parcels_page(user_name, send_to_firebase, send_system_email, trigger_
             if not is_valid:
                 st.error(error_msg)
             elif payment_method == "💳 فيزا / أونلاين (Paymob)" and user_wallet < price * 0.1:
-                st.warning(f"⚠️ رصيدك منخفض ({user_wallet:.2f} EGP). هل تريد إضافة رصيد؟")
-                if initiate_wallet_topup and st.button("💳 إضافة رصيد الآن"):
-                    initiate_wallet_topup(user_name)
+                st.session_state["show_parcel_topup"] = True
+                st.rerun()
             else:
                 try:
                     payload = order_obj.to_dict()
                     if send_to_firebase("orders", payload):
                         st.session_state["my_active_order_id"] = order_obj.order_id
-                        
-                        # إرسال البريد بصيغة HTML المصممة بواسطة الكائن
                         html_invoice = order_obj.generate_html_email()
-                        send_system_email(
-                            f"New Parcel Order {order_obj.order_id}", 
-                            html_invoice
-                        )
+                        send_system_email(f"New Parcel Order {order_obj.order_id}", html_invoice)
                         st.success(f"🎉 Order posted successfully! Tracking Code: {order_obj.order_id}")
                         if st.session_state.get("audio_notifications_enabled", False):
                             trigger_audio_alert()
@@ -299,6 +304,19 @@ def render_taxi_page(user_name, send_to_firebase, send_system_email, trigger_aud
             active_orders_count = len([o for o in orders if o.get("status") == "Searching for Driver"]) if orders else 0
         except Exception as e:
             logger.warning(f"Could not fetch orders for surge calc: {str(e)}")
+
+    # عرض مربع الشحن خارج النموذج لتجنب StreamlitAPIException
+    if st.session_state.get("show_taxi_topup", False):
+        st.warning(f"⚠️ رصيدك منخفض ({user_wallet:.2f} EGP). هل تريد إضافة رصيد؟")
+        col_t1, col_t2 = st.columns([1, 2])
+        with col_t1:
+            if initiate_wallet_topup and st.button("💳 إضافة رصيد الآن", key="topup_taxi_outside"):
+                initiate_wallet_topup(user_name)
+                st.session_state["show_taxi_topup"] = False
+        with col_t2:
+            if st.button("إلغاء ✖️", key="cancel_topup_taxi"):
+                st.session_state["show_taxi_topup"] = False
+                st.rerun()
 
     with st.form("taxi_v10"):
         start = st.text_input("Pickup Location:")
@@ -348,7 +366,6 @@ def render_taxi_page(user_name, send_to_firebase, send_system_email, trigger_aud
             st.info(f"💰 رصيد محفظتك الحالي: **{user_wallet:.2f} EGP**")
 
         if st.form_submit_button("🚕 Post Ride to Network") and start.strip() and end.strip():
-            # إنشاء كائن التاكسي
             taxi_obj = TaxiOrder(
                 customer=user_name,
                 pickup_loc=start.strip(),
@@ -369,21 +386,15 @@ def render_taxi_page(user_name, send_to_firebase, send_system_email, trigger_aud
             if not is_valid:
                 st.error(error_msg)
             elif payment_method == "💳 فيزا / أونلاين (Paymob)" and user_wallet < price * 0.1:
-                st.warning(f"⚠️ رصيدك منخفض ({user_wallet:.2f} EGP). هل تريد إضافة رصيد؟")
-                if initiate_wallet_topup and st.button("💳 إضافة رصيد الآن", key="topup_taxi"):
-                    initiate_wallet_topup(user_name)
+                st.session_state["show_taxi_topup"] = True
+                st.rerun()
             else:
                 try:
                     payload = taxi_obj.to_dict()
                     if send_to_firebase("orders", payload):
                         st.session_state["my_active_order_id"] = taxi_obj.order_id
-                        
-                        # إرسال البريد بصيغة HTML المنسقة عبر دالة الكائن
                         html_invoice = taxi_obj.generate_html_email()
-                        send_system_email(
-                            f"New Taxi Request {taxi_obj.order_id}", 
-                            html_invoice
-                        )
+                        send_system_email(f"New Taxi Request {taxi_obj.order_id}", html_invoice)
                         st.success(f"🎉 Ride posted successfully! Tracking Code: {taxi_obj.order_id}")
                         if st.session_state.get("audio_notifications_enabled", False):
                             trigger_audio_alert()
