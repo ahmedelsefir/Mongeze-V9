@@ -566,7 +566,7 @@ if st.session_state["current_page"] == "الرئيسية":
         logger.error(f"Error in main page: {str(e)}")
         st.error(t["error_fetch"])
 
-# 2️⃣ بوابة الطرود (تم تمرير ai_engine)
+# 2️⃣ بوابة الطرود
 elif st.session_state["current_page"] == "الطرود":
     render_parcels_page(
         user_name,
@@ -578,7 +578,7 @@ elif st.session_state["current_page"] == "الطرود":
         ai_engine=ask_mongeze_ai,
     )
 
-# 3️⃣ بوابة تاكسي أفراد (تم تمرير ai_engine)
+# 3️⃣ بوابة تاكسي أفراد
 elif st.session_state["current_page"] == "التاكسي":
     render_taxi_page(
         user_name,
@@ -596,7 +596,6 @@ elif st.session_state["current_page"] == "المساعد":
     st.markdown("## 🤖 عقل مُنجز الذكي (AI Agent)")
     st.caption("مساعد الذكاء الاصطناعي المباشر لمنظومة مُنجز لحساب الرحلات والأجرة والدعم المباشر.")
 
-    # صندوق اختبار مفتاح الـ API والربط
     with st.expander("🧪 فحص حالة مفتاح الاتصال بـ Gemini API"):
         if st.button("اختبار الاتصال بالذكاء الاصطناعي"):
             key = get_gemini_api_key()
@@ -610,12 +609,10 @@ elif st.session_state["current_page"] == "المساعد":
 
     st.write("---")
 
-    # عرض المحادثات السابقة
     for msg in st.session_state["ai_messages"]:
         with st.chat_message(msg["role"]):
             st.write(msg["content"])
 
-    # استقبال سؤال أو طلب العميل/السائق
     prompt = st.chat_input("تحدث مع عقل مُنجز أو اسأله عن الأجرة والخدمات...")
     if prompt:
         st.session_state["ai_messages"].append({"role": "user", "content": prompt})
@@ -629,7 +626,7 @@ elif st.session_state["current_page"] == "المساعد":
                 st.write(reply)
                 st.session_state["ai_messages"].append({"role": "assistant", "content": reply})
 
-# 5️⃣ غرفة الدردشة الخاصة (تم تمرير ai_engine)
+# 5️⃣ غرفة الدردشة الخاصة
 elif st.session_state["current_page"] == "الدردشة":
     render_chat_page(
         user_name,
@@ -786,7 +783,7 @@ elif st.session_state["current_page"] == "الإعدادات":
             st.divider()
             render_support_contact()
 
-# لوحة الإدارة (Admin Console - تم تمرير ai_engine)
+# لوحة الإدارة (Admin Console)
 if user_role == "إدارة وموظفين" and st.session_state["current_page"] == "الإعدادات":
     render_admin_kyc_console(
         fetch_from_firebase,
