@@ -16,16 +16,22 @@ logger = logging.getLogger(__name__)
 
 
 # ==============================================================================
-# 📦 1. domain models (الكائنات الهيكلية للمشروع - OOP)
+# 📦 1. DOMAIN MODELS (الكائنات الهيكلية للمشروع - OOP)
 # ==============================================================================
 
 @dataclass
 class ParcelOrder:
-    """كائن يمثل طلب الطرد ويحمل بياناته ووظائف التحقق الخاصة به."""
+    """كائن يمثل طلب الطرد ويحمل بياناته، وظائف التحقق، وتوليد البريد المنسق."""
     customer: str
     details: str
     price: float
     payment_method: str
+    pickup_lat: float = 30.0444
+    pickup_lon: float = 31.2357
+    dest_lat: float = 30.0131
+    dest_lon: float = 31.1089
+    distance_km: Optional[float] = None
+    time_min: Optional[float] = None
     order_id: str = field(default_factory=lambda: f"PRCL-{int(time.time())}")
     status: str = "Searching for Driver"
     driver: str = "Not Assigned"
@@ -38,6 +44,41 @@ class ParcelOrder:
                 return False, f"❌ رصيد محفظتك ({wallet_balance:.2f} EGP) غير كافٍ. الرسوم المطلوبة: {self.price} EGP"
         return True, None
 
+    def generate_html_email(self) -> str:
+        """توليد فاتورة البريد الإلكتروني بلغة HTML وتنسيق احترافي للشحنات."""
+        dist_info = f"{self.distance_km} كم | {self.time_min} دقيقة" if self.distance_km and self.time_min else "حسب المسار"
+        return f"""
+        <div style="font-family: Arial, sans-serif; direction: rtl; text-align: right; background-color: #f9f9f9; padding: 20px;">
+            <div style="max-width: 500px; margin: auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <h2 style="color: #2e7d32; text-align: center;">📦 طلب طرد جديد - مُنجز</h2>
+                <hr style="border: 0; border-top: 1px solid #eee;">
+                
+                <h1 style="font-size: 32px; color: #333; text-align: center;">{self.price:.2f} ج.م.</h1>
+                
+                <div style="background: #f0f4f8; padding: 12px; border-radius: 8px; margin: 15px 0;">
+                    <p style="margin: 5px 0;"><strong>👤 العميل:</strong> {html.escape(self.customer)}</p>
+                    <p style="margin: 5px 0;"><strong>📝 تفاصيل الشحنة والعنوان:</strong> {html.escape(self.details)}</p>
+                    <p style="margin: 5px 0; color: #555;">⏱️ <strong>المسافة والزمن التقديري:</strong> {dist_info}</p>
+                </div>
+
+                <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                    <tr>
+                        <td style="padding: 8px 0; color: #666;">طريقة الدفع:</td>
+                        <td style="padding: 8px 0; text-align: left; font-weight: bold;">{self.payment_method}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #666;">رقم الطلب:</td>
+                        <td style="padding: 8px 0; text-align: left; font-weight: bold;">{self.order_id}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #666;">تاريخ الطلب:</td>
+                        <td style="padding: 8px 0; text-align: left; font-weight: bold;">{self.timestamp}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+        """
+
     def to_dict(self) -> Dict[str, Any]:
         """تحويل الكائن إلى قاموس جاهز للإرسال إلى Firebase."""
         return {
@@ -48,6 +89,12 @@ class ParcelOrder:
             "price": self.price,
             "status": self.status,
             "driver": self.driver,
+            "customer_lat": self.pickup_lat,
+            "customer_lon": self.pickup_lon,
+            "dest_lat": self.dest_lat,
+            "dest_lon": self.dest_lon,
+            "estimated_distance_km": self.distance_km,
+            "estimated_time_min": self.time_min,
             "payment_method": self.payment_method,
             "timestamp": self.timestamp
         }
@@ -55,7 +102,7 @@ class ParcelOrder:
 
 @dataclass
 class TaxiOrder:
-    """كائن يمثل طلب التاكسي ويغلف تفاصيل الرحلة والتسعير."""
+    """كائن يمثل طلب التاكسي ويغلف تفاصيل الرحلة والتسعير وتوليد الفاتورة."""
     customer: str
     pickup_loc: str
     dest_loc: str
@@ -79,6 +126,43 @@ class TaxiOrder:
             if wallet_balance < self.price:
                 return False, f"❌ رصيد محفظتك ({wallet_balance:.2f} EGP) غير كافٍ. الرسوم المطلوبة: {self.price} EGP"
         return True, None
+
+    def generate_html_email(self) -> str:
+        """توليد فاتورة البريد الإلكتروني بلغة HTML وتنسيق احترافي للرحلات."""
+        dist_info = f"{self.distance_km} كم | {self.time_min} دقيقة" if self.distance_km and self.time_min else "غير محدد"
+        surge_text = f" (رسوم الذروة x{self.surge_factor})" if self.surge_factor > 1.0 else ""
+        return f"""
+        <div style="font-family: Arial, sans-serif; direction: rtl; text-align: right; background-color: #f9f9f9; padding: 20px;">
+            <div style="max-width: 500px; margin: auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <h2 style="color: #1565c0; text-align: center;">🚕 طلب مشوار جديد - مُنجز</h2>
+                <hr style="border: 0; border-top: 1px solid #eee;">
+                
+                <h1 style="font-size: 32px; color: #333; text-align: center;">{self.price:.2f} ج.م.{surge_text}</h1>
+                
+                <div style="background: #f0f4f8; padding: 12px; border-radius: 8px; margin: 15px 0;">
+                    <p style="margin: 5px 0;"><strong>👤 الراكب:</strong> {html.escape(self.customer)}</p>
+                    <p style="margin: 5px 0;"><strong>📍 نقطة الانطلاق:</strong> {html.escape(self.pickup_loc)}</p>
+                    <p style="margin: 5px 0;"><strong>🏁 الوجهة:</strong> {html.escape(self.dest_loc)}</p>
+                    <p style="margin: 5px 0; color: #555;">⏱️ <strong>المسافة والزمن التقديري:</strong> {dist_info}</p>
+                </div>
+
+                <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                    <tr>
+                        <td style="padding: 8px 0; color: #666;">طريقة الدفع:</td>
+                        <td style="padding: 8px 0; text-align: left; font-weight: bold;">{self.payment_method}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #666;">رقم الطلب:</td>
+                        <td style="padding: 8px 0; text-align: left; font-weight: bold;">{self.order_id}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #666;">تاريخ الطلب:</td>
+                        <td style="padding: 8px 0; text-align: left; font-weight: bold;">{self.timestamp}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+        """
 
     def to_dict(self) -> Dict[str, Any]:
         """تحويل كائن التاكسي إلى قاموس لـ Firebase."""
@@ -123,6 +207,19 @@ def render_parcels_page(user_name, send_to_firebase, send_system_email, trigger_
     
     with st.form("parcel_v10"):
         details = st.text_area("Shipment Details & Pickup/Delivery Addresses:")
+        
+        # إضافة إحداثيات الخريطة للطرد لحساب المسافة والوقت وعرضها للسائق
+        with st.expander("📍 Location Coordinates (GPS) for Map Tracking", expanded=False):
+            col_g1, col_g2, col_g3, col_g4 = st.columns(4)
+            with col_g1:
+                p_lat = st.number_input("Pickup Lat:", value=30.0444, format="%.4f", key="p_lat")
+            with col_g2:
+                p_lon = st.number_input("Pickup Lon:", value=31.2357, format="%.4f", key="p_lon")
+            with col_g3:
+                d_lat = st.number_input("Dest Lat:", value=30.0131, format="%.4f", key="d_lat")
+            with col_g4:
+                d_lon = st.number_input("Dest Lon:", value=31.1089, format="%.4f", key="d_lon")
+
         price = st.number_input("Estimated Budget (EGP):", min_value=10.0, value=70.0)
         
         st.divider()
@@ -142,7 +239,11 @@ def render_parcels_page(user_name, send_to_firebase, send_system_email, trigger_
                 customer=user_name,
                 details=details.strip(),
                 price=price,
-                payment_method=payment_method
+                payment_method=payment_method,
+                pickup_lat=p_lat,
+                pickup_lon=p_lon,
+                dest_lat=d_lat,
+                dest_lon=d_lon
             )
             
             is_valid, error_msg = order_obj.validate_payment(user_wallet)
@@ -158,9 +259,12 @@ def render_parcels_page(user_name, send_to_firebase, send_system_email, trigger_
                     payload = order_obj.to_dict()
                     if send_to_firebase("orders", payload):
                         st.session_state["my_active_order_id"] = order_obj.order_id
+                        
+                        # إرسال البريد بصيغة HTML المصممة بواسطة الكائن
+                        html_invoice = order_obj.generate_html_email()
                         send_system_email(
                             f"New Parcel Order {order_obj.order_id}", 
-                            f"Customer {user_name} requested parcel delivery worth EGP {price} - Payment: {payment_method}"
+                            html_invoice
                         )
                         st.success(f"🎉 Order posted successfully! Tracking Code: {order_obj.order_id}")
                         if st.session_state.get("audio_notifications_enabled", False):
@@ -273,9 +377,12 @@ def render_taxi_page(user_name, send_to_firebase, send_system_email, trigger_aud
                     payload = taxi_obj.to_dict()
                     if send_to_firebase("orders", payload):
                         st.session_state["my_active_order_id"] = taxi_obj.order_id
+                        
+                        # إرسال البريد بصيغة HTML المنسقة عبر دالة الكائن
+                        html_invoice = taxi_obj.generate_html_email()
                         send_system_email(
                             f"New Taxi Request {taxi_obj.order_id}", 
-                            f"Passenger {user_name} requested ride from {start} to {end} - Payment: {payment_method}"
+                            html_invoice
                         )
                         st.success(f"🎉 Ride posted successfully! Tracking Code: {taxi_obj.order_id}")
                         if st.session_state.get("audio_notifications_enabled", False):
@@ -286,6 +393,10 @@ def render_taxi_page(user_name, send_to_firebase, send_system_email, trigger_aud
                     logger.error(f"Error creating taxi order: {str(e)}")
                     st.error(f"Error: {str(e)}")
 
+
+# ==============================================================================
+# 💬 3. CHAT & SUPPORT FUNCTIONS (دوال الدردشة والدعم الفني)
+# ==============================================================================
 
 def _extract_order_id_from_room(selected_room):
     """Extract order_id from room selection string."""
@@ -563,6 +674,10 @@ def _render_support_banner(order_id, fetch_firebase_raw):
     except Exception as e:
         logger.warning(f"Error checking support status for order {order_id}: {str(e)}")
 
+
+# ==============================================================================
+# 🕵️‍♂️ 4. TRACKING VIEW (شاشة تتبع الطلب للعميل)
+# ==============================================================================
 
 def render_customer_tracking(fetch_from_firebase, get_live_distance_for_order, format_distance_display, **kwargs):
     """Render customer order tracking view with flexible **kwargs."""
