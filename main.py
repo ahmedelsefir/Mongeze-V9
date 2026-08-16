@@ -545,7 +545,7 @@ user_name = st.sidebar.text_input(
 st.session_state["user_name"] = user_name
 
 # ========================================================
-# 🔀 توجيه الشاشات والصفحات
+# 🔀 توجيه الشاشات والصفحات (مُدمج مع عقل مُنجز المركزى)
 # ========================================================
 
 # 1️⃣ الشاشة الرئيسية
@@ -566,19 +566,29 @@ if st.session_state["current_page"] == "الرئيسية":
         logger.error(f"Error in main page: {str(e)}")
         st.error(t["error_fetch"])
 
-# 2️⃣ بوابة الطرود
+# 2️⃣ بوابة الطرود (تم تمرير ai_engine)
 elif st.session_state["current_page"] == "الطرود":
     render_parcels_page(
-        user_name, send_to_firebase, send_system_email, trigger_audio_alert,
-        fetch_user_settings=fetch_user_settings, initiate_wallet_topup=initiate_wallet_topup
+        user_name,
+        send_to_firebase,
+        send_system_email,
+        trigger_audio_alert,
+        fetch_user_settings=fetch_user_settings,
+        initiate_wallet_topup=initiate_wallet_topup,
+        ai_engine=ask_mongeze_ai,
     )
 
-# 3️⃣ بوابة تاكسي أفراد
+# 3️⃣ بوابة تاكسي أفراد (تم تمرير ai_engine)
 elif st.session_state["current_page"] == "التاكسي":
     render_taxi_page(
-        user_name, send_to_firebase, send_system_email, trigger_audio_alert,
-        fetch_from_firebase=fetch_from_firebase, fetch_user_settings=fetch_user_settings,
-        initiate_wallet_topup=initiate_wallet_topup
+        user_name,
+        send_to_firebase,
+        send_system_email,
+        trigger_audio_alert,
+        fetch_from_firebase=fetch_from_firebase,
+        fetch_user_settings=fetch_user_settings,
+        initiate_wallet_topup=initiate_wallet_topup,
+        ai_engine=ask_mongeze_ai,
     )
 
 # 4️⃣ بوابة عقل مُنجز الذكي (AI Agent) 🤖
@@ -619,7 +629,7 @@ elif st.session_state["current_page"] == "المساعد":
                 st.write(reply)
                 st.session_state["ai_messages"].append({"role": "assistant", "content": reply})
 
-# 5️⃣ غرفة الدردشة الخاصة
+# 5️⃣ غرفة الدردشة الخاصة (تم تمرير ai_engine)
 elif st.session_state["current_page"] == "الدردشة":
     render_chat_page(
         user_name,
@@ -629,6 +639,7 @@ elif st.session_state["current_page"] == "الدردشة":
         update_firebase_node=update_firebase_node,
         log_accounting_entry=log_accounting_entry,
         fetch_firebase_raw=fetch_firebase_raw,
+        ai_engine=ask_mongeze_ai,
     )
 
 # 6️⃣ رادار تتبع الحالات
@@ -775,16 +786,20 @@ elif st.session_state["current_page"] == "الإعدادات":
             st.divider()
             render_support_contact()
 
-# لوحة الإدارة (Admin Console)
+# لوحة الإدارة (Admin Console - تم تمرير ai_engine)
 if user_role == "إدارة وموظفين" and st.session_state["current_page"] == "الإعدادات":
     render_admin_kyc_console(
-        fetch_from_firebase, update_driver_verification_status, send_system_email
+        fetch_from_firebase,
+        update_driver_verification_status,
+        send_system_email,
+        ai_engine=ask_mongeze_ai,
     )
     render_commission_engine(
         fetch_from_firebase,
         update_firebase_node,
         credit_driver_wallet,
         log_accounting_entry,
+        ai_engine=ask_mongeze_ai,
     )
 
 # زر التحديث اليدوي الموحد
