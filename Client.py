@@ -1,24 +1,118 @@
 """
 Client.py - Customer-facing views for the Monjez platform.
 Contains: Parcels, Taxi, Customer Chat, and Customer Tracking views.
-All views are imported and rendered from main.py.
+Refactored with Object-Oriented Principles (OOP) and Flexible Signatures.
 """
 
 import html
-import streamlit as st
-from datetime import datetime
 import time
 import logging
+from datetime import datetime
+from dataclasses import dataclass, field
+from typing import Optional, Dict, Any
+import streamlit as st
 
 logger = logging.getLogger(__name__)
 
 
+# ==============================================================================
+# 📦 1. domain models (الكائنات الهيكلية للمشروع - OOP)
+# ==============================================================================
+
+@dataclass
+class ParcelOrder:
+    """كائن يمثل طلب الطرد ويحمل بياناته ووظائف التحقق الخاصة به."""
+    customer: str
+    details: str
+    price: float
+    payment_method: str
+    order_id: str = field(default_factory=lambda: f"PRCL-{int(time.time())}")
+    status: str = "Searching for Driver"
+    driver: str = "Not Assigned"
+    timestamp: str = field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+    def validate_payment(self, wallet_balance: float) -> tuple[bool, Optional[str]]:
+        """دالة داخل الكائن للتحقق من سلامة عملية الدفع."""
+        if self.payment_method == "👛 خصم من رصيد المحفظة":
+            if wallet_balance < self.price:
+                return False, f"❌ رصيد محفظتك ({wallet_balance:.2f} EGP) غير كافٍ. الرسوم المطلوبة: {self.price} EGP"
+        return True, None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """تحويل الكائن إلى قاموس جاهز للإرسال إلى Firebase."""
+        return {
+            "order_id": self.order_id,
+            "type": "Parcel Delivery",
+            "customer": self.customer,
+            "details": self.details,
+            "price": self.price,
+            "status": self.status,
+            "driver": self.driver,
+            "payment_method": self.payment_method,
+            "timestamp": self.timestamp
+        }
+
+
+@dataclass
+class TaxiOrder:
+    """كائن يمثل طلب التاكسي ويغلف تفاصيل الرحلة والتسعير."""
+    customer: str
+    pickup_loc: str
+    dest_loc: str
+    price: float
+    payment_method: str
+    pickup_lat: float
+    pickup_lon: float
+    dest_lat: float
+    dest_lon: float
+    distance_km: Optional[float] = None
+    time_min: Optional[float] = None
+    surge_factor: float = 1.0
+    order_id: str = field(default_factory=lambda: f"TAXI-{int(time.time())}")
+    status: str = "Searching for Driver"
+    driver: str = "Not Assigned"
+    timestamp: str = field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+    def validate_payment(self, wallet_balance: float) -> tuple[bool, Optional[str]]:
+        """دالة للتحقق من رصيد المحفظة للتاكسي."""
+        if self.payment_method == "👛 خصم من رصيد المحفظة":
+            if wallet_balance < self.price:
+                return False, f"❌ رصيد محفظتك ({wallet_balance:.2f} EGP) غير كافٍ. الرسوم المطلوبة: {self.price} EGP"
+        return True, None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """تحويل كائن التاكسي إلى قاموس لـ Firebase."""
+        return {
+            "order_id": self.order_id,
+            "type": "Taxi Ride",
+            "customer": self.customer,
+            "from": self.pickup_loc,
+            "to": self.dest_loc,
+            "price": self.price,
+            "status": self.status,
+            "driver": self.driver,
+            "customer_lat": self.pickup_lat,
+            "customer_lon": self.pickup_lon,
+            "dest_lat": self.dest_lat,
+            "dest_lon": self.dest_lon,
+            "estimated_distance_km": self.distance_km,
+            "estimated_time_min": self.time_min,
+            "surge_factor": self.surge_factor,
+            "payment_method": self.payment_method,
+            "timestamp": self.timestamp
+        }
+
+
+# ==============================================================================
+# 🎨 2. CUSTOMER VIEWS (شاشات العميل بواجهة Streamlit)
+# ==============================================================================
+
 def render_parcels_page(user_name, send_to_firebase, send_system_email, trigger_audio_alert,
-                       fetch_user_settings=None, initiate_wallet_topup=None):
-    """Render the parcels ordering page for customers with payment method selection."""
+                       fetch_user_settings=None, initiate_wallet_topup=None, **kwargs):
+    """Render the parcels ordering page with flexible **kwargs to prevent TypeError."""
     st.markdown("## 📦 Parcel Shipment Center")
     
-    # Fetch user wallet balance
+    # جلب رصيد المحفظة
     user_wallet = 0.0
     if fetch_user_settings:
         try:
@@ -32,8 +126,6 @@ def render_parcels_page(user_name, send_to_firebase, send_system_email, trigger_
         price = st.number_input("Estimated Budget (EGP):", min_value=10.0, value=70.0)
         
         st.divider()
-        
-        # Payment Method Selection
         st.markdown("### 💳 Payment Method")
         payment_method = st.radio(
             "طريقة الدفع المفضلة:",
@@ -41,48 +133,36 @@ def render_parcels_page(user_name, send_to_firebase, send_system_email, trigger_
             horizontal=False
         )
         
-        # Display wallet balance if wallet payment is selected
         if payment_method == "👛 خصم من رصيد المحفظة":
             st.info(f"💰 رصيد محفظتك الحالي: **{user_wallet:.2f} EGP**")
         
         if st.form_submit_button("🚀 Post Order to Network") and details.strip():
-            # Validation Logic
-            payment_valid = True
-            error_msg = None
+            # إنشاء كائن الطلب واستخدام وظائفه للتحقق
+            order_obj = ParcelOrder(
+                customer=user_name,
+                details=details.strip(),
+                price=price,
+                payment_method=payment_method
+            )
             
-            if payment_method == "👛 خصم من رصيد المحفظة":
-                if user_wallet < price:
-                    payment_valid = False
-                    error_msg = f"❌ رصيد محفظتك ({user_wallet:.2f} EGP) غير كافٍ. الرسوم المطلوبة: {price} EGP"
+            is_valid, error_msg = order_obj.validate_payment(user_wallet)
             
-            if not payment_valid:
+            if not is_valid:
                 st.error(error_msg)
             elif payment_method == "💳 فيزا / أونلاين (Paymob)" and user_wallet < price * 0.1:
-                # Suggest topup if balance is very low for online payment
                 st.warning(f"⚠️ رصيدك منخفض ({user_wallet:.2f} EGP). هل تريد إضافة رصيد؟")
                 if initiate_wallet_topup and st.button("💳 إضافة رصيد الآن"):
                     initiate_wallet_topup(user_name)
             else:
                 try:
-                    order_id = f"PRCL-{int(time.time())}"
-                    payload = {
-                        "order_id": order_id, 
-                        "type": "Parcel Delivery", 
-                        "customer": user_name,
-                        "details": details.strip(), 
-                        "price": price, 
-                        "status": "Searching for Driver",
-                        "driver": "Not Assigned", 
-                        "payment_method": payment_method,
-                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    }
+                    payload = order_obj.to_dict()
                     if send_to_firebase("orders", payload):
-                        st.session_state["my_active_order_id"] = order_id
+                        st.session_state["my_active_order_id"] = order_obj.order_id
                         send_system_email(
-                            f"New Parcel Order {order_id}", 
+                            f"New Parcel Order {order_obj.order_id}", 
                             f"Customer {user_name} requested parcel delivery worth EGP {price} - Payment: {payment_method}"
                         )
-                        st.success(f"🎉 Order posted successfully! Tracking Code: {order_id}")
+                        st.success(f"🎉 Order posted successfully! Tracking Code: {order_obj.order_id}")
                         if st.session_state.get("audio_notifications_enabled", False):
                             trigger_audio_alert()
                     else:
@@ -93,13 +173,12 @@ def render_parcels_page(user_name, send_to_firebase, send_system_email, trigger_
 
 
 def render_taxi_page(user_name, send_to_firebase, send_system_email, trigger_audio_alert,
-                     fetch_from_firebase=None, fetch_user_settings=None, initiate_wallet_topup=None):
-    """Render the taxi ordering page for customers with dynamic fare estimation and payment selection."""
+                     fetch_from_firebase=None, fetch_user_settings=None, initiate_wallet_topup=None, **kwargs):
+    """Render the taxi ordering page with dynamic fare estimation and flexible **kwargs."""
     from pricing_engine import estimate_trip
 
     st.markdown("## 🚕 Taxi Ride Request Center")
 
-    # Fetch user wallet balance
     user_wallet = 0.0
     if fetch_user_settings:
         try:
@@ -108,7 +187,6 @@ def render_taxi_page(user_name, send_to_firebase, send_system_email, trigger_aud
         except Exception as e:
             logger.warning(f"Could not fetch wallet balance: {str(e)}")
 
-    # Live supply/demand counts for surge pricing
     active_orders_count = 0
     available_drivers_count = 0
     if fetch_from_firebase:
@@ -124,15 +202,14 @@ def render_taxi_page(user_name, send_to_firebase, send_system_email, trigger_aud
 
         col_gps1, col_gps2, col_gps3, col_gps4 = st.columns(4)
         with col_gps1:
-            pickup_lat = st.number_input("Pickup Latitude:", value=30.0444, format="%.4f", help="Cairo default")
+            pickup_lat = st.number_input("Pickup Latitude:", value=30.0444, format="%.4f")
         with col_gps2:
-            pickup_lon = st.number_input("Pickup Longitude:", value=31.2357, format="%.4f", help="Cairo default")
+            pickup_lon = st.number_input("Pickup Longitude:", value=31.2357, format="%.4f")
         with col_gps3:
             dest_lat = st.number_input("Destination Latitude:", value=30.0131, format="%.4f")
         with col_gps4:
             dest_lon = st.number_input("Destination Longitude:", value=31.1089, format="%.4f")
 
-        # Dynamic fare estimate preview (live, before submit)
         estimate = estimate_trip(
             pickup_lat, pickup_lon, dest_lat, dest_lon,
             active_orders=active_orders_count,
@@ -152,16 +229,9 @@ def render_taxi_page(user_name, send_to_firebase, send_system_email, trigger_aud
             st.warning("⚠️ Invalid coordinates — cannot estimate fare.")
             suggested_price = 120.0
 
-        price = st.number_input(
-            "Offered Fare (EGP):",
-            min_value=10.0,
-            value=suggested_price,
-            help="Auto-calculated from distance, time, and current demand. You can adjust your offer.",
-        )
+        price = st.number_input("Offered Fare (EGP):", min_value=10.0, value=suggested_price)
 
         st.divider()
-        
-        # Payment Method Selection
         st.markdown("### 💳 Payment Method")
         payment_method = st.radio(
             "طريقة الدفع المفضلة:",
@@ -170,56 +240,44 @@ def render_taxi_page(user_name, send_to_firebase, send_system_email, trigger_aud
             key="taxi_payment"
         )
         
-        # Display wallet balance if wallet payment is selected
         if payment_method == "👛 خصم من رصيد المحفظة":
             st.info(f"💰 رصيد محفظتك الحالي: **{user_wallet:.2f} EGP**")
 
         if st.form_submit_button("🚕 Post Ride to Network") and start.strip() and end.strip():
-            # Validation Logic
-            payment_valid = True
-            error_msg = None
-            
-            if payment_method == "👛 خصم من رصيد المحفظة":
-                if user_wallet < price:
-                    payment_valid = False
-                    error_msg = f"❌ رصيد محفظتك ({user_wallet:.2f} EGP) غير كافٍ. الرسوم المطلوبة: {price} EGP"
-            
-            if not payment_valid:
+            # إنشاء كائن التاكسي
+            taxi_obj = TaxiOrder(
+                customer=user_name,
+                pickup_loc=start.strip(),
+                dest_loc=end.strip(),
+                price=price,
+                payment_method=payment_method,
+                pickup_lat=float(pickup_lat),
+                pickup_lon=float(pickup_lon),
+                dest_lat=float(dest_lat),
+                dest_lon=float(dest_lon),
+                distance_km=estimate["distance_km"] if estimate else None,
+                time_min=estimate["time_minutes"] if estimate else None,
+                surge_factor=estimate["surge_factor"] if estimate else 1.0
+            )
+
+            is_valid, error_msg = taxi_obj.validate_payment(user_wallet)
+
+            if not is_valid:
                 st.error(error_msg)
             elif payment_method == "💳 فيزا / أونلاين (Paymob)" and user_wallet < price * 0.1:
-                # Suggest topup if balance is very low for online payment
                 st.warning(f"⚠️ رصيدك منخفض ({user_wallet:.2f} EGP). هل تريد إضافة رصيد؟")
                 if initiate_wallet_topup and st.button("💳 إضافة رصيد الآن", key="topup_taxi"):
                     initiate_wallet_topup(user_name)
             else:
                 try:
-                    order_id = f"TAXI-{int(time.time())}"
-                    payload = {
-                        "order_id": order_id, 
-                        "type": "Taxi Ride", 
-                        "customer": user_name,
-                        "from": start.strip(), 
-                        "to": end.strip(), 
-                        "price": price, 
-                        "status": "Searching for Driver",
-                        "driver": "Not Assigned",
-                        "customer_lat": float(pickup_lat),
-                        "customer_lon": float(pickup_lon),
-                        "dest_lat": float(dest_lat),
-                        "dest_lon": float(dest_lon),
-                        "estimated_distance_km": estimate["distance_km"] if estimate else None,
-                        "estimated_time_min": estimate["time_minutes"] if estimate else None,
-                        "surge_factor": estimate["surge_factor"] if estimate else 1.0,
-                        "payment_method": payment_method,
-                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    }
+                    payload = taxi_obj.to_dict()
                     if send_to_firebase("orders", payload):
-                        st.session_state["my_active_order_id"] = order_id
+                        st.session_state["my_active_order_id"] = taxi_obj.order_id
                         send_system_email(
-                            f"New Taxi Request {order_id}", 
+                            f"New Taxi Request {taxi_obj.order_id}", 
                             f"Passenger {user_name} requested ride from {start} to {end} - Payment: {payment_method}"
                         )
-                        st.success(f"🎉 Ride posted successfully! Tracking Code: {order_id}")
+                        st.success(f"🎉 Ride posted successfully! Tracking Code: {taxi_obj.order_id}")
                         if st.session_state.get("audio_notifications_enabled", False):
                             trigger_audio_alert()
                     else:
@@ -230,12 +288,11 @@ def render_taxi_page(user_name, send_to_firebase, send_system_email, trigger_aud
 
 
 def _extract_order_id_from_room(selected_room):
-    """Extract order_id from room selection string like 'Order Chat TAXI-123456 - Customer: ...'."""
+    """Extract order_id from room selection string."""
     try:
         if "Order Chat" in selected_room:
             part = selected_room.split("Order Chat")[1].strip()
-            order_id = part.split(" - ")[0].strip()
-            return order_id
+            return part.split(" - ")[0].strip()
     except Exception:
         pass
     return None
@@ -245,26 +302,13 @@ def _find_order_by_id(orders, order_id):
     """Find an order dict from the orders list by order_id."""
     if not orders or not order_id:
         return None
-    for o in orders:
-        if o.get("order_id") == order_id:
-            return o
-    return None
+    return next((o for o in orders if o.get("order_id") == order_id), None)
 
 
 def render_chat_page(user_name, user_role, send_to_firebase, fetch_from_firebase,
                      update_firebase_node=None, log_accounting_entry=None,
-                     fetch_firebase_raw=None):
-    """Render the chat rooms page with three-dot menu for order actions.
-
-    Args:
-        user_name: The current user's display name.
-        user_role: The current user's role (Customer, Driver, Admin).
-        send_to_firebase: Callable to POST data to a Firebase node.
-        fetch_from_firebase: Callable to GET data from a Firebase node.
-        update_firebase_node: Callable to PATCH a Firebase node (for status updates).
-        log_accounting_entry: Callable to log accounting ledger entries.
-        fetch_firebase_raw: Callable to GET raw JSON from a Firebase node (flat objects).
-    """
+                     fetch_firebase_raw=None, **kwargs):
+    """Render the chat rooms page with flexible **kwargs."""
     st.markdown("## 💬 Live Chat & Unified Communication")
     try:
         orders = fetch_from_firebase("orders")
@@ -280,12 +324,10 @@ def render_chat_page(user_name, user_role, send_to_firebase, fetch_from_firebase
         selected_room = st.selectbox("🎯 Select Active Chat Channel:", room_options)
         clean_room = selected_room.replace(" ", "_").replace(":", "_").replace("-", "_")
 
-        # Extract order_id from the selected room for contextual actions
         current_order_id = _extract_order_id_from_room(selected_room)
         current_order = _find_order_by_id(orders, current_order_id) if current_order_id else None
         is_order_room = current_order_id is not None
 
-        # ── Three-Dot Menu (More Options) ──────────────────────────
         if is_order_room:
             _render_chat_actions_menu(
                 user_name=user_name,
@@ -298,12 +340,8 @@ def render_chat_page(user_name, user_role, send_to_firebase, fetch_from_firebase
                 update_firebase_node=update_firebase_node,
                 log_accounting_entry=log_accounting_entry,
             )
-
-        # ── Live Support Banner ────────────────────────────────────
-        if is_order_room:
             _render_support_banner(current_order_id, fetch_firebase_raw)
 
-        # ── Chat Message Input ─────────────────────────────────────
         with st.form("chat_form_v10", clear_on_submit=True):
             msg_text = st.text_input("📝 Type your message:")
             if st.form_submit_button("💬 Send Message") and msg_text.strip():
@@ -317,7 +355,6 @@ def render_chat_page(user_name, user_role, send_to_firebase, fetch_from_firebase
                     logger.error(f"Error sending chat message: {str(chat_error)}")
                     st.error("❌ Failed to send message")
 
-        # ── Live Messages ──────────────────────────────────────────
         try:
             chats = fetch_from_firebase(f"private_chats/{clean_room}")
             if chats and len(chats) > 0:
@@ -345,12 +382,7 @@ def render_chat_page(user_name, user_role, send_to_firebase, fetch_from_firebase
 def _render_chat_actions_menu(user_name, user_role, order_id, order_data,
                               clean_room, send_to_firebase, fetch_from_firebase,
                               update_firebase_node, log_accounting_entry):
-    """Render the three-dot contextual menu at the top of the chat box.
-
-    Provides two actions:
-    1. Cancel Order — prompts confirmation, updates Firebase status, closes chat, logs ledger.
-    2. Get Support — opens a parallel support sub-channel tagging admin staff.
-    """
+    """Render the three-dot contextual menu at the top of the chat box."""
     try:
         order_status = order_data.get("status", "") if order_data else ""
         is_cancelled = order_status == "Cancelled"
@@ -361,7 +393,6 @@ def _render_chat_actions_menu(user_name, user_role, order_id, order_data,
                 st.caption(f"Current Status: {order_status}")
             st.divider()
 
-            # ── Action 1: Cancel Order ─────────────────────────────
             st.markdown("##### ❌ Cancel Order")
             if is_cancelled:
                 st.info("This order is already cancelled.")
@@ -382,11 +413,9 @@ def _render_chat_actions_menu(user_name, user_role, order_id, order_data,
 
             st.divider()
 
-            # ── Action 2: Get Support ──────────────────────────────
             st.markdown("##### 🚨 Request Support")
             st.caption("Opens an immediate support channel and notifies the admin team.")
-            if st.button("📞 Call Support Now", key="request_support",
-                         use_container_width=True):
+            if st.button("📞 Call Support Now", key="request_support", use_container_width=True):
                 _handle_request_support(
                     user_name=user_name,
                     user_role=user_role,
@@ -410,7 +439,6 @@ def _handle_cancel_order(user_name, user_role, order_id, order_data,
             st.error("❌ Cannot find order data in database.")
             return
 
-        # 1. Update order status to Cancelled in Firebase
         if update_firebase_node:
             success = update_firebase_node(f"orders/{db_id}", {
                 "status": "Cancelled",
@@ -425,7 +453,6 @@ def _handle_cancel_order(user_name, user_role, order_id, order_data,
             st.warning("⚠️ Database update service is currently unavailable.")
             return
 
-        # 2. Log cancellation in the accounting ledger
         if log_accounting_entry:
             log_accounting_entry(order_id, {
                 "event": "order_cancelled",
@@ -436,7 +463,6 @@ def _handle_cancel_order(user_name, user_role, order_id, order_data,
                 "reason": "Cancelled from chat",
             })
 
-        # 3. Post a system message in the chat room
         try:
             send_to_firebase(f"private_chats/{clean_room}", {
                 "role": "System",
@@ -447,7 +473,6 @@ def _handle_cancel_order(user_name, user_role, order_id, order_data,
         except Exception as msg_err:
             logger.warning(f"Failed to post cancellation chat message: {str(msg_err)}")
 
-        # 4. Clear active order tracking if this was the user's active order
         if st.session_state.get("my_active_order_id") == order_id:
             st.session_state["my_active_order_id"] = None
 
@@ -465,7 +490,6 @@ def _handle_request_support(user_name, user_role, order_id, clean_room,
     try:
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # 1. Create/update the support flag node under chats/{order_id}
         support_node = f"chats/{order_id}/support_request"
         support_data = {
             "active": True,
@@ -484,7 +508,6 @@ def _handle_request_support(user_name, user_role, order_id, clean_room,
             st.warning("⚠️ Database update service is currently unavailable.")
             return
 
-        # 2. Post initial support message in the sub-channel
         support_chat_node = f"chats/{order_id}/support_messages"
         try:
             send_to_firebase(support_chat_node, {
@@ -496,7 +519,6 @@ def _handle_request_support(user_name, user_role, order_id, clean_room,
         except Exception as msg_err:
             logger.warning(f"Failed to post initial support message: {str(msg_err)}")
 
-        # 3. Post a notification message in the main chat room
         try:
             send_to_firebase(f"private_chats/{clean_room}", {
                 "role": "System",
@@ -516,11 +538,7 @@ def _handle_request_support(user_name, user_role, order_id, clean_room,
 
 
 def _render_support_banner(order_id, fetch_firebase_raw):
-    """Show a live support banner if a support request is active for this order.
-
-    Visible to all participants (customer, driver, admin) so everyone knows
-    support staff have been tagged.
-    """
+    """Show a live support banner if a support request is active for this order."""
     if not fetch_firebase_raw:
         return
     try:
@@ -546,8 +564,8 @@ def _render_support_banner(order_id, fetch_firebase_raw):
         logger.warning(f"Error checking support status for order {order_id}: {str(e)}")
 
 
-def render_customer_tracking(fetch_from_firebase, get_live_distance_for_order, format_distance_display):
-    """Render customer order tracking view."""
+def render_customer_tracking(fetch_from_firebase, get_live_distance_for_order, format_distance_display, **kwargs):
+    """Render customer order tracking view with flexible **kwargs."""
     st.subheader("🕵️‍♂️ Track Your Current Order:")
     orders = fetch_from_firebase("orders")
     my_order = None
@@ -562,7 +580,6 @@ def render_customer_tracking(fetch_from_firebase, get_live_distance_for_order, f
             distance_text = format_distance_display(distance)
             st.metric(label="Live Distance to Driver", value=distance_text)
         
-        # Display payment method badge
         payment_method = my_order.get("payment_method", "Unknown")
         st.markdown(f"**💳 نوع الدفع:** {payment_method}")
         st.metric(label="Fare Amount", value=f"EGP {my_order.get('price')}")
