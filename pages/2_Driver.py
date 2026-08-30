@@ -2,6 +2,7 @@ import html as html_mod
 import requests
 import time
 import streamlit as st
+import streamlit.components.v1 as components
 from firebase_admin import firestore
 from firebase_helpers import init_firestore
 from utils import send_monjez_email
@@ -95,7 +96,6 @@ with driver_tabs[0]:
     st.markdown(f"#### 📥 طلبات الميدان المتاحة لـ {role_title}")
     
     if db:
-        # جلب الطلبات بانتظار سائق/مندوب
         live_orders = db.collection("orders").where("status", "in", ["processing", "معلق - بانتظار سائق"]).stream()
         order_count = 0
         
@@ -104,11 +104,10 @@ with driver_tabs[0]:
             o_id = doc.id
             service_type = o_data.get("service_type", "")
             
-            # فلترة طلبات المندوب (موتوسيكل/طرود) عن طلبات السائق (تاكسي/ملاكي)
             if is_courier and service_type in ["standard_ride", "comfort_ride"]:
-                continue  # المندوب يتخطى طلبات التاكسي
+                continue
             elif not is_courier and service_type == "express_bike":
-                continue  # سائق التاكسي يتخطى طلبات الطرود الصغرى
+                continue
 
             order_count += 1
             badge_color = "#D97706" if is_courier else "#2563EB"
@@ -166,19 +165,15 @@ with driver_tabs[1]:
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # مرحلة 1: استلام الطلب
                 if status == "🚖 جاري الاستلام":
                     if st.button("📦 تم استلام العميل/الشحنة والتحرك", key=f"status_btn_pickup_{m_id}", use_container_width=True):
                         db.collection("orders").document(m_id).update({"status": "🚚 جاري التوصيل"})
                         st.rerun()
                         
-                # مرحلة 2: إنهاء التوصيل وإرسال الفاتورة
                 elif status == "🚚 جاري التوصيل":
                     if st.button("🏁 إنهاء وتسليم الطلب بنجاح للوجهة", key=f"status_btn_deliver_{m_id}", use_container_width=True):
-                        # تحديث الفايربيز
                         db.collection("orders").document(m_id).update({"status": "✅ في انتظار تقييم الطرفين"})
                         
-                        # إرسال الفاتورة الرسمية للعميل بريدياً
                         invoice_html = f"""
                         <div style="direction: rtl; text-align: right; font-family: sans-serif; border: 2px solid #10B981; padding: 20px; border-radius: 10px;">
                             <h2 style="color: #10B981;">📋 فاتورة معتمدة من منصة مُنجز 2026</h2>
@@ -198,7 +193,6 @@ with driver_tabs[1]:
                         st.success("🎯 تم إنهاء المشوار وإرسال الفاتورة الإلكترونية للعميل بنجاح!")
                         st.rerun()
                         
-                # مرحلة 3: التقييم وإغلاق المعاملة
                 elif status == "✅ في انتظار تقييم الطرفين":
                     st.warning("🏁 الرحلة وصلت. فضلاً قيّم العميل لإغلاق الحساب وتقييد العمولات:")
                     rating = st.slider("⭐ تقييم سلوك العميل:", 1, 5, 5, key=f"slider_rating_{m_id}")
@@ -224,11 +218,16 @@ with driver_tabs[2]:
     
     if st.button("💳 بدء عملية الدفع والشحن عبر Paymob", use_container_width=True):
         try:
+            # 1. المصادقة واستخراج الـ Auth Token
             api_key = st.secrets["paymob"]["PAYMOB_API_KEY"]
+            integration_id = st.secrets["paymob"].get("PAYMOB_INTEGRATION_ID")
+            iframe_id = st.secrets["paymob"].get("PAYMOB_IFRAME_ID")
+
             auth_res = requests.post("https://accept.paymob.com/api/auth/tokens", json={"api_key": api_key})
             auth_res.raise_for_status()
             auth_token = auth_res.json().get("token")
             
+            # 2. إنشاء الطلب لدى Paymob
             order_res = requests.post(
                 "https://accept.paymob.com/api/ecommerce/orders",
                 json={
@@ -240,9 +239,59 @@ with driver_tabs[2]:
                 }
             )
             order_res.raise_for_status()
-            st.success("✅ تم الاتصال بـ Paymob وإنشاء المعاملة المباشرة للشحن بنجاح!")
+            order_id = order_res.json().get("id")
+
+            # 3. استخراج مفتاح الدفع (Payment Key)
+            first_name = DRIVER_NAME.split()[0] if DRIVER_NAME else "Driver"
+            last_name = DRIVER_NAME.split()[-1] if len(DRIVER_NAME.split()) > 1 else "Monjez"
+
+            payment_key_res = requests.post(
+                "https://accept.paymob.com/api/acceptance/payment_keys",
+                json={
+                    "auth_token": auth_token,
+                    "amount_cents": str(int(topup_amount * 100)),
+                    "expiration": 3600,
+                    "order_id": order_id,
+                    "billing_data": {
+                        "first_name": first_name,
+                        "last_name": last_name,
+                        "email": "driver@monjez.online",
+                        "phone_number": DRIVER_PHONE,
+                        "apartment": "NA", "floor": "NA", "street": "NA",
+                        "building": "NA", "shipping_method": "NA", "postal_code": "NA",
+                        "city": "Cairo", "country": "EGP", "state": "Cairo"
+                    },
+                    "currency": "EGP",
+                    "integration_id": int(integration_id)
+                }
+            )
+            payment_key_res.raise_for_status()
+            payment_token = payment_key_res.json().get("token")
+
+            # 4. حفظ رابط الدفع لعرض الـ Iframe
+            st.session_state["paymob_iframe_url"] = f"https://accept.paymob.com/api/acceptance/iframes/{iframe_id}?token={payment_token}"
+            st.success("✅ تم التجهيز بنجاح! أدخل بيانات البطاقة أدناه لإتمام الشحن:")
+
         except Exception as e:
             st.error(f"❌ خطأ في عملية الشحن: {e}")
+
+    # --- 🖥️ عرض شاشة البطاقة المباشرة داخل التطبيق ---
+    if "paymob_iframe_url" in st.session_state:
+        st.markdown("---")
+        st.markdown("##### 🔒 بوابة الدفع الآمنة (أدخل بيانات البطاقة)")
+        
+        components.html(
+            f"""
+            <iframe 
+                src="{st.session_state['paymob_iframe_url']}" 
+                width="100%" 
+                height="650" 
+                frameborder="0" 
+                allow="geolocation">
+            </iframe>
+            """,
+            height=670
+        )
 
     st.markdown("---")
     st.markdown("#### 🛠️ مركز المساعدة والدعم المباشر")
