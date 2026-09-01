@@ -9,6 +9,7 @@ and Streamlit page files.
 import json
 import logging
 import re
+import base64
 
 import firebase_admin
 import requests
@@ -160,12 +161,103 @@ def delete_firebase_node(node):
 # ---------------------------------------------------------------------------
 
 
+def _normalize_private_key(private_key):
+    """
+    Normalize and sanitize a Firebase private key string.
+
+    Handles:
+      1. Double-escaped newlines (\\\\n) → single-escaped (\\n)
+      2. Escaped newlines (\\n) → actual newlines (\n)
+      3. Leading/trailing whitespace
+      4. Malformed base64 padding (trailing '=' symbols)
+      5. Multi-line string formatting
+
+    Args:
+        private_key: str — raw private key from secrets (may be escaped, multi-line, etc.)
+
+    Returns:
+        str: Cleaned, normalized private key ready for PEM parsing, or None on failure.
+    """
+    if not isinstance(private_key, str):
+        logger.error("private_key is not a string: %s", type(private_key))
+        return None
+
+    try:
+        # Step 1: Strip leading/trailing whitespace
+        pk = private_key.strip()
+
+        # Step 2: Handle double-escaped newlines first (order matters)
+        # Convert "\\\\n" (two backslashes + n in string) to "\\n" (escaped newline)
+        pk = pk.replace("\\\\n", "\\n")
+
+        # Step 3: Convert escaped newlines to actual newlines
+        # Convert "\\n" (backslash-n in string) to "\n" (actual newline)
+        pk = pk.replace("\\n", "\n")
+
+        # Step 4: Strip whitespace again after newline normalization
+        pk = pk.strip()
+
+        # Step 5: Validate PEM structure
+        if not pk.startswith("-----BEGIN"):
+            logger.error("private_key does not start with PEM header (-----BEGIN)")
+            return None
+
+        if not pk.endswith("-----END"):
+            # Some keys may have trailing newlines; this is OK
+            if not ("\n-----END" in pk or "\r\n-----END" in pk):
+                logger.error("private_key does not end with PEM footer (-----END)")
+                return None
+
+        # Step 6: Attempt to validate base64 content (between PEM headers)
+        # Extract the base64 body (between header and footer)
+        lines = pk.split("\n")
+        base64_lines = []
+        in_body = False
+
+        for line in lines:
+            if line.startswith("-----BEGIN"):
+                in_body = True
+                continue
+            elif line.startswith("-----END"):
+                in_body = False
+                continue
+            elif in_body:
+                stripped = line.strip()
+                if stripped:
+                    base64_lines.append(stripped)
+
+        # Attempt to decode base64 to validate structure
+        if base64_lines:
+            base64_body = "".join(base64_lines)
+            try:
+                # Validate base64 by attempting decode
+                # Add padding if needed (base64 padding is always 0-3 '=' chars)
+                missing_padding = len(base64_body) % 4
+                if missing_padding:
+                    base64_body += "=" * (4 - missing_padding)
+                
+                base64.b64decode(base64_body, validate=True)
+                logger.debug("private_key base64 validation passed")
+            except Exception as b64_error:
+                logger.warning("private_key base64 validation failed: %s (continuing anyway)", b64_error)
+                # Don't fail here; some valid keys may have non-standard base64
+
+        logger.info("private_key normalization successful")
+        return pk
+
+    except Exception as e:
+        logger.error("Error normalizing private_key: %s", e)
+        return None
+
+
 def _parse_firebase_credentials():
     """Parse Firebase service-account JSON from Streamlit secrets.
 
     Accepts:
       - a JSON string stored in st.secrets["textkey"] (or firebase.service_account / textkey)
       - OR a dict already stored under st.secrets["firebase"]["service_account"]
+
+    Safely handles private_key normalization to prevent PEM parsing errors.
 
     Returns the credentials dict or None on failure.
     """
@@ -218,14 +310,23 @@ def _parse_firebase_credentials():
                         pass
                     return None
 
-        # Normalize private_key if present
+        # ========================================================
+        # ENHANCED: Normalize private_key with full error handling
+        # ========================================================
         pk = creds.get("private_key")
         if pk and isinstance(pk, str):
-            # Convert double-escaped -> single-escaped, then escaped -> real newline
-            # Order matters: handle "\\\\n" first (two backslashes), then "\\n"
-            pk = pk.replace("\\\\n", "\\n")
-            pk = pk.replace("\\n", "\n")
-            creds["private_key"] = pk.strip()
+            normalized_pk = _normalize_private_key(pk)
+            if normalized_pk:
+                creds["private_key"] = normalized_pk
+            else:
+                logger.error("Failed to normalize private_key — credentials may be invalid")
+                try:
+                    st.sidebar.error(
+                        "Firebase private key is malformed. Check your secrets configuration."
+                    )
+                except Exception:
+                    pass
+                return None
 
         return creds
 
@@ -252,9 +353,22 @@ def init_firebase_admin():
         if not creds:
             logger.warning("Not initialising Firebase Admin because credentials are unavailable.")
             return False
-        cred = fb_credentials.Certificate(creds)
-        firebase_admin.initialize_app(cred, {"databaseURL": _get_firebase_url()})
-        return True
+        
+        try:
+            cred = fb_credentials.Certificate(creds)
+            firebase_admin.initialize_app(cred, {"databaseURL": _get_firebase_url()})
+            logger.info("Firebase Admin SDK initialized successfully")
+            return True
+        except ValueError as ve:
+            logger.error("Firebase certificate credential error (PEM parsing failed): %s", ve)
+            try:
+                st.sidebar.error(
+                    "Failed to initialize Firebase: Invalid certificate. Check private key format."
+                )
+            except Exception:
+                pass
+            return False
+            
     except Exception as e:
         logger.error("Firebase Admin initialisation error: %s", e)
         return False
@@ -275,10 +389,21 @@ def init_firestore():
             logger.warning("Firestore client not created because credentials are unavailable.")
             return None
 
-        if not firebase_admin._apps:
-            cred = fb_credentials.Certificate(creds)
-            firebase_admin.initialize_app(cred)
-        return firestore.client()
+        try:
+            if not firebase_admin._apps:
+                cred = fb_credentials.Certificate(creds)
+                firebase_admin.initialize_app(cred)
+            return firestore.client()
+        except ValueError as ve:
+            logger.error("Firestore certificate credential error (PEM parsing failed): %s", ve)
+            try:
+                st.sidebar.error(
+                    "Failed to initialize Firestore: Invalid certificate. Check private key format."
+                )
+            except Exception:
+                pass
+            return None
+            
     except Exception as e:
         logger.error("Firestore initialisation error: %s", e)
         try:
