@@ -7,6 +7,18 @@ from firebase_admin import firestore
 from firebase_helpers import init_firestore
 from utils import send_monjez_email
 
+# Defensive import of payment UI (may exist as a page module)
+try:
+    from pages.Payment_Hub import render_payment_hub
+except Exception:
+    try:
+        # alternative import if running as flat module
+        from Payment_Hub import render_payment_hub  # type: ignore
+    except Exception:
+        def render_payment_hub(*args, **kwargs):
+            st.warning("بوابة الدفع غير متاحة حالياً — يرجى تفعيل صفحة Payment_Hub أو إعداد الأسرار.")
+            return None
+
 st.set_page_config(page_title="منصة مُنجز - بوابة الميدان", layout="wide", initial_sidebar_state="expanded")
 
 # --- 1️⃣ الاتصال الآمن بالفايربيز ---
@@ -38,16 +50,19 @@ vehicle_icon = "🏍️" if is_courier else "🚖"
 
 # --- 3️⃣ رادار فحص قائمة الحظر الفورية لمنع النصب والاحتيال ---
 if db:
-    ban_check = db.collection("banned_users").document(DRIVER_NAME).get()
-    if ban_check.exists:
-        st.markdown("""
-        <div style='background-color: black; padding: 40px; border-radius: 12px; border: 3px solid red; text-align: center; color: white;'>
-            <h1 style='color: red;'>🛑 الحساب معلق أو حظر مؤقت!</h1>
-            <h3>عذراً، تم تجميد حسابك مؤقتاً لمراجعة تجاوزات مالية أو مديونية متأخرة.</h3>
-            <p style='color: #FFA500;'>يرجى دفع المديونية عبر المحفظة أدناه أو التواصل مع الدعم الإداري.</p>
-        </div>
-        """, unsafe_allow_html=True)
-        st.stop()
+    try:
+        ban_check = db.collection("banned_users").document(DRIVER_NAME).get()
+        if ban_check and ban_check.exists:
+            st.markdown("""
+            <div style='background-color: black; padding: 40px; border-radius: 12px; border: 3px solid red; text-align: center; color: white;'>
+                <h1 style='color: red;'>🛑 الحساب معلق أو حظر مؤقت!</h1>
+                <h3>عذراً، تم تجميد حسابك مؤقتاً لمراجعة تجاوزات مالية أو مديونية متأخرة.</h3>
+                <p style='color: #FFA500;'>يرجى دفع المديونية عبر المحفظة أدناه أو التواصل مع الدعم الإداري.</p>
+            </div>
+            """, unsafe_allow_html=True)
+            st.stop()
+    except Exception as e:
+        st.warning(f"خطأ في التحقق من حالة الحظر: {e}")
 
 # --- 4️⃣ هيدر الكابتن / المندوب الموثق ---
 st.markdown(f"""
@@ -96,42 +111,55 @@ with driver_tabs[0]:
     st.markdown(f"#### 📥 طلبات الميدان المتاحة لـ {role_title}")
     
     if db:
-        live_orders = db.collection("orders").where("status", "in", ["processing", "معلق - بانتظار سائق"]).stream()
+        try:
+            live_orders = db.collection("orders").where("status", "in", ["processing", "معلق - بانتظار سائق"]).stream()
+        except Exception as e:
+            st.error(f"خطأ في جلب الطلبيات: {e}")
+            live_orders = []
         order_count = 0
         
         for doc in live_orders:
-            o_data = doc.to_dict()
-            o_id = doc.id
-            service_type = o_data.get("service_type", "")
-            
-            if is_courier and service_type in ["standard_ride", "comfort_ride"]:
-                continue
-            elif not is_courier and service_type == "express_bike":
-                continue
+            try:
+                o_data = doc.to_dict() or {}
+                o_id = doc.id
+                service_type = o_data.get("service_type", "")
 
-            order_count += 1
-            badge_color = "#D97706" if is_courier else "#2563EB"
-            
-            st.markdown(f"""
-            <div style='background-color: #F9FAFB; padding: 15px; border-radius: 8px; border-right: 5px solid {badge_color}; margin-bottom: 10px; text-align: right;'>
-                <b style='color: #111827;'>📍 طلب {vehicle_icon} من: {html_mod.escape(str(o_data.get('client_name', 'عميل منجز')))}</b><br>
-                <span style='color: #4B5563;'>📦 التفاصيل والوجهة: {html_mod.escape(str(o_data.get('order_details', '')))}</span><br>
-                <b style='color: #10B981;'>💵 ميزانية العميل المقترحة: {html_mod.escape(str(o_data.get('suggested_price', 30)))} جنيه</b>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            custom_bid = st.number_input("اكتب عرض السعر الخاص بك (جنيه)", min_value=10, value=int(o_data.get('suggested_price', 30)), key=f"num_input_{o_id}")
-            
-            if st.button(f"🚀 إرسال العرض المالي للعميل كـ {role_title}", key=f"submit_bid_btn_{o_id}", use_container_width=True):
-                db.collection("orders").document(o_id).update({
-                    "status": "🚖 جاري الاستلام",
-                    "driver_assigned": DRIVER_NAME,
-                    "driver_phone": DRIVER_PHONE,
-                    "suggested_price": custom_bid
-                })
-                st.success(f"🟢 تم إرسال عرضك بقيمة {custom_bid} جنيه بنجاح! بانتظار موافقة العميل.")
-                time.sleep(1)
-                st.rerun()
+                if is_courier and service_type in ["standard_ride", "comfort_ride"]:
+                    continue
+                elif not is_courier and service_type == "express_bike":
+                    continue
+
+                order_count += 1
+                badge_color = "#D97706" if is_courier else "#2563EB"
+                
+                st.markdown(f"""
+                <div style='background-color: #F9FAFB; padding: 15px; border-radius: 8px; border-right: 5px solid {badge_color}; margin-bottom: 10px; text-align: right;'>
+                    <b style='color: #111827;'>📍 طلب {vehicle_icon} من: {html_mod.escape(str(o_data.get('client_name', 'عميل منجز')))}</b><br>
+                    <span style='color: #4B5563;'>📦 التفاصيل والوجهة: {html_mod.escape(str(o_data.get('order_details', '')))}</span><br>
+                    <b style='color: #10B981;'>💵 ميزانية العميل المقترحة: {html_mod.escape(str(o_data.get('suggested_price', 30)))} جنيه</b>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                custom_bid = st.number_input("اكتب عرض السعر الخاص بك (جنيه)", min_value=10, value=int(o_data.get('suggested_price', 30)), key=f"num_input_{o_id}")
+                
+                if st.button(f"🚀 إرسال العرض المالي للعميل كـ {role_title}", key=f"submit_bid_btn_{o_id}", use_container_width=True):
+                    try:
+                        if not db:
+                            st.error("قاعدة البيانات غير متصلة حالياً — لا يمكن إرسال العرض.")
+                        else:
+                            db.collection("orders").document(o_id).update({
+                                "status": "🚖 جاري الاستلام",
+                                "driver_assigned": DRIVER_NAME,
+                                "driver_phone": DRIVER_PHONE,
+                                "suggested_price": custom_bid
+                            })
+                            st.success(f"🟢 تم إرسال عرضك بقيمة {custom_bid} جنيه بنجاح! بانتظار موافقة العميل.")
+                            time.sleep(1)
+                            st.rerun()
+                    except Exception as e:
+                        st.error(f"فشل في إرسال العرض إلى السيرفر: {e}")
+            except Exception:
+                continue
                 
         if order_count == 0:
             st.info(f"📭 الميدان هادئ الآن. لا توجد طلبات متوافقة مع تخصص ({role_title}) حالياً.")
@@ -143,64 +171,87 @@ with driver_tabs[1]:
     st.markdown("#### 📍 شاشة التنفيذ وتتبع المهمة الحالية")
     
     if db:
-        active_missions = db.collection("orders").where("driver_assigned", "==", DRIVER_NAME).stream()
+        try:
+            active_missions = db.collection("orders").where("driver_assigned", "==", DRIVER_NAME).stream()
+        except Exception as e:
+            st.error(f"خطأ في جلب المهمات النشطة: {e}")
+            active_missions = []
         mission_count = 0
         
         for doc in active_missions:
-            m_data = doc.to_dict()
-            m_id = doc.id
-            status = m_data.get("status")
-            
-            if status in ["🚖 جاري الاستلام", "🚚 جاري التوصيل", "✅ في انتظار تقييم الطرفين"]:
-                mission_count += 1
+            try:
+                m_data = doc.to_dict() or {}
+                m_id = doc.id
+                status = m_data.get("status")
                 
-                st.markdown(f"""
-                <div style='background-color: #111827; padding: 20px; border-radius: 10px; color: white; text-align: right; margin-bottom: 15px;'>
-                    <h3 style='color: #38BDF8; margin: 0;'>{vehicle_icon} العميل بانتظارك</h3>
-                    <p style='margin: 8px 0;'><b>👤 الاسم:</b> {html_mod.escape(str(m_data.get('client_name', '')))}</p>
-                    <p style='margin: 8px 0;'><b>📦 الوجهة/الشحنة:</b> {html_mod.escape(str(m_data.get('order_details', '')))}</p>
-                    <hr style='border-color: #374151;'>
-                    <b style='color: #FBBF24; font-size: 16px;'>💰 القيمة المتفق عليها: {m_data.get('suggested_price')}.00 جنيه</b><br>
-                    <small style='color: #9CA3AF;'>🚨 حالة المهمة الحية: {status}</small>
-                </div>
-                """, unsafe_allow_html=True)
+                if status in ["🚖 جاري الاستلام", "🚚 جاري التوصيل", "✅ في انتظار تقييم الطرفين"]:
+                    mission_count += 1
+                    
+                    st.markdown(f"""
+                    <div style='background-color: #111827; padding: 20px; border-radius: 10px; color: white; text-align: right; margin-bottom: 15px;'>
+                        <h3 style='color: #38BDF8; margin: 0;'>{vehicle_icon} العميل بانتظارك</h3>
+                        <p style='margin: 8px 0;'><b>👤 الاسم:</b> {html_mod.escape(str(m_data.get('client_name', '')))}</p>
+                        <p style='margin: 8px 0;'><b>📦 الوجهة/الشحنة:</b> {html_mod.escape(str(m_data.get('order_details', '')))}</p>
+                        <hr style='border-color: #374151;'>
+                        <b style='color: #FBBF24; font-size: 16px;'>💰 القيمة المتفق عليها: {m_data.get('suggested_price')}.00 جنيه</b><br>
+                        <small style='color: #9CA3AF;'>🚨 حالة المهمة الحية: {status}</small>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    if status == "🚖 جاري الاستلام":
+                        if st.button("📦 تم استلام العميل/الشحنة والتحرك", key=f"status_btn_pickup_{m_id}", use_container_width=True):
+                            try:
+                                if not db:
+                                    st.error("قاعدة البيانات غير متصلة — لا يمكن تغيير حالة الطلب.")
+                                else:
+                                    db.collection("orders").document(m_id).update({"status": "🚚 جاري التوصيل"})
+                                    st.rerun()
+                            except Exception as e:
+                                st.error(f"فشل تحديث الحالة: {e}")
+                                
+                    elif status == "🚚 جاري التوصيل":
+                        if st.button("🏁 إنهاء وتسليم الطلب بنجاح للوجهة", key=f"status_btn_deliver_{m_id}", use_container_width=True):
+                            try:
+                                if db:
+                                    db.collection("orders").document(m_id).update({"status": "✅ في انتظار تقييم الطرفين"})
+                                invoice_html = f"""
+                                <div style="direction: rtl; text-align: right; font-family: sans-serif; border: 2px solid #10B981; padding: 20px; border-radius: 10px;">
+                                    <h2 style="color: #10B981;">📋 فاتورة معتمدة من منصة مُنجز 2026</h2>
+                                    <p>عزيزي <b>{m_data.get('client_name')}</b>، تم إنهاء طلبك بنجاح.</p>
+                                    <hr>
+                                    <p><b>{role_title} المسؤول:</b> {DRIVER_NAME}</p>
+                                    <p><b>📦 تفاصيل الخدمة:</b> {m_data.get('order_details')}</p>
+                                    <p style="font-size: 18px; color: #1E3A8A;"><b>💰 الإجمالي المطلوب سداده: {m_data.get('suggested_price')} جنيه</b></p>
+                                    <hr>
+                                    <p style="font-size: 12px; color: #6B7280; text-align: center;">شكراً لاستخدامك منصة منجز الذكية ✨</p>
+                                </div>
+                                """
+                                client_email = m_data.get("client_email", "")
+                                if client_email:
+                                    try:
+                                        send_monjez_email(client_email, f"📦 فاتورة طلبك عبر منصة مُنجز ({role_title})", invoice_html)
+                                    except Exception:
+                                        pass
+                                
+                                st.success("🎯 تم إنهاء المشوار وإرسال الفاتورة الإلكترونية للعميل بنجاح!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"فشل إنهاء الطلب: {e}")
+                                
+                    elif status == "✅ في انتظار تقييم الطرفين":
+                        st.warning("🏁 الرحلة وصلت. فضلاً قيّم العميل لإغلاق الحساب وتقييد العمولات:")
+                        rating = st.slider("⭐ تقييم سلوك العميل:", 1, 5, 5, key=f"slider_rating_{m_id}")
+                        if st.button("💾 حفظ وإغلاق الفاتورة النهائية", key=f"save_final_invoice_{m_id}", use_container_width=True):
+                            try:
+                                if db:
+                                    db.collection("orders").document(m_id).update({"status": "⭐ تم الإغلاق والتقييم بالكامل"})
+                                    st.success("🎯 تم تسوية الحساب وإغلاق المعاملة بنجاح!")
+                                    st.rerun()
+                            except Exception as e:
+                                st.error(f"فشل إغلاق الفاتورة: {e}")
+            except Exception:
+                continue
                 
-                if status == "🚖 جاري الاستلام":
-                    if st.button("📦 تم استلام العميل/الشحنة والتحرك", key=f"status_btn_pickup_{m_id}", use_container_width=True):
-                        db.collection("orders").document(m_id).update({"status": "🚚 جاري التوصيل"})
-                        st.rerun()
-                        
-                elif status == "🚚 جاري التوصيل":
-                    if st.button("🏁 إنهاء وتسليم الطلب بنجاح للوجهة", key=f"status_btn_deliver_{m_id}", use_container_width=True):
-                        db.collection("orders").document(m_id).update({"status": "✅ في انتظار تقييم الطرفين"})
-                        
-                        invoice_html = f"""
-                        <div style="direction: rtl; text-align: right; font-family: sans-serif; border: 2px solid #10B981; padding: 20px; border-radius: 10px;">
-                            <h2 style="color: #10B981;">📋 فاتورة معتمدة من منصة مُنجز 2026</h2>
-                            <p>عزيزي <b>{m_data.get('client_name')}</b>، تم إنهاء طلبك بنجاح.</p>
-                            <hr>
-                            <p><b>{role_title} المسؤول:</b> {DRIVER_NAME}</p>
-                            <p><b>📦 تفاصيل الخدمة:</b> {m_data.get('order_details')}</p>
-                            <p style="font-size: 18px; color: #1E3A8A;"><b>💰 الإجمالي المطلوب سداده: {m_data.get('suggested_price')} جنيه</b></p>
-                            <hr>
-                            <p style="font-size: 12px; color: #6B7280; text-align: center;">شكراً لاستخدامك منصة منجز الذكية ✨</p>
-                        </div>
-                        """
-                        client_email = m_data.get("client_email", "")
-                        if client_email:
-                            send_monjez_email(client_email, f"📦 فاتورة طلبك عبر منصة مُنجز ({role_title})", invoice_html)
-                        
-                        st.success("🎯 تم إنهاء المشوار وإرسال الفاتورة الإلكترونية للعميل بنجاح!")
-                        st.rerun()
-                        
-                elif status == "✅ في انتظار تقييم الطرفين":
-                    st.warning("🏁 الرحلة وصلت. فضلاً قيّم العميل لإغلاق الحساب وتقييد العمولات:")
-                    rating = st.slider("⭐ تقييم سلوك العميل:", 1, 5, 5, key=f"slider_rating_{m_id}")
-                    if st.button("💾 حفظ وإغلاق الفاتورة النهائية", key=f"save_final_invoice_{m_id}", use_container_width=True):
-                        db.collection("orders").document(m_id).update({"status": "⭐ تم الإغلاق والتقييم بالكامل"})
-                        st.success("🎯 تم تسوية الحساب وإغلاق المعاملة بنجاح!")
-                        st.rerun()
-                        
         if mission_count == 0:
             st.info(f"🚖 لا توجد لديك أي رحلات أو شحنات نشطة جاري تنفيذها حالياً كـ {role_title}.")
 
@@ -213,67 +264,91 @@ with driver_tabs[2]:
     st.write(f"رصيدك الحالي: **{current_balance:.2f} ج.م**")
     if current_balance < 0:
         st.error(f"⚠️ يوجد عليك مديونية متأخرة بقيمة {abs(current_balance):.2f} ج.م. يرجى الشحن لتفادي تجميد الحساب.")
-
+    
     topup_amount = st.number_input("حدد مبلغ الشحن لتسديد المديونية أو شحن الرصيد (ج.م):", min_value=10, value=200, step=10)
     
     if st.button("💳 بدء عملية الدفع والشحن عبر Paymob", use_container_width=True):
+        # Prefer opening unified payment hub if Secrets are not configured here
+        paymob_api_key = None
         try:
-            # 1. المصادقة واستخراج الـ Auth Token
-            api_key = st.secrets["paymob"]["PAYMOB_API_KEY"]
-            integration_id = st.secrets["paymob"].get("PAYMOB_INTEGRATION_ID")
-            iframe_id = st.secrets["paymob"].get("PAYMOB_IFRAME_ID")
+            paymob_api_key = st.secrets.get("paymob", {}).get("PAYMOB_API_KEY")
+        except Exception:
+            paymob_api_key = None
 
-            auth_res = requests.post("https://accept.paymob.com/api/auth/tokens", json={"api_key": api_key})
-            auth_res.raise_for_status()
-            auth_token = auth_res.json().get("token")
-            
-            # 2. إنشاء الطلب لدى Paymob
-            order_res = requests.post(
-                "https://accept.paymob.com/api/ecommerce/orders",
-                json={
-                    "auth_token": auth_token,
-                    "delivery_needed": "false",
-                    "amount_cents": str(int(topup_amount * 100)),
-                    "currency": "EGP",
-                    "merchant_order_id": f"TOPUP-{user_data.get('role', 'driver').upper()}-{int(time.time())}"
-                }
-            )
-            order_res.raise_for_status()
-            order_id = order_res.json().get("id")
+        if not paymob_api_key:
+            st.info("⚠️ لم يتم تكوين مفاتيح Paymob هنا — سيتم فتح مركز الدفع الموحد.")
+            try:
+                render_payment_hub(purpose="debt", default_amount=int(topup_amount))
+            except Exception as e:
+                st.error(f"تعذر فتح بوابة الدفع: {e}")
+        else:
+            # proceed with the original Paymob flow but fully defensive
+            try:
+                integration_id = st.secrets.get("paymob", {}).get("PAYMOB_INTEGRATION_ID")
+                iframe_id = st.secrets.get("paymob", {}).get("PAYMOB_IFRAME_ID")
 
-            # 3. استخراج مفتاح الدفع (Payment Key)
-            first_name = DRIVER_NAME.split()[0] if DRIVER_NAME else "Driver"
-            last_name = DRIVER_NAME.split()[-1] if len(DRIVER_NAME.split()) > 1 else "Monjez"
+                # 1. المصادقة واستخراج الـ Auth Token
+                auth_res = requests.post("https://accept.paymob.com/api/auth/tokens", json={"api_key": paymob_api_key}, timeout=15)
+                auth_res.raise_for_status()
+                auth_token = auth_res.json().get("token")
+                if not auth_token:
+                    st.error("تعذر الحصول على توكن المصادقة من Paymob.")
+                else:
+                    # 2. إنشاء الطلب لدى Paymob
+                    order_payload = {
+                        "auth_token": auth_token,
+                        "delivery_needed": "false",
+                        "amount_cents": str(int(topup_amount * 100)),
+                        "currency": "EGP",
+                        "merchant_order_id": f"TOPUP-{user_data.get('role', 'driver').upper()}-{int(time.time())}"
+                    }
+                    order_res = requests.post(
+                        "https://accept.paymob.com/api/ecommerce/orders",
+                        json=order_payload,
+                        timeout=15
+                    )
+                    order_res.raise_for_status()
+                    order_id = order_res.json().get("id")
 
-            payment_key_res = requests.post(
-                "https://accept.paymob.com/api/acceptance/payment_keys",
-                json={
-                    "auth_token": auth_token,
-                    "amount_cents": str(int(topup_amount * 100)),
-                    "expiration": 3600,
-                    "order_id": order_id,
-                    "billing_data": {
-                        "first_name": first_name,
-                        "last_name": last_name,
-                        "email": "driver@monjez.online",
-                        "phone_number": DRIVER_PHONE,
-                        "apartment": "NA", "floor": "NA", "street": "NA",
-                        "building": "NA", "shipping_method": "NA", "postal_code": "NA",
-                        "city": "Cairo", "country": "EGP", "state": "Cairo"
-                    },
-                    "currency": "EGP",
-                    "integration_id": int(integration_id)
-                }
-            )
-            payment_key_res.raise_for_status()
-            payment_token = payment_key_res.json().get("token")
+                    # 3. استخراج مفتاح الدفع (Payment Key)
+                    first_name = DRIVER_NAME.split()[0] if DRIVER_NAME else "Driver"
+                    last_name = DRIVER_NAME.split()[-1] if len(DRIVER_NAME.split()) > 1 else "Monjez"
 
-            # 4. حفظ رابط الدفع لعرض الـ Iframe
-            st.session_state["paymob_iframe_url"] = f"https://accept.paymob.com/api/acceptance/iframes/{iframe_id}?token={payment_token}"
-            st.success("✅ تم التجهيز بنجاح! أدخل بيانات البطاقة أدناه لإتمام الشحن:")
+                    payment_key_payload = {
+                        "auth_token": auth_token,
+                        "amount_cents": str(int(topup_amount * 100)),
+                        "expiration": 3600,
+                        "order_id": order_id,
+                        "billing_data": {
+                            "first_name": first_name,
+                            "last_name": last_name,
+                            "email": "driver@monjez.online",
+                            "phone_number": DRIVER_PHONE,
+                            "apartment": "NA", "floor": "NA", "street": "NA",
+                            "building": "NA", "shipping_method": "NA", "postal_code": "NA",
+                            "city": "Cairo", "country": "EGP", "state": "Cairo"
+                        },
+                        "currency": "EGP",
+                        "integration_id": int(integration_id) if integration_id else None
+                    }
 
-        except Exception as e:
-            st.error(f"❌ خطأ في عملية الشحن: {e}")
+                    payment_key_res = requests.post(
+                        "https://accept.paymob.com/api/acceptance/payment_keys",
+                        json=payment_key_payload,
+                        timeout=15
+                    )
+                    payment_key_res.raise_for_status()
+                    payment_token = payment_key_res.json().get("token")
+
+                    if iframe_id and payment_token:
+                        st.session_state["paymob_iframe_url"] = f"https://accept.paymob.com/api/acceptance/iframes/{iframe_id}?token={payment_token}"
+                        st.success("✅ تم التجهيز بنجاح! أدخل بيانات البطاقة أدناه لإتمام الشحن:")
+                    else:
+                        st.error("❌ فشل تجهيز واجهة الدفع. يرجى التحقق من إعدادات Paymob في الأسرار.")
+            except requests.exceptions.RequestException as e:
+                st.error(f"خطأ شبكي أثناء الاتصال بـ Paymob: {e}")
+            except Exception as e:
+                st.error(f"❌ خطأ في عملية الشحن: {e}")
 
     # --- 🖥️ عرض شاشة البطاقة المباشرة داخل التطبيق ---
     if "paymob_iframe_url" in st.session_state:
