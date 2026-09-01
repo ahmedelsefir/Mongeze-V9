@@ -10,6 +10,11 @@ import pandas as pd
 import streamlit as st
 
 # ========================================================
+# ⚡ CRITICAL: set_page_config() MUST be the first Streamlit call
+# ========================================================
+st.set_page_config(page_title="منصة منجز الذكية", page_icon="🤖", layout="wide")
+
+# ========================================================
 # 🤖 استيراد عقل مُنجز (AI Agent)
 # ========================================================
 from assistant import ask_mongeze_ai, get_gemini_api_key
@@ -158,26 +163,12 @@ LANG_TEXTS = {
 # ========================================================
 # 🤖 إعداد واجهة منصة منجز الذكية وحماية الجلسة
 # ========================================================
-st.set_page_config(page_title="منصة منجز الذكية", page_icon="🤖", layout="wide")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://monjez-app.icu")
 SESSION_GUARD_VERSION = "monjez-mobile-session-guard-v1"
-
-
-# ========================================================
-# Defensive import of payment hub to avoid crashing if missing
-try:
-    from pages.Payment_Hub import render_payment_hub
-except Exception:
-    try:
-        from Payment_Hub import render_payment_hub
-    except Exception:
-        def render_payment_hub(*args, **kwargs):
-            st.warning("بوابة الدفع غير متاحة حالياً — يرجى تفعيل صفحة Payment_Hub أو إعداد الأسرار.")
-            return None
 
 
 def initialize_session_guard():
