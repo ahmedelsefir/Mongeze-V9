@@ -8,6 +8,7 @@ import smtplib
 import html
 import pandas as pd
 import streamlit as st
+import json
 
 # ========================================================
 # ⚡ CRITICAL: set_page_config() MUST be the first Streamlit call
@@ -212,30 +213,38 @@ initialize_session_guard()
 # 🔒 جلب التكوينات وإعداد الاتصال السحابي بالـ Firebase
 # ========================================================
 
-# Diagnostic block: show detailed error when Firebase init fails
+# Diagnostic block: support textkey and firebase secrets
 try:
-    # محاولة قراءة قسم firebase من ملف secrets
-    if "firebase" not in st.secrets:
-        st.error("❌ قسم [firebase] غير موجود نهائياً في ملف الـ Secrets!")
-    else:
+    firebase_config = None
+
+    # 1) textkey in st.secrets as table with textkey key
+    if "textkey" in st.secrets and isinstance(st.secrets.get("textkey"), dict) and "textkey" in st.secrets.get("textkey"):
+        try:
+            raw_json = st.secrets["textkey"]["textkey"]
+            firebase_config = json.loads(raw_json)
+            st.success("✅ تم العثور على المفتاح بنجاح عبر [textkey]!")
+        except Exception as ex:
+            st.error("❌ فشل تحليل JSON داخل [textkey]. تأكد أن القيمة هي JSON صالح.")
+            st.exception(ex)
+
+    # 2) firebase section (structured) — keep previous behaviour
+    elif "firebase" in st.secrets:
         firebase_config = dict(st.secrets["firebase"])
+        if "private_key" in firebase_config and isinstance(firebase_config["private_key"], str):
+            firebase_config["private_key"] = firebase_config["private_key"].replace("\\n", "\n")
+        st.success("✅ تم العثور على المفتاح بنجاح عبر [firebase]!")
 
-        # طباعة المفاتيح الموجودة للتأكد من قراءتها
-        st.write("المفاتيح المتاحة:", list(firebase_config.keys()))
+    else:
+        st.error("❌ عذراً، لم يتم العثور لا على [textkey] ولا على [firebase] في الـ Secrets!")
 
-        # ضبط تنسيق المفتاح الخاص
-        if "private_key" in firebase_config:
-            # Normalize escaped newlines
-            if isinstance(firebase_config["private_key"], str):
-                firebase_config["private_key"] = firebase_config["private_key"].replace("\\n", "\n")
+    if firebase_config and not firebase_admin._apps:
+        from firebase_admin import credentials, initialize_app
+        cred = credentials.Certificate(firebase_config)
+        initialize_app(cred)
+        st.success("🔥 تم ربط Firebase بنجاح تام!")
 
-        if not firebase_admin._apps:
-            from firebase_admin import credentials, initialize_app
-            cred = credentials.Certificate(firebase_config)
-            initialize_app(cred)
-            st.success("✅ تم اتصال Firebase بنجاح!")
 except Exception as e:
-    st.error("⚠️ خطأ تفصيلي أثناء تحميل مفتاح Firebase:")
+    st.error("⚠️ حدث خطأ أثناء تحليل المفتاح:")
     st.exception(e)
 
 
