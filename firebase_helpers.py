@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 # Common helpers
 # ---------------------------------------------------------------------------
 
+
 def get_current_timestamp():
     """Return the current datetime as a formatted string."""
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -36,6 +37,7 @@ def sanitize_username(username):
 # ---------------------------------------------------------------------------
 # Firebase Realtime Database – REST helpers
 # ---------------------------------------------------------------------------
+
 
 def _get_firebase_url():
     """Read the Firebase Realtime Database URL from Streamlit secrets."""
@@ -157,18 +159,67 @@ def delete_firebase_node(node):
 # Firebase Admin SDK initialisation
 # ---------------------------------------------------------------------------
 
+
 def _parse_firebase_credentials():
-    """Parse Firebase service-account JSON from Streamlit secrets."""
-    raw = st.secrets["textkey"].strip()
-    creds = json.loads(raw)
-    if "private_key" in creds:
-        creds["private_key"] = (
-            creds["private_key"]
-            .replace("\\\\n", "\n")
-            .replace("\\n", "\n")
-            .strip()
-        )
-    return creds
+    """Parse Firebase service-account JSON from Streamlit secrets.
+
+    This function is defensive: it checks multiple possible secret locations
+    and returns ``None`` (and a gentle sidebar warning) if credentials are
+    not available or cannot be parsed.
+    """
+    try:
+        # Prefer a structured `firebase` secret if present
+        firebase_secret = st.secrets.get("firebase")
+        raw = None
+
+        if firebase_secret and isinstance(firebase_secret, dict):
+            # Common keys users may have used
+            raw = (
+                firebase_secret.get("service_account")
+                or firebase_secret.get("textkey")
+                or firebase_secret.get("textKey")
+            )
+        # Fallback to legacy top-level secret key `textkey`
+        if not raw:
+            raw = st.secrets.get("textkey")
+
+        if not raw or not isinstance(raw, str) or not raw.strip():
+            # Don't raise — return None and show a helpful sidebar warning so the
+            # Streamlit UI remains usable even without Firebase credentials.
+            try:
+                st.sidebar.warning(
+                    "Firebase credentials not found in Streamlit secrets. Firestore/Realtime DB features are disabled."
+                )
+            except Exception:
+                # If Streamlit isn't available in the current context, just log.
+                logger.warning("Firebase credentials missing; running in offline mode.")
+            logger.warning("Firebase credentials missing from secrets")
+            return None
+
+        raw = raw.strip()
+        creds = json.loads(raw)
+        if "private_key" in creds:
+            creds["private_key"] = (
+                creds["private_key"]
+                .replace("\\\\n", "\n")
+                .replace("\\n", "\n")
+                .strip()
+            )
+        return creds
+    except json.JSONDecodeError as e:
+        logger.error("Failed to parse Firebase credentials JSON: %s", e)
+        try:
+            st.sidebar.error("Firebase credentials are malformed in Streamlit secrets.")
+        except Exception:
+            pass
+        return None
+    except Exception as e:
+        logger.exception("Unexpected error while reading Firebase credentials: %s", e)
+        try:
+            st.sidebar.error("Unexpected error reading Firebase credentials. Check logs.")
+        except Exception:
+            pass
+        return None
 
 
 def init_firebase_admin():
@@ -182,6 +233,9 @@ def init_firebase_admin():
         if firebase_admin._apps:
             return True
         creds = _parse_firebase_credentials()
+        if not creds:
+            logger.warning("Not initialising Firebase Admin because credentials are unavailable.")
+            return False
         cred = fb_credentials.Certificate(creds)
         firebase_admin.initialize_app(cred, {"databaseURL": _get_firebase_url()})
         return True
@@ -200,11 +254,19 @@ def init_firestore():
     from firebase_admin import firestore
 
     try:
+        creds = _parse_firebase_credentials()
+        if not creds:
+            logger.warning("Firestore client not created because credentials are unavailable.")
+            return None
+
         if not firebase_admin._apps:
-            creds = _parse_firebase_credentials()
             cred = fb_credentials.Certificate(creds)
             firebase_admin.initialize_app(cred)
         return firestore.client()
     except Exception as e:
         logger.error("Firestore initialisation error: %s", e)
+        try:
+            st.sidebar.error("Failed to initialise Firestore. Check application logs.")
+        except Exception:
+            pass
         return None
