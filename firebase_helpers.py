@@ -163,56 +163,72 @@ def delete_firebase_node(node):
 def _parse_firebase_credentials():
     """Parse Firebase service-account JSON from Streamlit secrets.
 
-    This function is defensive: it checks multiple possible secret locations
-    and returns ``None`` (and a gentle sidebar warning) if credentials are
-    not available or cannot be parsed.
+    Accepts:
+      - a JSON string stored in st.secrets["textkey"] (or firebase.service_account / textkey)
+      - OR a dict already stored under st.secrets["firebase"]["service_account"]
+
+    Returns the credentials dict or None on failure.
     """
     try:
-        # Prefer a structured `firebase` secret if present
         firebase_secret = st.secrets.get("firebase")
         raw = None
 
+        # Prefer a structured `firebase` secret if present (service_account may be dict or JSON string)
         if firebase_secret and isinstance(firebase_secret, dict):
-            # Common keys users may have used
             raw = (
                 firebase_secret.get("service_account")
+                or firebase_secret.get("serviceAccount")
                 or firebase_secret.get("textkey")
                 or firebase_secret.get("textKey")
             )
-        # Fallback to legacy top-level secret key `textkey`
-        if not raw:
-            raw = st.secrets.get("textkey")
 
-        if not raw or not isinstance(raw, str) or not raw.strip():
-            # Don't raise — return None and show a helpful sidebar warning so the
-            # Streamlit UI remains usable even without Firebase credentials.
+        # Fallback to top-level textkey or legacy names
+        if not raw:
+            raw = st.secrets.get("textkey") or st.secrets.get("FIREBASE_SERVICE_ACCOUNT")
+
+        if not raw:
             try:
                 st.sidebar.warning(
                     "Firebase credentials not found in Streamlit secrets. Firestore/Realtime DB features are disabled."
                 )
             except Exception:
-                # If Streamlit isn't available in the current context, just log.
                 logger.warning("Firebase credentials missing; running in offline mode.")
             logger.warning("Firebase credentials missing from secrets")
             return None
 
-        raw = raw.strip()
-        creds = json.loads(raw)
-        if "private_key" in creds:
-            creds["private_key"] = (
-                creds["private_key"]
-                .replace("\\\\n", "\n")
-                .replace("\\n", "\n")
-                .strip()
-            )
+        # If raw is already a dict (service account provided as structured secret), use it directly
+        if isinstance(raw, dict):
+            creds = raw
+        else:
+            raw_str = str(raw).strip()
+            # Try to parse JSON first
+            try:
+                creds = json.loads(raw_str)
+            except json.JSONDecodeError:
+                # As a fallback, try ast.literal_eval to handle Python-style dict strings
+                import ast
+
+                try:
+                    creds = ast.literal_eval(raw_str)
+                except Exception as ex:
+                    logger.error("Failed to parse Firebase credentials string: %s", ex)
+                    try:
+                        st.sidebar.error("Firebase credentials are malformed in Streamlit secrets.")
+                    except Exception:
+                        pass
+                    return None
+
+        # Normalize private_key if present
+        pk = creds.get("private_key")
+        if pk and isinstance(pk, str):
+            # Convert double-escaped -> single-escaped, then escaped -> real newline
+            # Order matters: handle "\\\\n" first (two backslashes), then "\\n"
+            pk = pk.replace("\\\\n", "\\n")
+            pk = pk.replace("\\n", "\n")
+            creds["private_key"] = pk.strip()
+
         return creds
-    except json.JSONDecodeError as e:
-        logger.error("Failed to parse Firebase credentials JSON: %s", e)
-        try:
-            st.sidebar.error("Firebase credentials are malformed in Streamlit secrets.")
-        except Exception:
-            pass
-        return None
+
     except Exception as e:
         logger.exception("Unexpected error while reading Firebase credentials: %s", e)
         try:
