@@ -30,10 +30,65 @@ except Exception:
 def render_parcels_page(user_name="أحمد مصطفى", send_to_firebase=None, send_system_email=None, *args, **kwargs):
     st.markdown("<h2 style='color: #1E3A8A; text-align: right;'>📦 بوابة توصيل الطرود والمرسول</h2>", unsafe_allow_html=True)
     
+    # Live Order Tracker (integrated with order_lifecycles)
+    st.markdown("### 🔴 Live Order Tracker")
+    col1, col2 = st.columns([3,1])
+    with col2:
+        if st.button("تحديث اللحظة 🔄", key="client_live_refresh"):
+            st.experimental_rerun()
+    with col1:
+        if db:
+            try:
+                user_name_val = user_name
+                orders_q = db.collection("order_lifecycles").where("customer_name", "==", user_name_val).stream()
+            except Exception as e:
+                st.error(f"خطأ في جلب حالة الطلبات: {e}")
+                orders_q = []
+
+            shown = False
+            for doc in orders_q:
+                try:
+                    shown = True
+                    o = doc.to_dict() or {}
+                    o_id = doc.id
+                    status = o.get("status", "pending")
+                    status_color = "#F59E0B" if status == "pending" else ("#10B981" if status in ["picked_up","in_transit"] else ("#2563EB" if status=="bid_accepted" else "#6B7280"))
+                    st.markdown(f"<div style='padding:12px; border-radius:8px; background:{status_color}; color:white; text-align:right;'><b>حالة الطلب: {status.upper()}</b></div>", unsafe_allow_html=True)
+
+                    bids = o.get("bids", []) or []
+                    if not bids:
+                        st.info("لا توجد عروض بعد. يرجى الانتظار حتى يقدم المندوبون عروضهم.")
+                    else:
+                        st.markdown("#### العروض المقدمة")
+                        for idx, b in enumerate(bids):
+                            driver = b.get("driver_name", b.get("by", "غير معروف"))
+                            amount = b.get("bid_amount", b.get("bid", "-"))
+                            st.write(f"- {driver}: {amount} ج.م")
+                            if st.button("قبول العرض", key=f"accept_bid_{o_id}_{idx}"):
+                                try:
+                                    # Accept bid: set accepted bid index and update status
+                                    db.collection("order_lifecycles").document(o_id).update({
+                                        "accepted_bid_index": idx,
+                                        "assigned_driver": driver,
+                                        "final_price": amount,
+                                        "status": "bid_accepted",
+                                        "bid_accepted_at": firestore.SERVER_TIMESTAMP,
+                                    })
+                                    st.success("✅ تم قبول العرض وسيتم إشعار السائق المختار.")
+                                    st.experimental_rerun()
+                                except Exception as e:
+                                    st.error(f"فشل قبول العرض: {e}")
+                except Exception:
+                    continue
+            if not shown:
+                st.info("لا توجد طلبيات مرتبطة باسمك حالياً.")
+
+    st.markdown("---")
+    
     with st.form("parcels_form", clear_on_submit=True):
         c_name = st.text_input("👤 اسم العميل", value=user_name if isinstance(user_name, str) else "أحمد مصطفى", key="parcels_name")
-        o_details = st.text_area("📝 ما الذي تريد توصيله؟ (اكتب تفاصيل الوجهة والشحنة بدقة)", placeholder="مثال: مطلوب استلام طرد من..[...]", key="parcels_details")
-        s_price = st.number_input("💰 ميزانيتك المقترحة للطلب (جنيه)", min_value=10, value=30, step=5, key="parcels_price")
+        o_details = st.text_area("📝 ما الذي تريد توصيله؟ (اكتب تفاصيل الوجهة والشحنة بدقة)", placeholder="مثال: مطلوب استلام طرد م[...]", key="parcels_details")
+        s_price = st.number_input("💰 ��يزانيتك المقترحة للطلب (جنيه)", min_value=10, value=30, step=5, key="parcels_price")
         c_phone = st.text_input("📱 رقم هاتف التواصل", value="+20 1000000000", key="parcels_phone")
 
         submit_btn = st.form_submit_button("🚀 نشر طلب الطرد", key="parcels_submit")
@@ -43,23 +98,25 @@ def render_parcels_page(user_name="أحمد مصطفى", send_to_firebase=None, 
                 st.warning("⚠️ يرجى كتابة تفاصيل الشحنة أولاً قبل النشر!")
             else:
                 payload = {
-                    "client_name": c_name,
+                    "customer_name": c_name,
+                    "order_type": "parcel",
                     "order_details": o_details,
-                    "suggested_price": s_price,
+                    "customer_budget": s_price,
                     "phone": c_phone,
-                    "status": "processing",
-                    "driver_assigned": "",
-                    "timestamp": firestore.SERVER_TIMESTAMP,
+                    "status": "pending",
+                    "assigned_driver": "",
+                    "created_at": firestore.SERVER_TIMESTAMP,
                 }
                 try:
                     if callable(send_to_firebase):
-                        send_to_firebase("deliveries", payload)
+                        send_to_firebase(f"order_lifecycles/{int(time.time())}", payload)
                         st.success("🎯 تم قيد ونشر طلب الطرد بنجاح!")
                     else:
                         if not db:
                             st.error("⚠️ Firebase غير متصل — لا يمكن حفظ الطلب الآن.")
                         else:
-                            db.collection("deliveries").add(payload)
+                            # use auto-id
+                            db.collection("order_lifecycles").add(payload)
                             st.success("🎯 تم قيد ونشر طلب الطرد بنجاح!")
                 except Exception as e:
                     st.error(f"❌ حدث خطأ أثناء حفظ الطلب: {e}")
@@ -70,6 +127,54 @@ def render_parcels_page(user_name="أحمد مصطفى", send_to_firebase=None, 
 def render_taxi_page(user_name="أحمد مصطفى", send_to_firebase=None, send_system_email=None, *args, **kwargs):
     st.markdown("<h2 style='color: #1E3A8A; text-align: right;'>🚖 طلب تاكسي وتوصيل أفراد</h2>", unsafe_allow_html=True)
     
+    # Live Order Tracker (reuse same UI pattern)
+    st.markdown("### 🔴 Live Order Tracker")
+    col1, col2 = st.columns([3,1])
+    with col2:
+        if st.button("تحديث اللحظة 🔄", key="client_taxi_refresh"):
+            st.experimental_rerun()
+    with col1:
+        if db:
+            try:
+                orders_q = db.collection("order_lifecycles").where("customer_name", "==", user_name).stream()
+            except Exception as e:
+                st.error(f"خطأ في جلب حالة الطلبات: {e}")
+                orders_q = []
+
+            shown = False
+            for doc in orders_q:
+                try:
+                    shown = True
+                    o = doc.to_dict() or {}
+                    o_id = doc.id
+                    status = o.get("status", "pending")
+                    st.markdown(f"<div style='padding:12px; border-radius:8px; background:#F3F4F6; text-align:right;'><b>حالة الطلب: {status.upper()}</b></div>", unsafe_allow_html=True)
+
+                    bids = o.get("bids", []) or []
+                    if bids:
+                        st.markdown("#### العروض المقدمة")
+                        for idx, b in enumerate(bids):
+                            driver = b.get("driver_name", b.get("by", "غير معروف"))
+                            amount = b.get("bid_amount", b.get("bid", "-"))
+                            st.write(f"- {driver}: {amount} ج.م")
+                            if st.button("قبول العرض", key=f"accept_taxi_{o_id}_{idx}"):
+                                try:
+                                    db.collection("order_lifecycles").document(o_id).update({
+                                        "accepted_bid_index": idx,
+                                        "assigned_driver": driver,
+                                        "final_price": amount,
+                                        "status": "bid_accepted",
+                                        "bid_accepted_at": firestore.SERVER_TIMESTAMP,
+                                    })
+                                    st.success("✅ تم قبول العرض وسيتم إشعار السائق المختار.")
+                                    st.experimental_rerun()
+                                except Exception as e:
+                                    st.error(f"فشل قبول العرض: {e}")
+                except Exception:
+                    continue
+            if not shown:
+                st.info("لا توجد طلبيات مرتبطة باسمك حالياً.")
+
     with st.form("taxi_form", clear_on_submit=True):
         c_name = st.text_input("👤 اسم العميل", value=user_name if isinstance(user_name, str) else "أحمد مصطفى", key="taxi_name")
         o_details = st.text_area("📝 تفاصيل المشوار والوجهة", placeholder="مثال: التوصيل من شارع التحرير إلى الدقي...", key="taxi_details")
@@ -83,23 +188,24 @@ def render_taxi_page(user_name="أحمد مصطفى", send_to_firebase=None, sen
                 st.warning("⚠️ يرجى تحديد تفاصيل المشوار والوجهة أولاً!")
             else:
                 payload = {
-                    "client_name": c_name,
+                    "customer_name": c_name,
+                    "order_type": "taxi",
                     "order_details": o_details,
-                    "suggested_price": s_price,
+                    "customer_budget": s_price,
                     "phone": c_phone,
-                    "status": "processing",
-                    "driver_assigned": "",
-                    "timestamp": firestore.SERVER_TIMESTAMP,
+                    "status": "pending",
+                    "assigned_driver": "",
+                    "created_at": firestore.SERVER_TIMESTAMP,
                 }
                 try:
                     if callable(send_to_firebase):
-                        send_to_firebase("rides", payload)
+                        send_to_firebase(f"order_lifecycles/{int(time.time())}", payload)
                         st.success("🎯 تم نشر طلب الرحلة وبدأ البحث عن سائق!")
                     else:
                         if not db:
                             st.error("⚠️ Firebase غير متصل — لا يمكن حفظ الطلب الآن.")
                         else:
-                            db.collection("rides").add(payload)
+                            db.collection("order_lifecycles").add(payload)
                             st.success("🎯 تم نشر طلب الرحلة وبدأ البحث عن سائق!")
                 except Exception as e:
                     st.error(f"❌ حدث خطأ أثناء حفظ الطلب: {e}")

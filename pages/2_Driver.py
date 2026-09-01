@@ -74,6 +74,73 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+# Live Order Radar - NEW (integrates with order_lifecycles collection)
+st.markdown("### 🔴 Live Order Radar - الطلبيات اللحظية")
+col_radar1, col_radar2 = st.columns([3,1])
+with col_radar2:
+    if st.button("تحديث اللحظة 🔄", key="live_radar_refresh"):
+        st.experimental_rerun()
+
+with col_radar1:
+    if db:
+        try:
+            pending_orders = db.collection("order_lifecycles").where("status", "==", "pending").stream()
+        except Exception as e:
+            st.error(f"خطأ في جلب الطلبيات اللحظية: {e}")
+            pending_orders = []
+
+        any_pending = False
+        for doc in pending_orders:
+            try:
+                any_pending = True
+                o = doc.to_dict() or {}
+                o_id = doc.id
+                client_name = o.get("customer_name", "عميل")
+                details = o.get("order_type", "parcel")
+                budget = o.get("customer_budget", o.get("customer_budget", 0) or o.get("suggested_price", "---"))
+
+                badge_color = "#D97706" if is_courier else "#2563EB"
+                st.markdown(f"""
+                <div style='background-color: #F9FAFB; padding: 15px; border-radius: 8px; border-right: 5px solid {badge_color}; margin-bottom: 10px; text-align: right;'>
+                    <b style='color: #111827;'>📍 طلب مباشر من: {html_mod.escape(str(client_name))}</b><br>
+                    <span style='color: #4B5563;'>📦 نوع الخدمة: {html_mod.escape(str(details))}</span><br>
+                    <b style='color: #10B981;'>💵 ميزانية العميل: {html_mod.escape(str(budget))} جنيه</b>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # Bid input and submit (unique keys)
+                bid_key = f"live_bid_input_{o_id}"
+                bid_amount = st.number_input("اكتب عرض السعر الخاص بك (جنيه)", min_value=5, value=int(budget) if isinstance(budget, (int, float)) else 20, key=bid_key)
+
+                if st.button("🚀 إرسال عرض مباشر للطلب", key=f"live_bid_submit_{o_id}"):
+                    try:
+                        if not db:
+                            st.error("قاعدة البيانات غير متصلة حالياً — لا يمكن إرسال العرض.")
+                        else:
+                            # Read current bids (defensive)
+                            current = doc.to_dict() or {}
+                            bids = current.get("bids", []) or []
+                            new_bid = {
+                                "driver_name": DRIVER_NAME,
+                                "driver_id": DRIVER_PHONE,
+                                "bid_amount": float(bid_amount),
+                                "timestamp": firestore.SERVER_TIMESTAMP,
+                                "bid_status": "active"
+                            }
+                            bids.append(new_bid)
+                            db.collection("order_lifecycles").document(o_id).update({"bids": bids})
+                            st.success(f"🟢 تم إرسال عرضك بقيمة {bid_amount} جنيه بنجاح! بانتظار موافقة العميل.")
+                            st.experimental_rerun()
+                    except Exception as e:
+                        st.error(f"فشل في إرسال العرض: {e}")
+            except Exception:
+                continue
+
+        if not any_pending:
+            st.info("📭 لا توجد طلبيات جديدة في الرادار حالياً.")
+
+st.markdown("---")
+
 # العدادات الرقمية المحددة لكل دور
 st.markdown("###")
 col_metric1, col_metric2 = st.columns(2)
@@ -170,9 +237,11 @@ with driver_tabs[0]:
 with driver_tabs[1]:
     st.markdown("#### 📍 شاشة التنفيذ وتتبع المهمة الحالية")
     
+    # --- My Current Orders (integrated with order_lifecycles) ---
+    st.markdown("##### 🧭 طلباتي الحالية")
     if db:
         try:
-            active_missions = db.collection("orders").where("driver_assigned", "==", DRIVER_NAME).stream()
+            active_missions = db.collection("order_lifecycles").where("assigned_driver", "==", DRIVER_NAME).stream()
         except Exception as e:
             st.error(f"خطأ في جلب المهمات النشطة: {e}")
             active_missions = []
@@ -183,72 +252,47 @@ with driver_tabs[1]:
                 m_data = doc.to_dict() or {}
                 m_id = doc.id
                 status = m_data.get("status")
-                
-                if status in ["🚖 جاري الاستلام", "🚚 جاري التوصيل", "✅ في انتظار تقييم الطرفين"]:
-                    mission_count += 1
-                    
-                    st.markdown(f"""
-                    <div style='background-color: #111827; padding: 20px; border-radius: 10px; color: white; text-align: right; margin-bottom: 15px;'>
-                        <h3 style='color: #38BDF8; margin: 0;'>{vehicle_icon} العميل بانتظارك</h3>
-                        <p style='margin: 8px 0;'><b>👤 الاسم:</b> {html_mod.escape(str(m_data.get('client_name', '')))}</p>
-                        <p style='margin: 8px 0;'><b>📦 الوجهة/الشحنة:</b> {html_mod.escape(str(m_data.get('order_details', '')))}</p>
-                        <hr style='border-color: #374151;'>
-                        <b style='color: #FBBF24; font-size: 16px;'>💰 القيمة المتفق عليها: {m_data.get('suggested_price')}.00 جنيه</b><br>
-                        <small style='color: #9CA3AF;'>🚨 حالة المهمة الحية: {status}</small>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    if status == "🚖 جاري الاستلام":
-                        if st.button("📦 تم استلام العميل/الشحنة والتحرك", key=f"status_btn_pickup_{m_id}", use_container_width=True):
-                            try:
-                                if not db:
-                                    st.error("قاعدة البيانات غير متصلة — لا يمكن تغيير حالة الطلب.")
-                                else:
-                                    db.collection("orders").document(m_id).update({"status": "🚚 جاري التوصيل"})
-                                    st.rerun()
-                            except Exception as e:
-                                st.error(f"فشل تحديث الحالة: {e}")
-                                
-                    elif status == "🚚 جاري التوصيل":
-                        if st.button("🏁 إنهاء وتسليم الطلب بنجاح للوجهة", key=f"status_btn_deliver_{m_id}", use_container_width=True):
-                            try:
-                                if db:
-                                    db.collection("orders").document(m_id).update({"status": "✅ في انتظار تقييم الطرفين"})
-                                invoice_html = f"""
-                                <div style="direction: rtl; text-align: right; font-family: sans-serif; border: 2px solid #10B981; padding: 20px; border-radius: 10px;">
-                                    <h2 style="color: #10B981;">📋 فاتورة معتمدة من منصة مُنجز 2026</h2>
-                                    <p>عزيزي <b>{m_data.get('client_name')}</b>، تم إنهاء طلبك بنجاح.</p>
-                                    <hr>
-                                    <p><b>{role_title} المسؤول:</b> {DRIVER_NAME}</p>
-                                    <p><b>📦 تفاصيل الخدمة:</b> {m_data.get('order_details')}</p>
-                                    <p style="font-size: 18px; color: #1E3A8A;"><b>💰 الإجمالي المطلوب سداده: {m_data.get('suggested_price')} جنيه</b></p>
-                                    <hr>
-                                    <p style="font-size: 12px; color: #6B7280; text-align: center;">شكراً لاستخدامك منصة منجز الذكية ✨</p>
-                                </div>
-                                """
-                                client_email = m_data.get("client_email", "")
-                                if client_email:
-                                    try:
-                                        send_monjez_email(client_email, f"📦 فاتورة طلبك عبر منصة مُنجز ({role_title})", invoice_html)
-                                    except Exception:
-                                        pass
-                                
-                                st.success("🎯 تم إنهاء المشوار وإرسال الفاتورة الإلكترونية للعميل بنجاح!")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"فشل إنهاء الطلب: {e}")
-                                
-                    elif status == "✅ في انتظار تقييم الطرفين":
-                        st.warning("🏁 الرحلة وصلت. فضلاً قيّم العميل لإغلاق الحساب وتقييد العمولات:")
-                        rating = st.slider("⭐ تقييم سلوك العميل:", 1, 5, 5, key=f"slider_rating_{m_id}")
-                        if st.button("💾 حفظ وإغلاق الفاتورة النهائية", key=f"save_final_invoice_{m_id}", use_container_width=True):
-                            try:
-                                if db:
-                                    db.collection("orders").document(m_id).update({"status": "⭐ تم الإغلاق والتقييم بالكامل"})
-                                    st.success("🎯 تم تسوية الحساب وإغلاق المعاملة بنجاح!")
-                                    st.rerun()
-                            except Exception as e:
-                                st.error(f"فشل إغلاق الفاتورة: {e}")
+                mission_count += 1
+
+                st.markdown(f"""
+                <div style='background-color: #111827; padding: 20px; border-radius: 10px; color: white; text-align: right; margin-bottom: 15px;'>
+                    <h3 style='color: #38BDF8; margin: 0;'>{vehicle_icon} مهمة حالية</h3>
+                    <p style='margin: 8px 0;'><b>👤 الاسم:</b> {html_mod.escape(str(m_data.get('customer_name', '')))}</p>
+                    <p style='margin: 8px 0;'><b>📦 التفاصيل:</b> {html_mod.escape(str(m_data.get('order_type', '')))} - {html_mod.escape(str(m_data.get('pickup_location', '')))} → {html_mod.escape(str(m_data.get('destination_location', '')))}</p>
+                    <hr style='border-color: #374151;'>
+                    <b style='color: #FBBF24; font-size: 16px;'>💰 القيمة المتفق عليها: {m_data.get('final_price') or m_data.get('customer_budget')}.00 جنيه</b><br>
+                    <small style='color: #9CA3AF;'>🚨 حالة المهمة الحية: {status}</small>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # State change buttons (follow lifecycle): pending -> bid_accepted -> picked_up -> in_transit -> delivered
+                if status == "bid_accepted":
+                    if st.button("📦 تم الاستلام من المرسل/الموكل", key=f"btn_picked_{m_id}"):
+                        try:
+                            db.collection("order_lifecycles").document(m_id).update({"status": "picked_up", "picked_up_at": firestore.SERVER_TIMESTAMP})
+                            st.success("🔔 تم تأكيد الاستلام. انتقل الطلب إلى حالة 'PICKED_UP'.")
+                            st.experimental_rerun()
+                        except Exception as e:
+                            st.error(f"فشل تحديث الحالة: {e}")
+                elif status == "picked_up":
+                    if st.button("🚴 في الطريق للعميل - بدء التتبع", key=f"btn_transit_{m_id}"):
+                        try:
+                            db.collection("order_lifecycles").document(m_id).update({"status": "in_transit", "in_transit_at": firestore.SERVER_TIMESTAMP})
+                            st.success("🚚 تم تحديث الحالة إلى 'IN_TRANSIT'.")
+                            st.experimental_rerun()
+                        except Exception as e:
+                            st.error(f"فشل تحديث الحالة: {e}")
+                elif status == "in_transit":
+                    if st.button("✅ تم التوصيل وتسوية المبلغ", key=f"btn_delivered_{m_id}"):
+                        try:
+                            db.collection("order_lifecycles").document(m_id).update({"status": "delivered", "delivered_at": firestore.SERVER_TIMESTAMP})
+                            st.success("🎉 تم تسليم الطلب وتسجيله كـ 'DELIVERED'.")
+                            st.experimental_rerun()
+                        except Exception as e:
+                            st.error(f"فشل تحديث الحالة: {e}")
+                else:
+                    st.info(f"حالة المهمة الحالية: {status}")
+
             except Exception:
                 continue
                 

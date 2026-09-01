@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from firebase_helpers import fetch_from_firebase, update_firebase_node
 from firebase_helpers import sanitize_username, get_current_timestamp
+from firebase_helpers import init_firestore
 
 # Defensive import for payment hub
 try:
@@ -18,6 +19,9 @@ st.set_page_config(page_title="📦 رادار مرسول الطرود والت�
 
 st.title("📦 رادار مرسول الطرود والتوصيل")
 st.markdown("---")
+
+# init db (used alongside fetch_from_firebase/update_firebase_node)
+db = init_firestore()
 
 # جلب الطلبيات من نود 'deliveries'
 try:
@@ -72,6 +76,58 @@ else:
         except Exception as e:
             st.error(f"تعذر فتح بوابة الدفع: {e}")
 
+    # Live Order Tracker for selected delivery
+    st.markdown("---")
+    st.markdown("### 🔴 Live Order Tracker")
+    delivery_ids = [r['delivery_id'] for r in rows]
+    selected = st.selectbox("اختر طلباً لمتابعته لحظياً:", options=delivery_ids, key="select_live_delivery") if delivery_ids else None
+
+    if selected:
+        # fetch latest from firebase
+        try:
+            node = fetch_from_firebase(f"deliveries/{selected}")
+        except Exception as e:
+            st.error(f"فشل جلب بيانات الطلب: {e}")
+            node = None
+
+        if node:
+            status = node.get('status', 'pending')
+            color = "#F59E0B" if status=='pending' else ("#10B981" if status in ['picked_up','in_transit'] else ("#2563EB" if status=='bid_accepted' else "#6B7280"))
+            st.markdown(f"<div style='padding:12px; border-radius:8px; background:{color}; color:white; text-align:right;'><b>حالة الطلب: {status.upper()}</b></div>", unsafe_allow_html=True)
+
+            # show bids
+            bids = node.get('bids', {}) if isinstance(node.get('bids', {}), dict) else node.get('bids', [])
+            if not bids:
+                st.info("لا توجد عروض حتى الآن.")
+            else:
+                st.markdown("#### العروض المقدمة")
+                # bids may be dict keyed by bidder
+                if isinstance(bids, dict):
+                    for k, v in bids.items():
+                        driver = v.get('by', k)
+                        amount = v.get('bid', v.get('bid_amount', '-'))
+                        st.write(f"- {driver}: {amount} ج.م")
+                        if st.button("قبول العرض", key=f"accept_delivery_{selected}_{k}"):
+                            try:
+                                update_firebase_node(f"deliveries/{selected}", {"accepted_bid": {"by": driver, "amount": amount}, "status": "bid_accepted"})
+                                st.success("✅ تم قبول العرض وسيتم إشعار المندوب.")
+                                st.experimental_rerun()
+                            except Exception as e:
+                                st.error(f"فشل قبول العرض: {e}")
+                else:
+                    for idx, b in enumerate(bids):
+                        driver = b.get('driver_name', b.get('by', 'غير معروف'))
+                        amount = b.get('bid_amount', b.get('bid', '-'))
+                        st.write(f"- {driver}: {amount} ج.م")
+                        if st.button("قبول العرض", key=f"accept_delivery_{selected}_{idx}"):
+                            try:
+                                update_firebase_node(f"deliveries/{selected}", {"accepted_bid": {"by": driver, "amount": amount}, "status": "bid_accepted"})
+                                st.success("✅ تم قبول العرض وسيتم إشعار المندوب.")
+                                st.experimental_rerun()
+                            except Exception as e:
+                                st.error(f"فشل قبول العرض: {e}")
+
+    # existing rows listing with bid submission
     for d in rows:
         did = d["delivery_id"]
         with st.expander(f"📦 {d['parcel']} — {d['pickup']} → {d['dropoff']}"):
