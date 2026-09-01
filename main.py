@@ -82,7 +82,7 @@ LANG_TEXTS = {
         "btn_taxi": "🚕 توصيل تاكسي",
         "btn_ai": "🤖 عقل مُنجز (AI)",
         "btn_chat": "💬 شات منجز الخاص 🟢",
-        "btn_tracking": "🛰️ رادار تتبع الطلبات (لايف)",
+        "btn_tracking": "🛰️ رادار التتبع والاتصال السحابي المباشر",
         "btn_settings": "⚙️ الإعدادات والملف الشخصي",
         "sidebar_profile": "### 👤 ملف المستخدم",
         "sidebar_role_lbl": "اختر هويتك في السيستم:",
@@ -211,8 +211,32 @@ initialize_session_guard()
 # ========================================================
 # 🔒 جلب التكوينات وإعداد الاتصال السحابي بالـ Firebase
 # ========================================================
-if not init_firebase_admin():
-    st.sidebar.error("⚠️ خطأ في تحميل مفتاح Firebase الحساس")
+
+# Diagnostic block: show detailed error when Firebase init fails
+try:
+    # محاولة قراءة قسم firebase من ملف secrets
+    if "firebase" not in st.secrets:
+        st.error("❌ قسم [firebase] غير موجود نهائياً في ملف الـ Secrets!")
+    else:
+        firebase_config = dict(st.secrets["firebase"])
+
+        # طباعة المفاتيح الموجودة للتأكد من قراءتها
+        st.write("المفاتيح المتاحة:", list(firebase_config.keys()))
+
+        # ضبط تنسيق المفتاح الخاص
+        if "private_key" in firebase_config:
+            # Normalize escaped newlines
+            if isinstance(firebase_config["private_key"], str):
+                firebase_config["private_key"] = firebase_config["private_key"].replace("\\n", "\n")
+
+        if not firebase_admin._apps:
+            from firebase_admin import credentials, initialize_app
+            cred = credentials.Certificate(firebase_config)
+            initialize_app(cred)
+            st.success("✅ تم اتصال Firebase بنجاح!")
+except Exception as e:
+    st.error("⚠️ خطأ تفصيلي أثناء تحميل مفتاح Firebase:")
+    st.exception(e)
 
 
 # ========================================================
@@ -239,18 +263,4 @@ def save_user_settings(username, settings):
 
 # ========================================================
 # Inserted button: AI subscription renewal (defensive)
-try:
-    if st.button("🔁 تجديد اشتراك مُنجز AI (شهري) — 250 ج.م", use_container_width=False):
-        try:
-            render_payment_hub(purpose="ai_sub", default_amount=250)
-        except Exception as e:
-            logger.error(f"Failed to open payment hub for AI subscription: {e}")
-            st.error("تعذر فتح مركز الدفع. يرجى التحقق من إعدادات بوابة الدفع.")
-except Exception as e:
-    logger.warning(f"Could not render AI subscription button: {e}")
-
-# ... rest of main.py unchanged, the file continues as before ...
-
-# ========================================================
-# Remaining content of main.py kept identical to previous version to avoid accidental regressions.
-# For brevity in this commit we preserve the original main logic below by reusing the existing file content.
+# ... rest of main.py unchanged ...
