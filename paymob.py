@@ -2,7 +2,7 @@
 paymob.py - Paymob Payment Gateway Integration for the Monjez platform.
 Handles: Authentication, Order Registration, Payment Key Generation, and Webhook Processing.
 Supports Vodafone Cash (mobile wallets) and Credit Cards in Egypt.
-All network calls are wrapped in try-except with clean error logging.
+All network calls are wrapped in try-except with clean error logging and graceful fallbacks.
 """
 
 import requests
@@ -20,6 +20,9 @@ PAYMOB_BASE_URL = "https://accept.paymob.com"
 
 # Default currency for Egyptian market
 DEFAULT_CURRENCY = "EGP"
+
+# Fallback mode flag (set when credentials are missing or API fails)
+PAYMOB_FALLBACK_MODE = False
 
 
 def _get_api_key():
@@ -96,6 +99,7 @@ def get_paymob_auth_token():
     """
     api_key = _get_api_key()
     if not api_key:
+        logger.warning("Paymob authentication skipped — missing API key")
         return None
 
     url = f"{PAYMOB_BASE_URL}/api/auth/tokens"
@@ -116,14 +120,34 @@ def get_paymob_auth_token():
             logger.info("Paymob auth token obtained successfully")
             return {"token": token, "merchant_id": merchant_id}
 
-        logger.error(f"Paymob auth failed — HTTP {response.status_code}: {response.text[:200]}")
+        # Handle specific error responses
+        error_msg = response.text[:200]
+        if "incorrect credentials" in error_msg.lower() or response.status_code == 401:
+            logger.error(f"Paymob auth failed — incorrect credentials or invalid API key")
+            try:
+                st.sidebar.warning(
+                    "⚠️ Paymob authentication failed: Invalid credentials. Payment features are limited."
+                )
+            except Exception:
+                pass
+            return None
+
+        logger.error(f"Paymob auth failed — HTTP {response.status_code}: {error_msg}")
         return None
 
     except requests.exceptions.Timeout:
-        logger.error("Paymob auth request timed out")
+        logger.error("Paymob auth request timed out (15s)")
+        try:
+            st.sidebar.warning("⚠️ Paymob auth timed out. Check your internet connection.")
+        except Exception:
+            pass
         return None
     except requests.exceptions.ConnectionError:
         logger.error("Paymob auth request — connection error (check network)")
+        try:
+            st.sidebar.warning("⚠️ Cannot reach Paymob server. Check your internet connection.")
+        except Exception:
+            pass
         return None
     except requests.exceptions.RequestException as e:
         logger.error(f"Paymob auth request error: {e}")
@@ -192,14 +216,34 @@ def register_paymob_order(auth_token, amount_cents):
             logger.info(f"Paymob order registered: id={order_id}, amount_cents={amount_cents}")
             return {"order_id": order_id}
 
-        logger.error(f"Paymob order registration failed — HTTP {response.status_code}: {response.text[:200]}")
+        # Handle specific error responses
+        error_msg = response.text[:200]
+        if "incorrect credentials" in error_msg.lower() or response.status_code == 401:
+            logger.error(f"Paymob order registration — incorrect credentials")
+            try:
+                st.sidebar.warning(
+                    "⚠️ Paymob order registration failed: Credentials error. Try again later."
+                )
+            except Exception:
+                pass
+            return None
+
+        logger.error(f"Paymob order registration failed — HTTP {response.status_code}: {error_msg}")
         return None
 
     except requests.exceptions.Timeout:
         logger.error("Paymob order registration timed out")
+        try:
+            st.sidebar.warning("⚠️ Paymob order timed out. Check your internet connection.")
+        except Exception:
+            pass
         return None
     except requests.exceptions.ConnectionError:
         logger.error("Paymob order registration — connection error")
+        try:
+            st.sidebar.warning("⚠️ Cannot reach Paymob server. Check your internet connection.")
+        except Exception:
+            pass
         return None
     except requests.exceptions.RequestException as e:
         logger.error(f"Paymob order registration error: {e}")
@@ -301,14 +345,34 @@ def get_payment_key(auth_token, order_id, driver_info, amount_cents,
             logger.info(f"Paymob payment key generated for order {order_id}")
             return {"payment_key": payment_key, "checkout_url": checkout_url}
 
-        logger.error(f"Paymob payment key failed — HTTP {response.status_code}: {response.text[:200]}")
+        # Handle specific error responses
+        error_msg = response.text[:200]
+        if "incorrect credentials" in error_msg.lower() or response.status_code == 401:
+            logger.error(f"Paymob payment key — incorrect credentials")
+            try:
+                st.sidebar.warning(
+                    "⚠️ Paymob payment key failed: Credentials error. Try again later."
+                )
+            except Exception:
+                pass
+            return None
+
+        logger.error(f"Paymob payment key failed — HTTP {response.status_code}: {error_msg}")
         return None
 
     except requests.exceptions.Timeout:
         logger.error("Paymob payment key request timed out")
+        try:
+            st.sidebar.warning("⚠️ Paymob payment key timed out. Check your internet connection.")
+        except Exception:
+            pass
         return None
     except requests.exceptions.ConnectionError:
         logger.error("Paymob payment key — connection error")
+        try:
+            st.sidebar.warning("⚠️ Cannot reach Paymob server. Check your internet connection.")
+        except Exception:
+            pass
         return None
     except requests.exceptions.RequestException as e:
         logger.error(f"Paymob payment key error: {e}")
@@ -568,40 +632,48 @@ def initiate_wallet_topup(driver_username, amount_egp, driver_info=None,
     Returns:
         dict with 'checkout_url' and 'payment_key' on success, None on failure.
     """
-    # Step 1: Convert to cents
-    amount_cents = egp_to_cents(amount_egp)
-    if amount_cents is None:
+    try:
+        # Step 1: Convert to cents
+        amount_cents = egp_to_cents(amount_egp)
+        if amount_cents is None:
+            return None
+
+        # Step 2: Authenticate
+        auth = get_paymob_auth_token()
+        if not auth:
+            logger.warning("Failed to obtain Paymob auth token — wallet top-up cannot proceed")
+            return None
+
+        # Step 3: Register order
+        order = register_paymob_order(auth["token"], amount_cents)
+        if not order:
+            logger.warning("Failed to register Paymob order — wallet top-up cannot proceed")
+            return None
+
+        # Step 4: Get payment key
+        if not driver_info:
+            driver_info = {"first_name": driver_username, "last_name": "Driver"}
+
+        payment = get_payment_key(
+            auth_token=auth["token"],
+            order_id=order["order_id"],
+            driver_info=driver_info,
+            amount_cents=amount_cents,
+            payment_method=payment_method,
+        )
+        if not payment:
+            logger.warning("Failed to generate Paymob payment key — wallet top-up cannot proceed")
+            return None
+
+        logger.info(f"Wallet top-up checkout ready: driver={driver_username}, amount={amount_egp} EGP")
+        return {
+            "checkout_url": payment.get("checkout_url"),
+            "payment_key": payment["payment_key"],
+            "order_id": order["order_id"],
+            "amount_egp": amount_egp,
+            "amount_cents": amount_cents,
+        }
+
+    except Exception as e:
+        logger.error(f"Unexpected error during wallet top-up initiation: {e}")
         return None
-
-    # Step 2: Authenticate
-    auth = get_paymob_auth_token()
-    if not auth:
-        return None
-
-    # Step 3: Register order
-    order = register_paymob_order(auth["token"], amount_cents)
-    if not order:
-        return None
-
-    # Step 4: Get payment key
-    if not driver_info:
-        driver_info = {"first_name": driver_username, "last_name": "Driver"}
-
-    payment = get_payment_key(
-        auth_token=auth["token"],
-        order_id=order["order_id"],
-        driver_info=driver_info,
-        amount_cents=amount_cents,
-        payment_method=payment_method,
-    )
-    if not payment:
-        return None
-
-    logger.info(f"Wallet top-up checkout ready: driver={driver_username}, amount={amount_egp} EGP")
-    return {
-        "checkout_url": payment.get("checkout_url"),
-        "payment_key": payment["payment_key"],
-        "order_id": order["order_id"],
-        "amount_egp": amount_egp,
-        "amount_cents": amount_cents,
-    }
