@@ -5,7 +5,7 @@ import streamlit as st
 from firebase_admin import firestore
 from firebase_helpers import init_firestore
 
-# defensive import of payment hub
+# Defensive import of payment hub
 try:
     from pages.Payment_Hub import render_payment_hub
 except Exception:
@@ -14,7 +14,7 @@ except Exception:
     except Exception:
         render_payment_hub = None
 
-# --- الاتصال بالفايربيز ---
+# --- الاتصال بقاعدة بيانات فايربيز ---
 try:
     db = init_firestore()
 except Exception:
@@ -32,10 +32,10 @@ def render_parcels_page(user_name="أحمد مصطفى", send_to_firebase=None, 
     
     # Live Order Tracker (integrated with order_lifecycles)
     st.markdown("### 🔴 Live Order Tracker")
-    col1, col2 = st.columns([3,1])
+    col1, col2 = st.columns([3, 1])
     with col2:
         if st.button("تحديث اللحظة 🔄", key="client_live_refresh"):
-            st.experimental_rerun()
+            st.rerun()
     with col1:
         if db:
             try:
@@ -52,7 +52,7 @@ def render_parcels_page(user_name="أحمد مصطفى", send_to_firebase=None, 
                     o = doc.to_dict() or {}
                     o_id = doc.id
                     status = o.get("status", "pending")
-                    status_color = "#F59E0B" if status == "pending" else ("#10B981" if status in ["picked_up","in_transit"] else ("#2563EB" if status=="bid_accepted" else "#6B7280"))
+                    status_color = "#F59E0B" if status == "pending" else ("#10B981" if status in ["picked_up", "in_transit"] else ("#2563EB" if status == "bid_accepted" else "#6B7280"))
                     st.markdown(f"<div style='padding:12px; border-radius:8px; background:{status_color}; color:white; text-align:right;'><b>حالة الطلب: {status.upper()}</b></div>", unsafe_allow_html=True)
 
                     bids = o.get("bids", []) or []
@@ -66,7 +66,6 @@ def render_parcels_page(user_name="أحمد مصطفى", send_to_firebase=None, 
                             st.write(f"- {driver}: {amount} ج.م")
                             if st.button("قبول العرض", key=f"accept_bid_{o_id}_{idx}"):
                                 try:
-                                    # Accept bid: set accepted bid index and update status
                                     db.collection("order_lifecycles").document(o_id).update({
                                         "accepted_bid_index": idx,
                                         "assigned_driver": driver,
@@ -75,7 +74,7 @@ def render_parcels_page(user_name="أحمد مصطفى", send_to_firebase=None, 
                                         "bid_accepted_at": firestore.SERVER_TIMESTAMP,
                                     })
                                     st.success("✅ تم قبول العرض وسيتم إشعار السائق المختار.")
-                                    st.experimental_rerun()
+                                    st.rerun()
                                 except Exception as e:
                                     st.error(f"فشل قبول العرض: {e}")
                 except Exception:
@@ -84,42 +83,42 @@ def render_parcels_page(user_name="أحمد مصطفى", send_to_firebase=None, 
                 st.info("لا توجد طلبيات مرتبطة باسمك حالياً.")
 
     st.markdown("---")
-   with st.form("parcels_form", clear_on_submit=True):
+    
+    # Form for creating parcel order
+    with st.form("parcels_form", clear_on_submit=True):
         c_name = st.text_input("👤 اسم العميل", value=user_name if isinstance(user_name, str) else "أحمد مصطفى", key="parcels_name")
         o_details = st.text_area("📝 ما الذي تريد توصيله؟ (اكتب تفاصيل الوجهة والشحنة بدقة)", placeholder="مثال: مطلوب استلام طرد من...", key="parcels_details")
         s_price = st.number_input("💰 ميزانيتك المقترحة للطلب (جنيه)", min_value=10, value=30, step=5, key="parcels_price")
         c_phone = st.text_input("📱 رقم هاتف التواصل", value="+20 1000000000", key="parcels_phone")
 
-        submit_btn = st.form_submit_button("🚀 نشر طلب الطرد", key="parcels_submit") 
-    
+        submit_btn = st.form_submit_button("🚀 نشر طلب الطرد", key="parcels_submit")
         
-        if submit_btn:
-            if not o_details or not o_details.strip():
-                st.warning("⚠️ يرجى كتابة تفاصيل الشحنة أولاً قبل النشر!")
-            else:
-                payload = {
-                    "customer_name": c_name,
-                    "order_type": "parcel",
-                    "order_details": o_details,
-                    "customer_budget": s_price,
-                    "phone": c_phone,
-                    "status": "pending",
-                    "assigned_driver": "",
-                    "created_at": firestore.SERVER_TIMESTAMP,
-                }
-                try:
-                    if callable(send_to_firebase):
-                        send_to_firebase(f"order_lifecycles/{int(time.time())}", payload)
-                        st.success("🎯 تم قيد ونشر طلب الطرد بنجاح!")
+    if submit_btn:
+        if not o_details or not o_details.strip():
+            st.warning("⚠️ يرجى كتابة تفاصيل الشحنة أولاً قبل النشر!")
+        else:
+            payload = {
+                "customer_name": c_name,
+                "order_type": "parcel",
+                "order_details": o_details,
+                "customer_budget": s_price,
+                "phone": c_phone,
+                "status": "pending",
+                "assigned_driver": "",
+                "created_at": firestore.SERVER_TIMESTAMP,
+            }
+            try:
+                if callable(send_to_firebase):
+                    send_to_firebase(f"order_lifecycles/{int(time.time())}", payload)
+                    st.success("🎯 تم قيد ونشر طلب الطرد بنجاح!")
+                else:
+                    if not db:
+                        st.error("⚠️ Firebase غير متصل — لا يمكن حفظ الطلب الآن.")
                     else:
-                        if not db:
-                            st.error("⚠️ Firebase غير متصل — لا يمكن حفظ الطلب الآن.")
-                        else:
-                            # use auto-id
-                            db.collection("order_lifecycles").add(payload)
-                            st.success("🎯 تم قيد ونشر طلب الطرد بنجاح!")
-                except Exception as e:
-                    st.error(f"❌ حدث خطأ أثناء حفظ الطلب: {e}")
+                        db.collection("order_lifecycles").add(payload)
+                        st.success("🎯 تم قيد ونشر طلب الطرد بنجاح!")
+            except Exception as e:
+                st.error(f"❌ حدث خطأ أثناء حفظ الطلب: {e}")
 
 # ---------------------------------------------------------
 # 2️⃣ دالة طلب تاكسي / توصيل أفراد
@@ -127,12 +126,11 @@ def render_parcels_page(user_name="أحمد مصطفى", send_to_firebase=None, 
 def render_taxi_page(user_name="أحمد مصطفى", send_to_firebase=None, send_system_email=None, *args, **kwargs):
     st.markdown("<h2 style='color: #1E3A8A; text-align: right;'>🚖 طلب تاكسي وتوصيل أفراد</h2>", unsafe_allow_html=True)
     
-    # Live Order Tracker (reuse same UI pattern)
     st.markdown("### 🔴 Live Order Tracker")
-    col1, col2 = st.columns([3,1])
+    col1, col2 = st.columns([3, 1])
     with col2:
         if st.button("تحديث اللحظة 🔄", key="client_taxi_refresh"):
-            st.experimental_rerun()
+            st.rerun()
     with col1:
         if db:
             try:
@@ -167,7 +165,7 @@ def render_taxi_page(user_name="أحمد مصطفى", send_to_firebase=None, sen
                                         "bid_accepted_at": firestore.SERVER_TIMESTAMP,
                                     })
                                     st.success("✅ تم قبول العرض وسيتم إشعار السائق المختار.")
-                                    st.experimental_rerun()
+                                    st.rerun()
                                 except Exception as e:
                                     st.error(f"فشل قبول العرض: {e}")
                 except Exception:
@@ -181,34 +179,34 @@ def render_taxi_page(user_name="أحمد مصطفى", send_to_firebase=None, sen
         s_price = st.number_input("💰 الميزانية المقترحة للرحلة (جنيه)", min_value=10, value=50, step=5, key="taxi_price")
         c_phone = st.text_input("📱 رقم هاتف التواصل", value="+20 1000000000", key="taxi_phone")
 
-        submit_btn = st.form_submit_button("🚀 طلب التاكسي الآن", key="taxi_submit")
+        submit_taxi_btn = st.form_submit_button("🚀 طلب التاكسي الآن", key="taxi_submit")
         
-        if submit_btn:
-            if not o_details or not o_details.strip():
-                st.warning("⚠️ يرجى تحديد تفاصيل المشوار والوجهة أولاً!")
-            else:
-                payload = {
-                    "customer_name": c_name,
-                    "order_type": "taxi",
-                    "order_details": o_details,
-                    "customer_budget": s_price,
-                    "phone": c_phone,
-                    "status": "pending",
-                    "assigned_driver": "",
-                    "created_at": firestore.SERVER_TIMESTAMP,
-                }
-                try:
-                    if callable(send_to_firebase):
-                        send_to_firebase(f"order_lifecycles/{int(time.time())}", payload)
-                        st.success("🎯 تم نشر طلب الرحلة وبدأ البحث عن سائق!")
+    if submit_taxi_btn:
+        if not o_details or not o_details.strip():
+            st.warning("⚠️ يرجى تحديد تفاصيل المشوار والوجهة أولاً!")
+        else:
+            payload = {
+                "customer_name": c_name,
+                "order_type": "taxi",
+                "order_details": o_details,
+                "customer_budget": s_price,
+                "phone": c_phone,
+                "status": "pending",
+                "assigned_driver": "",
+                "created_at": firestore.SERVER_TIMESTAMP,
+            }
+            try:
+                if callable(send_to_firebase):
+                    send_to_firebase(f"order_lifecycles/{int(time.time())}", payload)
+                    st.success("🎯 تم نشر طلب الرحلة وبدأ البحث عن سائق!")
+                else:
+                    if not db:
+                        st.error("⚠️ Firebase غير متصل — لا يمكن حفظ الطلب الآن.")
                     else:
-                        if not db:
-                            st.error("⚠️ Firebase غير متصل — لا يمكن حفظ الطلب الآن.")
-                        else:
-                            db.collection("order_lifecycles").add(payload)
-                            st.success("🎯 تم نشر طلب الرحلة وبدأ البحث عن سائق!")
-                except Exception as e:
-                    st.error(f"❌ حدث خطأ أثناء حفظ الطلب: {e}")
+                        db.collection("order_lifecycles").add(payload)
+                        st.success("🎯 تم نشر طلب الرحلة وبدأ البحث عن سائق!")
+            except Exception as e:
+                st.error(f"❌ حدث خطأ أثناء حفظ الطلب: {e}")
 
 # ---------------------------------------------------------
 # 3️⃣ دالة شات مُنجز الخاص
@@ -269,7 +267,6 @@ def render_wallet_page(user_name="أحمد مصطفى", *args, **kwargs):
         with st.expander("➕ إضافة", expanded=False):
             topup_amount = st.number_input("المبلغ المراد إضافته", min_value=10, value=100, key="wallet_topup_amount")
             if st.button("دفع", type="primary", key="wallet_topup_btn"):
-                # call payment hub if available
                 if render_payment_hub:
                     try:
                         render_payment_hub(purpose="topup", default_amount=int(topup_amount))
@@ -278,8 +275,9 @@ def render_wallet_page(user_name="أحمد مصطفى", *args, **kwargs):
                 else:
                     st.info("⚠️ بوابة الدفع غير متاحة — تأكد من توافر صفحة Payment_Hub.") 
 
-
-# main entrypoint (call directly so Streamlit loads tabs)
+# ---------------------------------------------------------
+# نقطة الدخول الرئيسية (Main Entrypoint)
+# ---------------------------------------------------------
 def main():
     st.title("منصة مُنجز - واجهة العميل")
     menu = ["بوابة الطرود", "طلب تاكسي", "الشات", "المحفظة"]
@@ -296,8 +294,7 @@ def main():
     elif choice == "المحفظة":
         render_wallet_page(user_name=user_name)
 
-
-# call main defensively (prevents white screen)
+# تشغيل آمن لتفادي الشاشة البيضاء وتتبع الأخطاء بالسجلات
 try:
     main()
 except Exception as e:
