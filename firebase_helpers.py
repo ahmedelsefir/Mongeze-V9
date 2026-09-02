@@ -1,9 +1,37 @@
 import streamlit as st
 import logging
-from typing import Any, Dict, Optional
+import time
+import random
+from typing import Any, Dict, Optional, Callable
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _retry(func: Callable[[], Any], retries: int = 3, backoff_factor: float = 0.5, allowed_exceptions: tuple = (Exception,)) -> Any:
+    """Run func with retries and exponential backoff.
+
+    Args:
+        func: zero-argument callable to execute.
+        retries: total attempts (including first).
+        backoff_factor: base wait time in seconds; wait = backoff_factor * 2**(attempt-1) + jitter
+        allowed_exceptions: tuple of exception classes to catch and retry.
+
+    Raises the last exception if all attempts fail.
+    Returns the callable's result on success.
+    """
+    attempt = 0
+    while attempt < retries:
+        try:
+            return func()
+        except allowed_exceptions as e:
+            attempt += 1
+            if attempt >= retries:
+                logger.exception("Operation failed after %d attempts: %s", attempt, e)
+                raise
+            sleep_time = backoff_factor * (2 ** (attempt - 1)) + random.uniform(0, backoff_factor)
+            logger.warning("Operation attempt %d/%d failed: %s. Retrying in %.2f seconds...", attempt, retries, e, sleep_time)
+            time.sleep(sleep_time)
 
 
 def initialize_firebase(notify: bool = True) -> bool:
@@ -34,11 +62,18 @@ def initialize_firebase(notify: bool = True) -> bool:
             if db_url:
                 app_opts["databaseURL"] = db_url
 
-            firebase_admin.initialize_app(cred, app_opts)
-            logger.info("Firebase Admin initialized")
-            if notify:
-                st.success("تم الاتصال بقاعدة البيانات بنجاح 🟢")
-            return True
+            # initialize_app can fail for transient reasons; wrap with retry
+            def _init():
+                firebase_admin.initialize_app(cred, app_opts)
+                return True
+
+            try:
+                return _retry(_init, retries=3, backoff_factor=0.5)
+            except Exception as e:
+                logger.exception("Failed to initialize Firebase after retries: %s", e)
+                if notify:
+                    st.error(f"فشل الاتصال بقاعدة البيانات: {e}")
+                return False
         else:
             msg = "Firebase credentials not found in Streamlit secrets."
             logger.warning(msg)
@@ -53,7 +88,7 @@ def initialize_firebase(notify: bool = True) -> bool:
         return False
 
 
-# ---------------- Realtime Database helpers (lazy imports) ----------------
+# ---------------- Realtime Database helpers (lazy imports + retry) ----------------
 
 
 def push_realtime_data(path: str, data: Dict[str, Any], notify: bool = False) -> Optional[str]:
@@ -66,9 +101,12 @@ def push_realtime_data(path: str, data: Dict[str, Any], notify: bool = False) ->
 
         from firebase_admin import db
 
-        ref = db.reference(path)
-        new_ref = ref.push(data)
-        key = new_ref.key
+        def _op():
+            ref = db.reference(path)
+            new_ref = ref.push(data)
+            return new_ref.key
+
+        key = _retry(_op, retries=4, backoff_factor=0.5)
         logger.info("Pushed data to %s, key=%s", path, key)
         if notify:
             st.success("تم إرسال البيانات بنجاح")
@@ -87,8 +125,11 @@ def get_realtime_data(path: str, notify: bool = False) -> Optional[Dict[str, Any
             return None
         from firebase_admin import db
 
-        ref = db.reference(path)
-        return ref.get()
+        def _op():
+            ref = db.reference(path)
+            return ref.get()
+
+        return _retry(_op, retries=3, backoff_factor=0.4)
     except Exception as e:
         logger.exception("Realtime Get Error: %s", e)
         if notify:
@@ -103,9 +144,12 @@ def update_realtime_data(path: str, data: Dict[str, Any], notify: bool = False) 
             return False
         from firebase_admin import db
 
-        ref = db.reference(path)
-        ref.update(data)
-        return True
+        def _op():
+            ref = db.reference(path)
+            ref.update(data)
+            return True
+
+        return bool(_retry(_op, retries=3, backoff_factor=0.4))
     except Exception as e:
         logger.exception("Realtime Update Error: %s", e)
         if notify:
@@ -120,9 +164,12 @@ def delete_firebase_node(path: str, notify: bool = False) -> bool:
             return False
         from firebase_admin import db
 
-        ref = db.reference(path)
-        ref.delete()
-        return True
+        def _op():
+            ref = db.reference(path)
+            ref.delete()
+            return True
+
+        return bool(_retry(_op, retries=3, backoff_factor=0.4))
     except Exception as e:
         logger.exception("Realtime Delete Error: %s", e)
         if notify:
@@ -143,7 +190,7 @@ def fetch_firebase_dict(path: str, notify: bool = False) -> Dict[str, Any]:
     return {}
 
 
-# ---------------- Firestore helpers (lazy imports) ----------------
+# ---------------- Firestore helpers (lazy imports + retry) ----------------
 
 
 def set_firestore_doc(collection: str, doc_id: str, data: Dict[str, Any], notify: bool = False) -> bool:
@@ -153,9 +200,12 @@ def set_firestore_doc(collection: str, doc_id: str, data: Dict[str, Any], notify
             return False
         from firebase_admin import firestore
 
-        client = firestore.client()
-        client.collection(collection).document(doc_id).set(data)
-        return True
+        def _op():
+            client = firestore.client()
+            client.collection(collection).document(doc_id).set(data)
+            return True
+
+        return bool(_retry(_op, retries=3, backoff_factor=0.4))
     except Exception as e:
         logger.exception("Firestore Set Error: %s", e)
         if notify:
@@ -170,11 +220,12 @@ def get_firestore_doc(collection: str, doc_id: str, notify: bool = False) -> Opt
             return None
         from firebase_admin import firestore
 
-        client = firestore.client()
-        doc = client.collection(collection).document(doc_id).get()
-        if doc.exists:
-            return doc.to_dict()
-        return None
+        def _op():
+            client = firestore.client()
+            doc = client.collection(collection).document(doc_id).get()
+            return doc.to_dict() if doc.exists else None
+
+        return _retry(_op, retries=3, backoff_factor=0.4)
     except Exception as e:
         logger.exception("Firestore Get Error: %s", e)
         if notify:
