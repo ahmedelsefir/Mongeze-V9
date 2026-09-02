@@ -88,7 +88,7 @@ def render_parcels_page(user_name="أحمد مصطفى", send_to_firebase=None, 
     with st.form("parcels_form", clear_on_submit=True):
         c_name = st.text_input("👤 اسم العميل", value=user_name if isinstance(user_name, str) else "أحمد مصطفى", key="parcels_name")
         o_details = st.text_area("📝 ما الذي تريد توصيله؟ (اكتب تفاصيل الوجهة والشحنة بدقة)", placeholder="مثال: مطلوب استلام طرد م[...]", key="parcels_details")
-        s_price = st.number_input("💰 ��يزانيتك المقترحة للطلب (جنيه)", min_value=10, value=30, step=5, key="parcels_price")
+        s_price = st.number_input("💰 ميزانيتك المقترحة للطلب (جنيه)", min_value=10, value=30, step=5, key="parcels_price")
         c_phone = st.text_input("📱 رقم هاتف التواصل", value="+20 1000000000", key="parcels_phone")
 
         submit_btn = st.form_submit_button("🚀 نشر طلب الطرد", key="parcels_submit")
