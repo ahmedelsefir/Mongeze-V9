@@ -1,413 +1,311 @@
-"""
-Shared Firebase utilities for the Mongeze platform.
+"""firebase_helpers.py
 
-Consolidates duplicated Firebase REST API calls, initialization logic,
-username sanitization, and timestamp formatting used across main.py
-and Streamlit page files.
+Helper utilities to initialize and interact safely with Firebase Realtime Database and Firestore
+for the Mongeze-V9 Streamlit app.
+
+Conventions followed:
+- Secure secrets via st.secrets
+- All DB operations wrapped in try/except
+- Use Python logging (no print)
+- Streamlit notifications are optional (notify=True) to avoid UI noise
+- Compatible with firebase_admin SDK
+
+Functions:
+- initialize_firebase(notify: bool = True) -> bool
+- push_realtime_data(path: str, data: dict, notify: bool = False) -> Optional[str]
+- get_realtime_data(path: str) -> Optional[dict]
+- update_realtime_data(path: str, data: dict) -> bool
+- set_realtime_data(path: str, data: dict) -> bool
+- delete_realtime_data(path: str) -> bool
+- get_firestore_doc(collection: str, doc_id: str) -> Optional[dict]
+- set_firestore_doc(collection: str, doc_id: str, data: dict) -> bool
+- update_firestore_doc(collection: str, doc_id: str, data: dict) -> bool
+- query_firestore_collection(collection: str, filters: list[tuple] | None = None, limit: int | None = None) -> list[dict]
 """
+
+from __future__ import annotations
 
 import json
 import logging
-import re
-import base64
+from typing import Any, Dict, Optional, List, Tuple
 
-import firebase_admin
-import requests
 import streamlit as st
-from datetime import datetime
-from firebase_admin import credentials as fb_credentials
+import firebase_admin
+from firebase_admin import credentials, db, firestore
 
+# Configure module logger
 logger = logging.getLogger(__name__)
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
 
 
-# ---------------------------------------------------------------------------
-# Common helpers
-# ---------------------------------------------------------------------------
+def _get_firebase_secret() -> Optional[Dict[str, Any]]:
+    """Load firebase credentials dictionary from st.secrets or environment.
 
-
-def get_current_timestamp():
-    """Return the current datetime as a formatted string."""
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-
-def sanitize_username(username):
-    """Sanitize a username for use as a Firebase node key."""
-    return username.replace(" ", "_").replace(".", "_")
-
-
-# ---------------------------------------------------------------------------
-# Firebase Realtime Database – REST helpers
-# ---------------------------------------------------------------------------
-
-
-def _get_firebase_url():
-    """Read the Firebase Realtime Database URL from Streamlit secrets."""
-    url = st.secrets.get("FIREBASE_URL", "").strip()
-    if not url:
-        logger.error("Missing FIREBASE_URL in Streamlit secrets")
-    return url
-
-
-def _sanitize_firebase_path(node):
-    """Sanitize Firebase node path to prevent path traversal."""
-    sanitized = node.strip("/")
-    sanitized = re.sub(r'[\[\]#$]', '', sanitized)
-    sanitized = re.sub(r'\.{2,}', '.', sanitized)
-    return sanitized
-
-
-def _build_url(node):
-    """Build a fully-qualified Firebase REST endpoint for *node*."""
-    base = _get_firebase_url()
-    sanitized = _sanitize_firebase_path(node)
-    return f"{base.rstrip('/')}/{sanitized}.json"
-
-
-def firebase_request(method, node, data=None, timeout=10):
-    """
-    Execute a Firebase REST API request with standardised error handling.
-
-    Args:
-        method: HTTP verb as a lowercase string ('get', 'post', 'patch', 'delete').
-        node: Firebase node path (e.g. ``"orders"``).
-        data: Optional JSON-serialisable payload for POST / PATCH.
-        timeout: Request timeout in seconds.
-
-    Returns:
-        A :class:`requests.Response` on success, or ``None`` on failure.
+    Returns None if not found or invalid.
     """
     try:
-        url = _build_url(node)
-        request_fn = getattr(requests, method)
-        if data is not None:
-            response = request_fn(url, json=data, timeout=timeout)
-        else:
-            response = request_fn(url, timeout=timeout)
-        return response
-    except requests.exceptions.Timeout:
-        logger.error("Timeout during %s to Firebase node: %s", method.upper(), node)
-        return None
-    except requests.exceptions.RequestException as e:
-        logger.error("Request error during %s to Firebase: %s", method.upper(), e)
-        return None
-    except Exception as e:
-        logger.error("Unexpected error during %s to Firebase: %s", method.upper(), e)
-        return None
-
-
-def send_to_firebase(node, data):
-    """POST *data* to a Firebase node. Returns ``True`` on success."""
-    response = firebase_request("post", node, data)
-    return response is not None and response.ok
-
-
-def update_firebase_node(node, data):
-    """PATCH *data* onto an existing Firebase node. Returns ``True`` on success."""
-    response = firebase_request("patch", node, data)
-    return response is not None and response.ok
-
-
-def fetch_from_firebase(node):
-    """
-    GET all children of a Firebase node.
-
-    Returns a list of dicts, each augmented with a ``"db_id"`` key holding
-    the Firebase key.  Returns ``[]`` on any error.
-    """
-    response = firebase_request("get", node)
-    if response is None or not response.ok:
-        return []
-    try:
-        data = response.json()
-        if data and isinstance(data, dict):
-            items = []
-            for k, v in data.items():
+        if "firebase" in st.secrets:
+            # st.secrets["firebase"] can be a toml table or JSON string depending on how it's stored
+            secret_obj = st.secrets["firebase"]
+            # If someone put the whole JSON as a single string under a key like "serviceAccount",
+            # try to parse it.
+            if isinstance(secret_obj, dict):
+                secret_dict = dict(secret_obj)
+            else:
                 try:
-                    if isinstance(v, dict):
-                        item = {"db_id": k}
-                        item.update(v)
-                        items.append(item)
-                except Exception as item_error:
-                    logger.warning("Error processing item %s: %s", k, item_error)
-                    continue
-            return items
-        return []
-    except json.JSONDecodeError as e:
-        logger.error("JSON decode error from Firebase: %s", e)
-        return []
-
-
-def fetch_firebase_dict(node):
-    """GET a single Firebase node and return the raw dict (or ``{}``)."""
-    response = firebase_request("get", node)
-    if response is None or not response.ok:
-        return {}
-    try:
-        data = response.json()
-        return data if data else {}
-    except Exception as e:
-        logger.error("Error fetching dict from Firebase node %s: %s", node, e)
-        return {}
-
-
-def delete_firebase_node(node):
-    """DELETE a Firebase node. Returns ``True`` on success."""
-    response = firebase_request("delete", node)
-    return response is not None and response.ok
-
-
-# ---------------------------------------------------------------------------
-# Firebase Admin SDK initialisation
-# ---------------------------------------------------------------------------
-
-
-def _normalize_private_key(private_key):
-    """
-    Normalize and sanitize a Firebase private key string.
-
-    Handles:
-      1. Double-escaped newlines (\\\\n) → single-escaped (\\n)
-      2. Escaped newlines (\\n) → actual newlines (\n)
-      3. Leading/trailing whitespace
-      4. Malformed base64 padding (trailing '=' symbols)
-      5. Multi-line string formatting
-
-    Args:
-        private_key: str — raw private key from secrets (may be escaped, multi-line, etc.)
-
-    Returns:
-        str: Cleaned, normalized private key ready for PEM parsing, or None on failure.
-    """
-    if not isinstance(private_key, str):
-        logger.error("private_key is not a string: %s", type(private_key))
-        return None
-
-    try:
-        # Step 1: Strip leading/trailing whitespace
-        pk = private_key.strip()
-
-        # Step 2: Handle double-escaped newlines first (order matters)
-        # Convert "\\\\n" (two backslashes + n in string) to "\\n" (escaped newline)
-        pk = pk.replace("\\\\n", "\\n")
-
-        # Step 3: Convert escaped newlines to actual newlines
-        # Convert "\\n" (backslash-n in string) to "\n" (actual newline)
-        pk = pk.replace("\\n", "\n")
-
-        # Step 4: Strip whitespace again after newline normalization
-        pk = pk.strip()
-
-        # Step 5: Validate PEM structure
-        if not pk.startswith("-----BEGIN"):
-            logger.error("private_key does not start with PEM header (-----BEGIN)")
-            return None
-
-        if not pk.endswith("-----END"):
-            # Some keys may have trailing newlines; this is OK
-            if not ("\n-----END" in pk or "\r\n-----END" in pk):
-                logger.error("private_key does not end with PEM footer (-----END)")
-                return None
-
-        # Step 6: Attempt to validate base64 content (between PEM headers)
-        # Extract the base64 body (between header and footer)
-        lines = pk.split("\n")
-        base64_lines = []
-        in_body = False
-
-        for line in lines:
-            if line.startswith("-----BEGIN"):
-                in_body = True
-                continue
-            elif line.startswith("-----END"):
-                in_body = False
-                continue
-            elif in_body:
-                stripped = line.strip()
-                if stripped:
-                    base64_lines.append(stripped)
-
-        # Attempt to decode base64 to validate structure
-        if base64_lines:
-            base64_body = "".join(base64_lines)
-            try:
-                # Validate base64 by attempting decode
-                # Add padding if needed (base64 padding is always 0-3 '=' chars)
-                missing_padding = len(base64_body) % 4
-                if missing_padding:
-                    base64_body += "=" * (4 - missing_padding)
-                
-                base64.b64decode(base64_body, validate=True)
-                logger.debug("private_key base64 validation passed")
-            except Exception as b64_error:
-                logger.warning("private_key base64 validation failed: %s (continuing anyway)", b64_error)
-                # Don't fail here; some valid keys may have non-standard base64
-
-        logger.info("private_key normalization successful")
-        return pk
-
-    except Exception as e:
-        logger.error("Error normalizing private_key: %s", e)
-        return None
-
-
-def _parse_firebase_credentials():
-    """Parse Firebase service-account JSON from Streamlit secrets.
-
-    Accepts:
-      - a JSON string stored in st.secrets["textkey"] (or firebase.service_account / textkey)
-      - OR a dict already stored under st.secrets["firebase"]["service_account"]
-
-    Safely handles private_key normalization to prevent PEM parsing errors.
-
-    Returns the credentials dict or None on failure.
-    """
-    try:
-        firebase_secret = st.secrets.get("firebase")
-        raw = None
-
-        # Prefer a structured `firebase` secret if present (service_account may be dict or JSON string)
-        if firebase_secret and isinstance(firebase_secret, dict):
-            raw = (
-                firebase_secret.get("service_account")
-                or firebase_secret.get("serviceAccount")
-                or firebase_secret.get("textkey")
-                or firebase_secret.get("textKey")
-            )
-
-        # Fallback to top-level textkey or legacy names
-        if not raw:
-            raw = st.secrets.get("textkey") or st.secrets.get("FIREBASE_SERVICE_ACCOUNT")
-
-        if not raw:
-            try:
-                st.sidebar.warning(
-                    "Firebase credentials not found in Streamlit secrets. Firestore/Realtime DB features are disabled."
-                )
-            except Exception:
-                logger.warning("Firebase credentials missing; running in offline mode.")
-            logger.warning("Firebase credentials missing from secrets")
-            return None
-
-        # If raw is already a dict (service account provided as structured secret), use it directly
-        if isinstance(raw, dict):
-            creds = raw
-        else:
-            raw_str = str(raw).strip()
-            # Try to parse JSON first
-            try:
-                creds = json.loads(raw_str)
-            except json.JSONDecodeError:
-                # As a fallback, try ast.literal_eval to handle Python-style dict strings
-                import ast
-
-                try:
-                    creds = ast.literal_eval(raw_str)
-                except Exception as ex:
-                    logger.error("Failed to parse Firebase credentials string: %s", ex)
-                    try:
-                        st.sidebar.error("Firebase credentials are malformed in Streamlit secrets.")
-                    except Exception:
-                        pass
+                    secret_dict = json.loads(secret_obj)
+                except Exception:
+                    logger.error("Unable to parse st.secrets['firebase'] as JSON/dict")
                     return None
 
-        # ========================================================
-        # ENHANCED: Normalize private_key with full error handling
-        # ========================================================
-        pk = creds.get("private_key")
-        if pk and isinstance(pk, str):
-            normalized_pk = _normalize_private_key(pk)
-            if normalized_pk:
-                creds["private_key"] = normalized_pk
-            else:
-                logger.error("Failed to normalize private_key — credentials may be invalid")
-                try:
-                    st.sidebar.error(
-                        "Firebase private key is malformed. Check your secrets configuration."
-                    )
-                except Exception:
-                    pass
-                return None
+            # Fix private_key line breaks when stored as a single-line string
+            if "private_key" in secret_dict and isinstance(secret_dict["private_key"], str):
+                secret_dict["private_key"] = secret_dict["private_key"].replace("\\n", "\n")
 
-        return creds
-
+            return secret_dict
+        else:
+            logger.warning("st.secrets does not contain 'firebase' table")
+            return None
     except Exception as e:
-        logger.exception("Unexpected error while reading Firebase credentials: %s", e)
-        try:
-            st.sidebar.error("Unexpected error reading Firebase credentials. Check logs.")
-        except Exception:
-            pass
+        logger.exception("Error reading firebase secrets: %s", e)
         return None
 
 
-def init_firebase_admin():
-    """
-    Initialise the Firebase Admin SDK (Realtime Database mode).
+def initialize_firebase(notify: bool = True) -> bool:
+    """Initialize Firebase Admin SDK for both Realtime Database and Firestore.
 
-    Safe to call multiple times – skips if already initialised.
-    Returns ``True`` on success, ``False`` on failure.
+    Parameters:
+    - notify: If True, show Streamlit success/error messages. Set to False in background tasks.
+
+    Returns True on success, False on failure.
     """
     try:
         if firebase_admin._apps:
+            # Already initialized
+            logger.debug("Firebase already initialized (cached app present)")
             return True
-        creds = _parse_firebase_credentials()
-        if not creds:
-            logger.warning("Not initialising Firebase Admin because credentials are unavailable.")
+
+        secret_dict = _get_firebase_secret()
+        if not secret_dict:
+            msg = "Firebase credentials not found in st.secrets['firebase']"
+            logger.error(msg)
+            if notify:
+                st.error(msg)
             return False
-        
+
+        cred = credentials.Certificate(secret_dict)
+
+        app_opts: Dict[str, Any] = {}
+        # Allow the toml/secret to provide databaseURL
+        db_url = None
         try:
-            cred = fb_credentials.Certificate(creds)
-            firebase_admin.initialize_app(cred, {"databaseURL": _get_firebase_url()})
-            logger.info("Firebase Admin SDK initialized successfully")
-            return True
-        except ValueError as ve:
-            logger.error("Firebase certificate credential error (PEM parsing failed): %s", ve)
-            try:
-                st.sidebar.error(
-                    "Failed to initialize Firebase: Invalid certificate. Check private key format."
-                )
-            except Exception:
-                pass
-            return False
-            
+            db_url = secret_dict.get("databaseURL") or st.secrets["firebase"].get("databaseURL")
+        except Exception:
+            db_url = None
+
+        if db_url:
+            app_opts["databaseURL"] = db_url
+
+        firebase_admin.initialize_app(cred, app_opts)
+        logger.info("Initialized Firebase Admin SDK")
+        if notify:
+            st.success("تم الاتصال بقاعدة البيانات بنجاح 🟢")
+        return True
     except Exception as e:
-        logger.error("Firebase Admin initialisation error: %s", e)
+        logger.exception("Failed to initialize Firebase: %s", e)
+        if notify:
+            st.error(f"خطأ في تهيئة قاعدة البيانات: {e}")
         return False
 
 
-def init_firestore():
-    """
-    Initialise Firebase and return a Firestore client.
+# ------------------------- Realtime Database helpers -------------------------
 
-    Used by Streamlit page files that talk to Firestore rather than the
-    Realtime Database.  Returns ``None`` on failure.
-    """
-    from firebase_admin import firestore
-
+def push_realtime_data(path: str, data: Dict[str, Any], notify: bool = False) -> Optional[str]:
+    """Push a new child under `path` in the Realtime Database. Returns the generated key on success."""
     try:
-        creds = _parse_firebase_credentials()
-        if not creds:
-            logger.warning("Firestore client not created because credentials are unavailable.")
+        if not initialize_firebase(notify=False):
+            logger.error("Cannot push data: Firebase not initialized")
+            if notify:
+                st.error("Firebase غير مهيأ. تحقق من الإعدادات.")
             return None
 
-        try:
-            if not firebase_admin._apps:
-                cred = fb_credentials.Certificate(creds)
-                firebase_admin.initialize_app(cred)
-            return firestore.client()
-        except ValueError as ve:
-            logger.error("Firestore certificate credential error (PEM parsing failed): %s", ve)
-            try:
-                st.sidebar.error(
-                    "Failed to initialize Firestore: Invalid certificate. Check private key format."
-                )
-            except Exception:
-                pass
-            return None
-            
+        ref = db.reference(path)
+        new_ref = ref.push(data)
+        key = new_ref.key
+        logger.info("Pushed realtime data to %s, key=%s", path, key)
+        if notify:
+            st.success("تم إرسال البيانات بنجاح")
+        return key
     except Exception as e:
-        logger.error("Firestore initialisation error: %s", e)
-        try:
-            st.sidebar.error("Failed to initialise Firestore. Check application logs.")
-        except Exception:
-            pass
+        logger.exception("Failed to push realtime data to %s: %s", path, e)
+        if notify:
+            st.error(f"فشل إرسال البيانات: {e}")
         return None
+
+
+def get_realtime_data(path: str) -> Optional[Dict[str, Any]]:
+    """Get data at `path` from Realtime Database. Returns a dict (or None)."""
+    try:
+        if not initialize_firebase(notify=False):
+            logger.error("Cannot read data: Firebase not initialized")
+            return None
+
+        ref = db.reference(path)
+        data = ref.get()
+        logger.debug("Fetched realtime data from %s", path)
+        return data
+    except Exception as e:
+        logger.exception("Failed to read realtime data from %s: %s", path, e)
+        return None
+
+
+def set_realtime_data(path: str, data: Dict[str, Any]) -> bool:
+    """Set (overwrite) the data at `path` in Realtime Database."""
+    try:
+        if not initialize_firebase(notify=False):
+            logger.error("Cannot set data: Firebase not initialized")
+            return False
+
+        ref = db.reference(path)
+        ref.set(data)
+        logger.info("Set realtime data at %s", path)
+        return True
+    except Exception as e:
+        logger.exception("Failed to set realtime data at %s: %s", path, e)
+        return False
+
+
+def update_realtime_data(path: str, data: Dict[str, Any]) -> bool:
+    """Update keys at `path` in Realtime Database (partial update)."""
+    try:
+        if not initialize_firebase(notify=False):
+            logger.error("Cannot update data: Firebase not initialized")
+            return False
+
+        ref = db.reference(path)
+        ref.update(data)
+        logger.info("Updated realtime data at %s", path)
+        return True
+    except Exception as e:
+        logger.exception("Failed to update realtime data at %s: %s", path, e)
+        return False
+
+
+def delete_realtime_data(path: str) -> bool:
+    """Delete value at `path` in Realtime Database."""
+    try:
+        if not initialize_firebase(notify=False):
+            logger.error("Cannot delete data: Firebase not initialized")
+            return False
+
+        ref = db.reference(path)
+        ref.delete()
+        logger.info("Deleted realtime data at %s", path)
+        return True
+    except Exception as e:
+        logger.exception("Failed to delete realtime data at %s: %s", path, e)
+        return False
+
+
+# ------------------------- Firestore helpers -------------------------
+
+def _get_firestore_client() -> Optional[firestore.Client]:
+    try:
+        if not initialize_firebase(notify=False):
+            logger.error("Cannot get Firestore client: Firebase not initialized")
+            return None
+        client = firestore.client()
+        return client
+    except Exception as e:
+        logger.exception("Failed to obtain Firestore client: %s", e)
+        return None
+
+
+def set_firestore_doc(collection: str, doc_id: str, data: Dict[str, Any]) -> bool:
+    """Create or overwrite a Firestore document."""
+    try:
+        client = _get_firestore_client()
+        if client is None:
+            return False
+        doc_ref = client.collection(collection).document(doc_id)
+        doc_ref.set(data)
+        logger.info("Set Firestore doc %s/%s", collection, doc_id)
+        return True
+    except Exception as e:
+        logger.exception("Failed to set Firestore doc %s/%s: %s", collection, doc_id, e)
+        return False
+
+
+def get_firestore_doc(collection: str, doc_id: str) -> Optional[Dict[str, Any]]:
+    try:
+        client = _get_firestore_client()
+        if client is None:
+            return None
+        doc = client.collection(collection).document(doc_id).get()
+        if not doc.exists:
+            logger.debug("Firestore doc %s/%s does not exist", collection, doc_id)
+            return None
+        data = doc.to_dict()
+        logger.debug("Fetched Firestore doc %s/%s", collection, doc_id)
+        return data
+    except Exception as e:
+        logger.exception("Failed to get Firestore doc %s/%s: %s", collection, doc_id, e)
+        return None
+
+
+def update_firestore_doc(collection: str, doc_id: str, data: Dict[str, Any]) -> bool:
+    try:
+        client = _get_firestore_client()
+        if client is None:
+            return False
+        doc_ref = client.collection(collection).document(doc_id)
+        doc_ref.update(data)
+        logger.info("Updated Firestore doc %s/%s", collection, doc_id)
+        return True
+    except Exception as e:
+        logger.exception("Failed to update Firestore doc %s/%s: %s", collection, doc_id, e)
+        return False
+
+
+def query_firestore_collection(collection: str, filters: Optional[List[Tuple[str, str, Any]]] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Run a simple query on a collection.
+
+    filters: list of (field, op, value) e.g. [("status", "==", "pending")]
+    """
+    try:
+        client = _get_firestore_client()
+        if client is None:
+            return []
+        coll = client.collection(collection)
+        q = coll
+        if filters:
+            for field, op, value in filters:
+                q = q.where(field, op, value)
+        if limit:
+            q = q.limit(limit)
+        docs = q.stream()
+        results = []
+        for d in docs:
+            doc = d.to_dict()
+            doc["_id"] = d.id
+            results.append(doc)
+        logger.debug("Queried Firestore collection %s, returned %d docs", collection, len(results))
+        return results
+    except Exception as e:
+        logger.exception("Failed to query Firestore collection %s: %s", collection, e)
+        return []
+
+
+# ------------------------- Small helpers -------------------------
+
+def safe_timestamp_str(ts) -> str:
+    """Return a string representation of a timestamp-like object for safe writes."""
+    try:
+        return str(ts)
+    except Exception:
+        return ""
