@@ -231,3 +231,24 @@ def get_firestore_doc(collection: str, doc_id: str, notify: bool = False) -> Opt
         if notify:
             st.error(f"فشل جلب المستند: {e}")
         return None
+
+
+# ---------------- Compatibility wrappers ----------------
+
+def init_firestore(notify: bool = True):
+    """دالة توافقية لتهيئة واسترجاع عميل Firestore"""
+    # Ensure Firebase is initialized first
+    initialize_firebase(notify=notify)
+    try:
+        from firebase_admin import firestore
+        return firestore.client()
+    except Exception as e:
+        logger.error(f"Init Firestore Error: {e}")
+        if notify:
+            st.error(f"فشل تهيئة Firestore: {e}")
+        return None
+
+
+def init_firebase(notify: bool = True):
+    """دالة توافقية للتهيئة العامة"""
+    return initialize_firebase(notify=notify)
