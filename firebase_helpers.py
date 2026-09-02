@@ -13,8 +13,6 @@ def initialize_firebase(notify=True):
         if not firebase_admin._apps:
             if "firebase" in st.secrets:
                 secret_dict = dict(st.secrets["firebase"])
-                
-                # تصحيح الـ private_key لتعامل سليماً مع الأسطر الجديدة
                 if "private_key" in secret_dict:
                     secret_dict["private_key"] = secret_dict["private_key"].replace("\\n", "\n")
                 
@@ -79,6 +77,33 @@ def update_realtime_data(path, data, notify=False):
         if notify:
             st.error(f"فشل التحديث: {e}")
     return False
+
+
+def delete_firebase_node(path, notify=False):
+    """حذف مسار أو بيانات من Realtime Database"""
+    try:
+        if initialize_firebase(notify=False):
+            ref = db.reference(path)
+            ref.delete()
+            return True
+    except Exception as e:
+        logger.error(f"Realtime Delete Error: {e}")
+        if notify:
+            st.error(f"فشل الحذف: {e}")
+    return False
+
+
+def fetch_from_firebase(path, notify=False):
+    """جلب البيانات من المسار المحدد"""
+    return get_realtime_data(path, notify)
+
+
+def fetch_firebase_dict(path, notify=False):
+    """جلب البيانات على شكل قاموس (Dictionary)"""
+    res = get_realtime_data(path, notify)
+    if isinstance(res, dict):
+        return res
+    return {}
 
 
 def set_firestore_doc(collection, doc_id, data, notify=False):
