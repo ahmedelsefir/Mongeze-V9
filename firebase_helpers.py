@@ -1,4 +1,4 @@
-import streamlit as st
+9 import streamlit as st
 import logging
 from datetime import datetime
 import re
@@ -234,3 +234,42 @@ def sanitize_username(username: str) -> str:
 def get_current_timestamp() -> str:
     """Return a consistent timestamp string for records."""
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+def init_firebase_admin(notify: bool = True) -> bool:
+    """Compatibility wrapper for initialize_firebase"""
+    return initialize_firebase(notify=notify)
+
+
+def send_to_firebase(path: str, data: Dict[str, Any], notify: bool = False) -> Optional[str]:
+    """Compatibility wrapper for push_realtime_data"""
+    return push_realtime_data(path, data, notify=notify)
+
+
+def firebase_request(method: str, path: str, data: Optional[Dict[str, Any]] = None, notify: bool = False):
+    """Perform a REST request to Firebase Realtime Database."""
+    initialize_firebase(notify=False)
+    try:
+        db_url = ""
+        if "firebase" in st.secrets:
+            db_url = st.secrets["firebase"].get("databaseURL", "").rstrip('/')
+        if not db_url:
+            return None
+        url = f"{db_url}/{path.lstrip('/')}.json"
+        
+        import requests
+        m = method.lower()
+        if m == 'get':
+            res = requests.get(url)
+        elif m == 'put':
+            res = requests.put(url, json=data)
+        elif m == 'post':
+            res = requests.post(url, json=data)
+        elif m == 'delete':
+            res = requests.delete(url)
+        else:
+            return None
+        return res
+    except Exception as e:
+        logger.error(f"Firebase Request Error: {e}")
+        if notify:
+            st.error(f"خطأ في طلب Firebase: {e}")
+        return None
