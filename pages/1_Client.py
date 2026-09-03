@@ -82,14 +82,14 @@ def render_parcels_page(user_name="أحمد مصطفى", send_to_firebase=None, 
 
     st.markdown("---")
     
-    # Form for creating parcel order with properly nested submit button
+    # Form for creating parcel order
     with st.form("parcels_form", clear_on_submit=True):
         c_name = st.text_input("👤 اسم العميل", value=user_name if isinstance(user_name, str) else "أحمد مصطفى", key="parcels_name")
         o_details = st.text_area("📝 ما الذي تريد توصيله؟ (اكتب تفاصيل الوجهة والشحنة بدقة)", placeholder="مثال: مطلوب استلام طرد من...", key="parcels_details")
         s_price = st.number_input("💰 ميزانيتك المقترحة للطلب (جنيه)", min_value=10, value=30, step=5, key="parcels_price")
         c_phone = st.text_input("📱 رقم هاتف التواصل", value="+20 1000000000", key="parcels_phone")
 
-        submit_btn = st.form_submit_button("🚀 نشر طلب الطرد", key="parcels_submit")
+        submit_btn = st.form_submit_button("🚀 نشر طلب الطرد", type="primary")
         
     if submit_btn:
         if not o_details or not o_details.strip():
@@ -177,7 +177,7 @@ def render_taxi_page(user_name="أحمد مصطفى", send_to_firebase=None, sen
         s_price = st.number_input("💰 الميزانية المقترحة للرحلة (جنيه)", min_value=10, value=50, step=5, key="taxi_price")
         c_phone = st.text_input("📱 رقم هاتف التواصل", value="+20 1000000000", key="taxi_phone")
 
-        submit_taxi_btn = st.form_submit_button("🚀 طلب التاكسي الآن", key="taxi_submit")
+        submit_taxi_btn = st.form_submit_button("🚀 طلب التاكسي الآن", type="primary")
         
     if submit_taxi_btn:
         if not o_details or not o_details.strip():
@@ -295,7 +295,7 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except Exception as e:
+    except Exception e:
         try:
             st.error("حدث خطأ غير متوقع في واجهة العميل. سيتم تسجيل التفاصيل في السجلات.")
         except Exception:
