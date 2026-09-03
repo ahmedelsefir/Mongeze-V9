@@ -1,14 +1,15 @@
 import base64
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+import html
+import json
 import logging
-from math import asin, cos, radians, sin, sqrt
 import os
 import smtplib
-import html
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from math import asin, cos, radians, sin, sqrt
+
 import pandas as pd
 import streamlit as st
-import json
 
 # ========================================================
 # ⚡ CRITICAL: set_page_config() MUST be the first Streamlit call
@@ -21,37 +22,99 @@ st.set_page_config(page_title="منصة منجز الذكية", page_icon="🤖"
 try:
     from assistant import ask_mongeze_ai, get_gemini_api_key
 except Exception:
+
     def ask_mongeze_ai(prompt, *args, **kwargs):
         return "⚠️ عقل مُنجز (AI Agent) غير متصل حالياً."
+
     def get_gemini_api_key():
         return ""
 
+
 # ========================================================
-# 📦 استيراد آمن للموديولات المخصصة (تجنب أخطاء الجذر)
+# 📦 استيراد آمن ومباشر للموديولات من مجلد pages
 # ========================================================
 try:
-    from Admin import render_admin_kyc_console, render_admin_tracking, render_commission_engine
+    from pages.Admin import (
+        render_admin_kyc_console,
+        render_admin_tracking,
+        render_commission_engine,
+    )
 except Exception:
-    def render_admin_kyc_console(*args, **kwargs): st.info("لوحة تحكم المشرف غير متاحة في هذا السياق.")
-    def render_admin_tracking(*args, **kwargs): pass
-    def render_commission_engine(*args, **kwargs): pass
+    try:
+        from Admin import (
+            render_admin_kyc_console,
+            render_admin_tracking,
+            render_commission_engine,
+        )
+    except Exception:
+
+        def render_admin_kyc_console(*args, **kwargs):
+            st.info("لوحة تحكم المشرف غير متاحة في هذا السياق.")
+
+        def render_admin_tracking(*args, **kwargs):
+            pass
+
+        def render_commission_engine(*args, **kwargs):
+            pass
+
 
 try:
-    from Client import render_chat_page, render_customer_tracking, render_parcels_page, render_taxi_page
+    from pages.Client import (
+        render_chat_page,
+        render_customer_tracking,
+        render_parcels_page,
+        render_taxi_page,
+    )
 except Exception:
-    def render_chat_page(*args, **kwargs): st.info("صفحة الشات غير محملة.")
-    def render_customer_tracking(*args, **kwargs): pass
-    def render_parcels_page(*args, **kwargs): st.info("بوابة الطرود غير محملة.")
-    def render_taxi_page(*args, **kwargs): st.info("خدمة التاكسي غير محملة.")
+    try:
+        from Client import (
+            render_chat_page,
+            render_customer_tracking,
+            render_parcels_page,
+            render_taxi_page,
+        )
+    except Exception:
+
+        def render_chat_page(*args, **kwargs):
+            st.info("صفحة الشات غير محملة.")
+
+        def render_customer_tracking(*args, **kwargs):
+            pass
+
+        def render_parcels_page(*args, **kwargs):
+            st.info("بوابة الطرود غير محملة.")
+
+        def render_taxi_page(*args, **kwargs):
+            st.info("خدمة التاكسي غير محملة.")
+
 
 try:
-    from Driver import render_driver_kyc_tab, render_driver_settings_tab, render_wallet_topup
+    from pages.Driver import (
+        render_driver_kyc_tab,
+        render_driver_settings_tab,
+        render_wallet_topup,
+    )
 except Exception:
-    def render_driver_kyc_tab(*args, **kwargs): pass
-    def render_driver_settings_tab(*args, **kwargs): pass
-    def render_wallet_topup(*args, **kwargs): pass
+    try:
+        from Driver import (
+            render_driver_kyc_tab,
+            render_driver_settings_tab,
+            render_wallet_topup,
+        )
+    except Exception:
+
+        def render_driver_kyc_tab(*args, **kwargs):
+            pass
+
+        def render_driver_settings_tab(*args, **kwargs):
+            pass
+
+        def render_wallet_topup(*args, **kwargs):
+            pass
+
 
 import firebase_admin
+
 try:
     from firebase_helpers import (
         delete_firebase_node,
@@ -66,20 +129,41 @@ try:
     )
 except Exception:
     # دوال بديلة احتياطية لتفادي توقف السيرفر كلياً
-    def delete_firebase_node(*args, **kwargs): pass
-    def fetch_firebase_dict(*args, **kwargs): return {}
-    def fetch_from_firebase(*args, **kwargs): return None
-    def firebase_request(*args, **kwargs): return None
-    def get_current_timestamp(*args, **kwargs): return 0
-    def init_firebase_admin(*args, **kwargs): return None
-    def sanitize_username(name): return str(name).strip().lower()
-    def send_to_firebase(*args, **kwargs): pass
-    def update_firebase_node(*args, **kwargs): pass
+    def delete_firebase_node(*args, **kwargs):
+        pass
+
+    def fetch_firebase_dict(*args, **kwargs):
+        return {}
+
+    def fetch_from_firebase(*args, **kwargs):
+        return None
+
+    def firebase_request(*args, **kwargs):
+        return None
+
+    def get_current_timestamp(*args, **kwargs):
+        return 0
+
+    def init_firebase_admin(*args, **kwargs):
+        return None
+
+    def sanitize_username(name):
+        return str(name).strip().lower()
+
+    def send_to_firebase(*args, **kwargs):
+        pass
+
+    def update_firebase_node(*args, **kwargs):
+        pass
+
 
 try:
     from paymob import initiate_wallet_topup
 except Exception:
-    def initiate_wallet_topup(*args, **kwargs): return None
+
+    def initiate_wallet_topup(*args, **kwargs):
+        return None
+
 
 try:
     import Policies
@@ -90,10 +174,19 @@ try:
         render_terms_of_use,
     )
 except Exception:
-    def render_privacy_policy(*args, **kwargs): st.write("سياسة الخصوصية غير متاحة.")
-    def render_privacy_policy_brief(*args, **kwargs): pass
-    def render_support_contact(*args, **kwargs): st.write("الدعم الفني غير متاح.")
-    def render_terms_of_use(*args, **kwargs): pass
+
+    def render_privacy_policy(*args, **kwargs):
+        st.write("سياسة الخصوصية غير متاحة.")
+
+    def render_privacy_policy_brief(*args, **kwargs):
+        pass
+
+    def render_support_contact(*args, **kwargs):
+        st.write("الدعم الفني غير متاح.")
+
+    def render_terms_of_use(*args, **kwargs):
+        pass
+
 
 # Defensive import for payment hub
 try:
@@ -102,9 +195,13 @@ except Exception:
     try:
         from Payment_Hub import render_payment_hub
     except Exception:
+
         def render_payment_hub(*args, **kwargs):
-            st.warning("بوابة الدفع غير متاحة حالياً — يرجى تفعيل صفحة Payment_Hub أو إعداد الأسرار.")
+            st.warning(
+                "بوابة الدفع غير متاحة حالياً — يرجى تفعيل صفحة Payment_Hub أو إعداد الأسرار."
+            )
             return None
+
 
 # ========================================================
 # 🌐 قاموس الترجمة الموحد لمنصة منجز الذكية (Localization)
@@ -126,9 +223,16 @@ LANG_TEXTS = {
         "main_dashboard_title": "### 📡 لوحة بث واستقبال العمليات السحابية",
         "active_orders_lbl": "📊 الطلبات الشغالة على السيرفر حالياً:",
         "clean_server_msg": "📭 السيرفر نظيف ولا توجد رحلات جارية حالياً.",
-        "tracking_radar_title": "## 📡 رادار التتبع والاتصال السحابي المباشر",
-        "tracking_radar_cap": "🔄 الرادار نشط: يتم تحديث وسحب الحالات تلقائياً من السيرفر كل 3 ثوانٍ...",
-        "settings_center_title": "## ⚙️ مركز الإعدادات والملف الشخصي المتقدم",
+        "tracking_radar_title": (
+            "## 📡 رادار التتبع والاتصال السحابي المباشر"
+        ),
+        "tracking_radar_cap": (
+            "🔄 الرادار نشط: يتم تحديث وسحب الحالات تلقائياً من السيرفر كل 3"
+            " ثوانٍ..."
+        ),
+        "settings_center_title": (
+            "## ⚙️ مركز الإعدادات والملف الشخصي المتقدم"
+        ),
         "global_settings_sub": "📱 الإعدادات العامة (Global Settings)",
         "edit_profile_title": "### 👤 تعديل البروفايل الشخصي",
         "form_full_name": "🔤 الاسم الكامل:",
@@ -165,11 +269,18 @@ LANG_TEXTS = {
         "sidebar_profile": "### 👤 User Profile",
         "sidebar_role_lbl": "Choose your identity:",
         "sidebar_name_lbl": "Registered Name:",
-        "main_dashboard_title": "### 📡 Cloud Operations Broadcasting Panel",
+        "main_dashboard_title": (
+            "### 📡 Cloud Operations Broadcasting Panel"
+        ),
         "active_orders_lbl": "📊 Active server orders currently running:",
         "clean_server_msg": "📭 Server is clean. No active trips right now.",
-        "tracking_radar_title": "## 📡 Tracking Radar & Direct Cloud Link",
-        "tracking_radar_cap": "🔄 Radar Active: Fetching status automatically from server every 3 seconds...",
+        "tracking_radar_title": (
+            "## 📡 Tracking Radar & Direct Cloud Link"
+        ),
+        "tracking_radar_cap": (
+            "🔄 Radar Active: Fetching status automatically from server every"
+            " 3 seconds..."
+        ),
         "settings_center_title": "## ⚙️ Advanced Settings & Profile Center",
         "global_settings_sub": "📱 Global Settings",
         "edit_profile_title": "### 👤 Edit Personal Profile",
@@ -231,7 +342,9 @@ def initialize_session_guard():
     if "language" not in st.session_state:
         st.session_state["language"] = "العربية"
     if "driver_verification_status" not in st.session_state:
-        st.session_state["driver_verification_status"] = "Pending Manual Review"
+        st.session_state["driver_verification_status"] = (
+            "Pending Manual Review"
+        )
     if "ai_messages" not in st.session_state:
         st.session_state["ai_messages"] = []
 
@@ -250,26 +363,40 @@ initialize_session_guard()
 try:
     firebase_config = None
 
-    if "textkey" in st.secrets and isinstance(st.secrets.get("textkey"), dict) and "textkey" in st.secrets.get("textkey"):
+    if (
+        "textkey" in st.secrets
+        and isinstance(st.secrets.get("textkey"), dict)
+        and "textkey" in st.secrets.get("textkey")
+    ):
         try:
             raw_json = st.secrets["textkey"]["textkey"]
             firebase_config = json.loads(raw_json)
             st.success("✅ تم العثور على المفتاح بنجاح عبر [textkey]!")
         except Exception as ex:
-            st.error("❌ فشل تحليل JSON داخل [textkey]. تأكد أن القيمة هي JSON صالح.")
+            st.error(
+                "❌ فشل تحليل JSON داخل [textkey]. تأكد أن القيمة هي JSON صالح."
+            )
             st.exception(ex)
 
     elif "firebase" in st.secrets:
         firebase_config = dict(st.secrets["firebase"])
-        if "private_key" in firebase_config and isinstance(firebase_config["private_key"], str):
-            firebase_config["private_key"] = firebase_config["private_key"].replace("\\n", "\n")
+        if "private_key" in firebase_config and isinstance(
+            firebase_config["private_key"], str
+        ):
+            firebase_config["private_key"] = firebase_config[
+                "private_key"
+            ].replace("\\n", "\n")
         st.success("✅ تم العثور على المفتاح بنجاح عبر [firebase]!")
 
     else:
-        st.error("❌ عذراً، لم يتم العثور لا على [textkey] ولا على [firebase] في الـ Secrets!")
+        st.error(
+            "❌ عذراً، لم يتم العثور لا على [textkey] ولا على [firebase] في"
+            " الـ Secrets!"
+        )
 
     if firebase_config and not firebase_admin._apps:
         from firebase_admin import credentials, initialize_app
+
         cred = credentials.Certificate(firebase_config)
         initialize_app(cred)
         st.success("🔥 تم ربط Firebase بنجاح تام!")
@@ -298,26 +425,36 @@ def fetch_user_settings(username):
 
 
 def save_user_settings(username, settings):
-    return update_firebase_node(f"users/{sanitize_username(username)}", settings)
+    return update_firebase_node(
+        f"users/{sanitize_username(username)}", settings
+    )
 
 
 # عرض الواجهة الأساسية والجانبية عند تشغيل الملف الرئيسي
 def main():
     st.sidebar.title("منصة مُنجز الذكية")
-    user_role = st.sidebar.selectbox("اختر هويتك:", ["عميل", "سائق", "مسؤول"], key="main_role_select")
-    user_name = st.sidebar.text_input("اسم المستخدم:", value=st.session_state.get("user_name", "أحمد مصطفى"))
+    user_role = st.sidebar.selectbox(
+        "اختر هويتك:", ["عميل", "سائق", "مسؤول"], key="main_role_select"
+    )
+    user_name = st.sidebar.text_input(
+        "اسم المستخدم:", value=st.session_state.get("user_name", "أحمد مصطفى")
+    )
     st.session_state["user_name"] = user_name
 
     st.title("🤖 غرفة العمليات المركزية لـ منجز الذكية")
     st.markdown(f"**مرحباً بك يا {user_name}** في النظام السحابي الموحد.")
-    
+
     if user_role == "عميل":
-        st.info("قم باختيار الصفحات الفرعية المتاحة من القائمة الجانبية (pages) للوصول إلى بوابة الطرود أو التاكسي.")
+        st.info(
+            "قم باختيار الصفحات الفرعية المتاحة من القائمة الجانبية (pages)"
+            " للوصول إلى بوابة الطرود أو التاكسي."
+        )
         render_parcels_page(user_name=user_name)
     elif user_role == "سائق":
         st.info("مرحباً بك في نافذة السائقين.")
     else:
         st.info("مرحباً بك في لوحة تحكم المشرفين.")
+
 
 if __name__ == "__main__":
     main()
