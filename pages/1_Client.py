@@ -30,7 +30,6 @@ except Exception:
 def render_parcels_page(user_name="أحمد مصطفى", send_to_firebase=None, send_system_email=None, *args, **kwargs):
     st.markdown("<h2 style='color: #1E3A8A; text-align: right;'>📦 بوابة توصيل الطرود والمرسول</h2>", unsafe_allow_html=True)
     
-    # Live Order Tracker (integrated with order_lifecycles)
     st.markdown("### 🔴 Live Order Tracker")
     col1, col2 = st.columns([3, 1])
     with col2:
@@ -39,8 +38,7 @@ def render_parcels_page(user_name="أحمد مصطفى", send_to_firebase=None, 
     with col1:
         if db:
             try:
-                user_name_val = user_name
-                orders_q = db.collection("order_lifecycles").where("customer_name", "==", user_name_val).stream()
+                orders_q = db.collection("order_lifecycles").where("customer_name", "==", user_name).stream()
             except Exception as e:
                 st.error(f"خطأ في جلب حالة الطلبات: {e}")
                 orders_q = []
@@ -84,7 +82,7 @@ def render_parcels_page(user_name="أحمد مصطفى", send_to_firebase=None, 
 
     st.markdown("---")
     
-    # Form for creating parcel order
+    # Form for creating parcel order with properly nested submit button
     with st.form("parcels_form", clear_on_submit=True):
         c_name = st.text_input("👤 اسم العميل", value=user_name if isinstance(user_name, str) else "أحمد مصطفى", key="parcels_name")
         o_details = st.text_area("📝 ما الذي تريد توصيله؟ (اكتب تفاصيل الوجهة والشحنة بدقة)", placeholder="مثال: مطلوب استلام طرد من...", key="parcels_details")
