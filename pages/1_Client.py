@@ -292,13 +292,13 @@ def main():
     elif choice == "المحفظة":
         render_wallet_page(user_name=user_name)
 
-# تشغيل آمن لتفادي الشاشة البيضاء وتتبع الأخطاء بالسجلات
-try:
-    main()
-except Exception as e:
+if __name__ == "__main__":
     try:
-        st.error("حدث خطأ غير متوقع في واجهة العميل. سيتم تسجيل التفاصيل في السجلات.")
-    except Exception:
-        pass
-    import logging
-    logging.exception("Unhandled error in pages/1_Client.py: %s", e)
+        main()
+    except Exception as e:
+        try:
+            st.error("حدث خطأ غير متوقع في واجهة العميل. سيتم تسجيل التفاصيل في السجلات.")
+        except Exception:
+            pass
+        import logging
+        logging.exception("Unhandled error in Client.py: %s", e)
