@@ -295,7 +295,7 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except Exception e:
+    except Exception as e:
         try:
             st.error("حدث خطأ غير متوقع في واجهة العميل. سيتم تسجيل التفاصيل في السجلات.")
         except Exception:
