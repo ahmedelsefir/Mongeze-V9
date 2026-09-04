@@ -13,14 +13,13 @@ try:
     from pages.Payment_Hub import render_payment_hub
 except Exception:
     try:
-        # alternative import if running as flat module
         from Payment_Hub import render_payment_hub  # type: ignore
     except Exception:
         def render_payment_hub(*args, **kwargs):
             st.warning("بوابة الدفع غير متاحة حالياً — يرجى تفعيل صفحة Payment_Hub أو إعداد الأسرار.")
             return None
 
-st.set_page_config(page_title="منصة مُنجز - بوابة الميدان", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="منصة مُنجز - بوابة الميدان", layout="wide", initialsidebar_state="expanded")
 
 # --- 1️⃣ الاتصال الآمن بالفايربيز ---
 db = init_firestore()
@@ -31,7 +30,7 @@ if db is None:
 user_data = st.session_state.get("user_data", {
     "name": "ahmed mostafa mohammed",
     "phone": "+201000000000",
-    "role": "driver"  # خيارات: 'driver' (سائق) أو 'courier' (مندوب)
+    "role": "driver"
 })
 
 DRIVER_NAME = user_data.get("name", "ahmed mostafa mohammed")
@@ -49,7 +48,7 @@ is_courier = "مندوب" in worker_role
 role_title = "المندوب" if is_courier else "الكابتن"
 vehicle_icon = "🏍️" if is_courier else "🚖"
 
-# --- 3️⃣ رادار فحص قائمة الحظر الفورية لمنع النصب والاحتيال ---
+# --- 3️⃣ رادار فحص قائمة الحظر الفورية لمنع النصب الاحتيال ---
 if db:
     try:
         ban_check = db.collection("banned_users").document(DRIVER_NAME).get()
@@ -118,14 +117,13 @@ with col_radar1:
                         if not db:
                             st.error("قاعدة البيانات غير متصلة حالياً — لا يمكن إرسال العرض.")
                         else:
-                            # Read current bids (defensive)
                             current = doc.to_dict() or {}
                             bids = current.get("bids", []) or []
                             new_bid = {
                                 "driver_name": DRIVER_NAME,
                                 "driver_id": DRIVER_PHONE,
                                 "bid_amount": float(bid_amount),
-                                "timestamp": datetime.now().isoformat(),  # ✅ تم التعديل هنا لتفادي خطأ Firestore Sentinel
+                                "timestamp": datetime.now().isoformat(),
                                 "bid_status": "active"
                             }
                             bids.append(new_bid)
@@ -143,8 +141,6 @@ with col_radar1:
 
 st.markdown("---")
 
-# العدادات الرقمية المحددة لكل دور
-st.markdown("###")
 col_metric1, col_metric2 = st.columns(2)
 with col_metric1:
     metric_label = "📦 الطرود الموصلة" if is_courier else "📊 الرحلات المكتملة"
@@ -154,8 +150,7 @@ with col_metric2:
 
 st.markdown("---")
 
-# الرصيد المالي المتاح والمديونية
-current_balance = -160.96  # رصيد تجريبي سلبي
+current_balance = -160.96
 
 st.markdown(f"""
 <div style='background-color: #FEF2F2; padding: 15px; border-radius: 8px; border: 1px solid #FCA5A5; display: flex; justify-content: space-between; align-items: center; direction: rtl;'>
@@ -173,9 +168,7 @@ driver_tabs = st.tabs([
     "💳 المحفظة والدعم الفني"
 ])
 
-# ---------------------------------------------------------
-# 📥 التبويب الأول: استلام ورادار الطلبات الميدانية
-# ---------------------------------------------------------
+# 📥 التبويب الأول
 with driver_tabs[0]:
     st.markdown(f"#### 📥 طلبات الميدان المتاحة لـ {role_title}")
     
@@ -233,13 +226,9 @@ with driver_tabs[0]:
         if order_count == 0:
             st.info(f"📭 الميدان هادئ الآن. لا توجد طلبات متوافقة مع تخصص ({role_title}) حالياً.")
 
-# ---------------------------------------------------------
-# 📍 التبويب الثاني: الشحنة الحالية وتنفيذ المهمة الفورية
-# ---------------------------------------------------------
+# 📍 التبويب الثاني
 with driver_tabs[1]:
     st.markdown("#### 📍 شاشة التنفيذ وتتبع المهمة الحالية")
-    
-    # --- My Current Orders (integrated with order_lifecycles) ---
     st.markdown("##### 🧭 طلباتي الحالية")
     if db:
         try:
@@ -267,7 +256,6 @@ with driver_tabs[1]:
                 </div>
                 """, unsafe_allow_html=True)
 
-                # State change buttons (follow lifecycle): pending -> bid_accepted -> picked_up -> in_transit -> delivered
                 if status == "bid_accepted":
                     if st.button("📦 تم الاستلام من المرسل/الموكل", key=f"btn_picked_{m_id}"):
                         try:
@@ -301,12 +289,9 @@ with driver_tabs[1]:
         if mission_count == 0:
             st.info(f"🚖 لا توجد لديك أي رحلات أو شحنات نشطة جاري تنفيذها حالياً كـ {role_title}.")
 
-# ---------------------------------------------------------
-# 🛠️ التبويب الثالث: المحفظة والشحن وتسديد المديونية + الدعم
-# ---------------------------------------------------------
+# 💳 التبويب الثالث
 with driver_tabs[2]:
     st.markdown("#### 💳 المحفظة والشحن الإلكتروني عبر Paymob")
-    
     st.write(f"رصيدك الحالي: **{current_balance:.2f} ج.م**")
     if current_balance < 0:
         st.error(f"⚠️ يوجد عليك مديونية متأخرة بقيمة {abs(current_balance):.2f} ج.م. يرجى الشحن لتفادي تجميد الحساب.")
@@ -314,7 +299,6 @@ with driver_tabs[2]:
     topup_amount = st.number_input("حدد مبلغ الشحن لتسديد المديونية أو شحن الرصيد (ج.م):", min_value=10, value=200, step=10)
     
     if st.button("💳 بدء عملية الدفع والشحن عبر Paymob", use_container_width=True):
-        # Prefer opening unified payment hub if Secrets are not configured here
         paymob_api_key = None
         try:
             paymob_api_key = st.secrets.get("paymob", {}).get("PAYMOB_API_KEY")
@@ -328,19 +312,16 @@ with driver_tabs[2]:
             except Exception as e:
                 st.error(f"تعذر فتح بوابة الدفع: {e}")
         else:
-            # proceed with the original Paymob flow but fully defensive
             try:
                 integration_id = st.secrets.get("paymob", {}).get("PAYMOB_INTEGRATION_ID")
                 iframe_id = st.secrets.get("paymob", {}).get("PAYMOB_IFRAME_ID")
 
-                # 1. المصادقة واستخراج الـ Auth Token
                 auth_res = requests.post("https://accept.paymob.com/api/auth/tokens", json={"api_key": paymob_api_key}, timeout=15)
                 auth_res.raise_for_status()
                 auth_token = auth_res.json().get("token")
                 if not auth_token:
                     st.error("تعذر الحصول على توكن المصادقة من Paymob.")
                 else:
-                    # 2. إنشاء الطلب لدى Paymob
                     order_payload = {
                         "auth_token": auth_token,
                         "delivery_needed": "false",
@@ -348,15 +329,10 @@ with driver_tabs[2]:
                         "currency": "EGP",
                         "merchant_order_id": f"TOPUP-{user_data.get('role', 'driver').upper()}-{int(time.time())}"
                     }
-                    order_res = requests.post(
-                        "https://accept.paymob.com/api/ecommerce/orders",
-                        json=order_payload,
-                        timeout=15
-                    )
+                    order_res = requests.post("https://accept.paymob.com/api/ecommerce/orders", json=order_payload, timeout=15)
                     order_res.raise_for_status()
                     order_id = order_res.json().get("id")
 
-                    # 3. استخراج مفتاح الدفع (Payment Key)
                     first_name = DRIVER_NAME.split()[0] if DRIVER_NAME else "Driver"
                     last_name = DRIVER_NAME.split()[-1] if len(DRIVER_NAME.split()) > 1 else "Monjez"
 
@@ -378,11 +354,7 @@ with driver_tabs[2]:
                         "integration_id": int(integration_id) if integration_id else None
                     }
 
-                    payment_key_res = requests.post(
-                        "https://accept.paymob.com/api/acceptance/payment_keys",
-                        json=payment_key_payload,
-                        timeout=15
-                    )
+                    payment_key_res = requests.post("https://accept.paymob.com/api/acceptance/payment_keys", json=payment_key_payload, timeout=15)
                     payment_key_res.raise_for_status()
                     payment_token = payment_key_res.json().get("token")
 
@@ -396,11 +368,9 @@ with driver_tabs[2]:
             except Exception as e:
                 st.error(f"❌ خطأ في عملية الشحن: {e}")
 
-    # --- 🖥️ عرض شاشة البطاقة المباشرة داخل التطبيق ---
     if "paymob_iframe_url" in st.session_state:
         st.markdown("---")
         st.markdown("##### 🔒 بوابة الدفع الآمنة (أدخل بيانات البطاقة)")
-        
         components.html(
             f"""
             <iframe 
