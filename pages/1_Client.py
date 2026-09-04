@@ -1,9 +1,18 @@
 import html as html_mod
 import requests
 import time
+import logging
 import streamlit as st
 from firebase_admin import firestore
 from firebase_helpers import init_firestore
+
+# ⚠️ تهيئة تهيئة الصفحة كأول أمر في Streamlit لتجنب الأخطاء
+st.set_page_config(
+    page_title="منصة مُنجز - بوابة العميل",
+    page_icon="📦",
+    layout="wide",
+    initialsidebar_state="expanded"
+)
 
 # Defensive import of payment hub
 try:
@@ -30,7 +39,7 @@ except Exception:
 def render_parcels_page(user_name="أحمد مصطفى", send_to_firebase=None, send_system_email=None, *args, **kwargs):
     st.markdown("<h2 style='color: #1E3A8A; text-align: right;'>📦 بوابة توصيل الطرود والمرسول</h2>", unsafe_allow_html=True)
     
-    st.markdown("### 🔴 Live Order Tracker")
+    st.markdown("### 🔴 Live Order Tracker - تتبع الطرود المباشر")
     col1, col2 = st.columns([3, 1])
     with col2:
         if st.button("تحديث اللحظة 🔄", key="client_live_refresh"):
@@ -50,42 +59,64 @@ def render_parcels_page(user_name="أحمد مصطفى", send_to_firebase=None, 
                     o = doc.to_dict() or {}
                     o_id = doc.id
                     status = o.get("status", "pending")
-                    status_color = "#F59E0B" if status == "pending" else ("#10B981" if status in ["picked_up", "in_transit"] else ("#2563EB" if status == "bid_accepted" else "#6B7280"))
-                    st.markdown(f"<div style='padding:12px; border-radius:8px; background:{status_color}; color:white; text-align:right;'><b>حالة الطلب: {status.upper()}</b></div>", unsafe_allow_html=True)
+                    
+                    status_colors = {
+                        "pending": "#F59E0B",
+                        "bid_accepted": "#2563EB",
+                        "picked_up": "#8B5CF6",
+                        "in_transit": "#10B981",
+                        "delivered": "#059669",
+                        "cancelled": "#EF4444"
+                    }
+                    status_color = status_colors.get(status, "#6B7280")
+                    
+                    st.markdown(f"""
+                    <div style='padding:12px; border-radius:8px; background:{status_color}; color:white; text-align:right; margin-bottom:10px;'>
+                        <b>📦 طلب طرد | حالة الطلب: {status.upper()}</b><br>
+                        <small>التفاصيل: {html_mod.escape(str(o.get('order_details', '')))}</small>
+                    </div>
+                    """, unsafe_allow_html=True)
 
                     bids = o.get("bids", []) or []
-                    if not bids:
+                    if not bids and status == "pending":
                         st.info("لا توجد عروض بعد. يرجى الانتظار حتى يقدم المندوبون عروضهم.")
-                    else:
-                        st.markdown("#### العروض المقدمة")
+                    elif bids and status == "pending":
+                        st.markdown("#### 💬 العروض المقدمة من المندوبين")
                         for idx, b in enumerate(bids):
                             driver = b.get("driver_name", b.get("by", "غير معروف"))
                             amount = b.get("bid_amount", b.get("bid", "-"))
-                            st.write(f"- {driver}: {amount} ج.م")
-                            if st.button("قبول العرض", key=f"accept_bid_{o_id}_{idx}"):
-                                try:
-                                    db.collection("order_lifecycles").document(o_id).update({
-                                        "accepted_bid_index": idx,
-                                        "assigned_driver": driver,
-                                        "final_price": amount,
-                                        "status": "bid_accepted",
-                                        "bid_accepted_at": firestore.SERVER_TIMESTAMP,
-                                    })
-                                    st.success("✅ تم قبول العرض وسيتم إشعار السائق المختار.")
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"فشل قبول العرض: {e}")
+                            
+                            c_bid1, c_bid2 = st.columns([3, 1])
+                            with c_bid1:
+                                st.write(f"🏍️ **المندوب:** {driver} | 💰 **العرض:** {amount} ج.م")
+                            with c_bid2:
+                                if st.button("قبول العرض", key=f"accept_bid_{o_id}_{idx}"):
+                                    try:
+                                        db.collection("order_lifecycles").document(o_id).update({
+                                            "accepted_bid_index": idx,
+                                            "assigned_driver": driver,
+                                            "final_price": amount,
+                                            "status": "bid_accepted",
+                                            "bid_accepted_at": firestore.SERVER_TIMESTAMP,
+                                        })
+                                        st.success("✅ تم قبول العرض وسيتم إشعار المندوب المختار.")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"فشل قبول العرض: {e}")
+                    elif status in ["bid_accepted", "picked_up", "in_transit"]:
+                        st.success(f"🚖 المندوب المكلف: **{o.get('assigned_driver', 'جاري التعيين')}** | 💰 السعر المتفق عليه: **{o.get('final_price', 0)} ج.م**")
                 except Exception:
                     continue
             if not shown:
-                st.info("لا توجد طلبيات مرتبطة باسمك حالياً.")
+                st.info("لا توجد طلبيات طرود مرتبطة باسمك حالياً.")
 
     st.markdown("---")
     
     # Form for creating parcel order
+    st.markdown("### 📝 طلب توصيل طرد جديد")
     with st.form("parcels_form", clear_on_submit=True):
         c_name = st.text_input("👤 اسم العميل", value=user_name if isinstance(user_name, str) else "أحمد مصطفى", key="parcels_name")
-        o_details = st.text_area("📝 ما الذي تريد توصيله؟ (اكتب تفاصيل الوجهة والشحنة بدقة)", placeholder="مثال: مطلوب استلام طرد من...", key="parcels_details")
+        o_details = st.text_area("📝 ما الذي تريد توصيله؟ (اكتب تفاصيل الوجهة والشحنة بدقة)", placeholder="مثال: مطلوب استلام طرد من الدقي وتوصيله للمهندسين...", key="parcels_details")
         s_price = st.number_input("💰 ميزانيتك المقترحة للطلب (جنيه)", min_value=10, value=30, step=5, key="parcels_price")
         c_phone = st.text_input("📱 رقم هاتف التواصل", value="+20 1000000000", key="parcels_phone")
 
@@ -124,7 +155,7 @@ def render_parcels_page(user_name="أحمد مصطفى", send_to_firebase=None, 
 def render_taxi_page(user_name="أحمد مصطفى", send_to_firebase=None, send_system_email=None, *args, **kwargs):
     st.markdown("<h2 style='color: #1E3A8A; text-align: right;'>🚖 طلب تاكسي وتوصيل أفراد</h2>", unsafe_allow_html=True)
     
-    st.markdown("### 🔴 Live Order Tracker")
+    st.markdown("### 🔴 Live Order Tracker - تتبع الرحلة المباشر")
     col1, col2 = st.columns([3, 1])
     with col2:
         if st.button("تحديث اللحظة 🔄", key="client_taxi_refresh"):
@@ -144,33 +175,43 @@ def render_taxi_page(user_name="أحمد مصطفى", send_to_firebase=None, sen
                     o = doc.to_dict() or {}
                     o_id = doc.id
                     status = o.get("status", "pending")
-                    st.markdown(f"<div style='padding:12px; border-radius:8px; background:#F3F4F6; text-align:right;'><b>حالة الطلب: {status.upper()}</b></div>", unsafe_allow_html=True)
+                    
+                    st.markdown(f"<div style='padding:12px; border-radius:8px; background:#1E3A8A; color:white; text-align:right; margin-bottom:10px;'><b>🚖 رحلة تاكسي | حالة الطلب: {status.upper()}</b></div>", unsafe_allow_html=True)
 
                     bids = o.get("bids", []) or []
-                    if bids:
-                        st.markdown("#### العروض المقدمة")
+                    if bids and status == "pending":
+                        st.markdown("#### 💬 عروض الكباتن المتاحة")
                         for idx, b in enumerate(bids):
                             driver = b.get("driver_name", b.get("by", "غير معروف"))
                             amount = b.get("bid_amount", b.get("bid", "-"))
-                            st.write(f"- {driver}: {amount} ج.م")
-                            if st.button("قبول العرض", key=f"accept_taxi_{o_id}_{idx}"):
-                                try:
-                                    db.collection("order_lifecycles").document(o_id).update({
-                                        "accepted_bid_index": idx,
-                                        "assigned_driver": driver,
-                                        "final_price": amount,
-                                        "status": "bid_accepted",
-                                        "bid_accepted_at": firestore.SERVER_TIMESTAMP,
-                                    })
-                                    st.success("✅ تم قبول العرض وسيتم إشعار السائق المختار.")
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"فشل قبول العرض: {e}")
+                            
+                            c_bid1, c_bid2 = st.columns([3, 1])
+                            with c_bid1:
+                                st.write(f"🚖 **الكابتن:** {driver} | 💰 **العرض:** {amount} ج.م")
+                            with c_bid2:
+                                if st.button("قبول العرض", key=f"accept_taxi_{o_id}_{idx}"):
+                                    try:
+                                        db.collection("order_lifecycles").document(o_id).update({
+                                            "accepted_bid_index": idx,
+                                            "assigned_driver": driver,
+                                            "final_price": amount,
+                                            "status": "bid_accepted",
+                                            "bid_accepted_at": firestore.SERVER_TIMESTAMP,
+                                        })
+                                        st.success("✅ تم قبول العرض وسيتم إشعار السائق المختار.")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"فشل قبول العرض: {e}")
+                    elif status in ["bid_accepted", "picked_up", "in_transit"]:
+                        st.success(f"🚖 الكابتن المكلف: **{o.get('assigned_driver', 'جاري التعيين')}** | 💰 التكلفة: **{o.get('final_price', 0)} ج.م**")
                 except Exception:
                     continue
             if not shown:
-                st.info("لا توجد طلبيات مرتبطة باسمك حالياً.")
+                st.info("لا توجد طلبيات رحلات مرتبطة باسمك حالياً.")
 
+    st.markdown("---")
+
+    st.markdown("### 📝 طلب رحلة جديدة")
     with st.form("taxi_form", clear_on_submit=True):
         c_name = st.text_input("👤 اسم العميل", value=user_name if isinstance(user_name, str) else "أحمد مصطفى", key="taxi_name")
         o_details = st.text_area("📝 تفاصيل المشوار والوجهة", placeholder="مثال: التوصيل من شارع التحرير إلى الدقي...", key="taxi_details")
@@ -213,6 +254,18 @@ def render_chat_page(user_name="أحمد مصطفى", user_role="client", send_t
     st.subheader("💬 شات مُنجز المباشر")
     st.info(f"مرحباً بك {user_name} ({user_role}) في غرفة المحادثة المباشرة.")
     
+    # عرض سائل الرسائل السابقة
+    if db:
+        try:
+            chat_stream = db.collection("chats").order_by("timestamp", direction=firestore.Query.DESCENDING).limit(15).stream()
+            for msg_doc in chat_stream:
+                m_data = msg_doc.to_dict()
+                sender = m_data.get("sender", "غير معروف")
+                msg_text = m_data.get("message", "")
+                st.caption(f"**{sender}:** {msg_text}")
+        except Exception:
+            pass
+
     chat_msg = st.text_input("أدخل رسالتك:", key="client_chat_msg")
     if st.button("إرسال", key="client_send_msg"):
         if chat_msg and chat_msg.strip():
@@ -244,7 +297,7 @@ def render_wallet_page(user_name="أحمد مصطفى", *args, **kwargs):
     current_balance = 0.0
     if db:
         try:
-            users_q = db.collection("users").where("full_name", "==", user_name).limit(1).get()
+            users_q = db.collection("users").where("name", "==", user_name).limit(1).get()
             if users_q and len(users_q) > 0:
                 current_balance = float(users_q[0].to_dict().get("wallet_balance", 0.0))
         except Exception:
@@ -277,9 +330,9 @@ def render_wallet_page(user_name="أحمد مصطفى", *args, **kwargs):
 # نقطة الدخول الرئيسية (Main Entrypoint)
 # ---------------------------------------------------------
 def main():
-    st.title("منصة مُنجز - واجهة العميل")
+    st.title("🚀 منصة مُنجز - بوابة العميل")
     menu = ["بوابة الطرود", "طلب تاكسي", "الشات", "المحفظة"]
-    choice = st.sidebar.selectbox("القائمة", menu)
+    choice = st.sidebar.selectbox("اختر الخدمة المطلوبة:", menu)
 
     user_name = st.session_state.get("user_data", {}).get("name", "أحمد مصطفى")
 
@@ -300,5 +353,4 @@ if __name__ == "__main__":
             st.error("حدث خطأ غير متوقع في واجهة العميل. سيتم تسجيل التفاصيل في السجلات.")
         except Exception:
             pass
-        import logging
         logging.exception("Unhandled error in Client.py: %s", e)
