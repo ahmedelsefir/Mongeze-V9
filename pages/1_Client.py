@@ -6,12 +6,12 @@ import streamlit as st
 from firebase_admin import firestore
 from firebase_helpers import init_firestore
 
-# ⚠️ تهيئة تهيئة الصفحة كأول أمر في Streamlit لتجنب الأخطاء
+# ⚠️ تهيئة الصفحة كأول أمر في Streamlit (تم تصحيح initial_sidebar_state)
 st.set_page_config(
     page_title="منصة مُنجز - بوابة العميل",
     page_icon="📦",
     layout="wide",
-    initialsidebar_state="expanded"
+    initial_sidebar_state="expanded"
 )
 
 # Defensive import of payment hub
@@ -254,7 +254,6 @@ def render_chat_page(user_name="أحمد مصطفى", user_role="client", send_t
     st.subheader("💬 شات مُنجز المباشر")
     st.info(f"مرحباً بك {user_name} ({user_role}) في غرفة المحادثة المباشرة.")
     
-    # عرض سائل الرسائل السابقة
     if db:
         try:
             chat_stream = db.collection("chats").order_by("timestamp", direction=firestore.Query.DESCENDING).limit(15).stream()
