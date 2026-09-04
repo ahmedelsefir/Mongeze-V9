@@ -1,19 +1,16 @@
 import streamlit as st
 import streamlit.components.v1 as components
-from paymob import initiate_wallet_topup
 
-st.set_page_config(
-    page_title="منصة مُنجز - بوابة الدفع الموحدة", layout="wide"
-)
+# استيراد آمن لدالة paymob لتفادي انهيار البرنامج إذا لم تكن المكتبة متوفرة
+try:
+    from paymob import initiate_wallet_topup
+except Exception:
+    def initiate_wallet_topup(*args, **kwargs):
+        return None
 
 
 def _get_secret(path, default=None):
-    """Safely fetch nested secrets from st.secrets using dot-separated path.
-
-    Examples:
-      _get_secret('paymob.PAYMOB_API_KEY')
-      _get_secret('PAYMOB_API_KEY')
-    """
+    """جلب الأسرار بشكل آمن من st.secrets باستخدام المسار المنقط."""
     try:
         parts = path.split('.')
         cur = st.secrets
@@ -83,7 +80,7 @@ def render_payment_hub(purpose="topup", default_amount=100):
         "🚀 الانتقال لبوابة الدفع الإلكتروني الآمنة",
         use_container_width=True,
     ):
-        # Verify Paymob keys exist before attempting any network calls
+        # التحقق من وجود مفاتيح Paymob
         paymob_key = _get_secret("paymob.PAYMOB_API_KEY") or _get_secret("PAYMOB_API_KEY")
         if not paymob_key:
             st.error("⚠️ إعدادات Paymob غير مكتملة في Streamlit Secrets. الرجاء إضافة PAYMOB_API_KEY.")
@@ -108,7 +105,6 @@ def render_payment_hub(purpose="topup", default_amount=100):
             except Exception as e:
                 st.error("❌ حدث خطأ أثناء الاتصال ببوابة الدفع. يرجى المحاولة لاحقاً.")
                 import logging
-
                 logging.exception("Paymob initiation error: %s", e)
                 return
 
@@ -146,7 +142,13 @@ def render_payment_hub(purpose="topup", default_amount=100):
             st.error("❌ تعذر عرض نافذة الدفع الآمنة داخل التطبيق.")
 
 
+# تشغيل التهيئة فقط إذا تم فتح الملف بشكل مباشر وليس عند الاستيراد
 if __name__ == "__main__":
+    st.set_page_config(
+        page_title="منصة مُنجز - بوابة الدفع الموحدة",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
     try:
         render_payment_hub()
     except Exception:
