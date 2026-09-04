@@ -19,7 +19,8 @@ except Exception:
             st.warning("بوابة الدفع غير متاحة حالياً — يرجى تفعيل صفحة Payment_Hub أو إعداد الأسرار.")
             return None
 
-st.set_page_config(page_title="منصة مُنجز - بوابة الميدان", layout="wide", initialsidebar_state="expanded")
+# --- 0️⃣ إعدادات الصفحة (تم تصحيح initial_sidebar_state) ---
+st.set_page_config(page_title="منصة مُنجز - بوابة الميدان", layout="wide", initial_sidebar_state="expanded")
 
 # --- 1️⃣ الاتصال الآمن بالفايربيز ---
 db = init_firestore()
