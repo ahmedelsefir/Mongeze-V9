@@ -1,6 +1,7 @@
 import html as html_mod
 import requests
 import time
+from datetime import datetime
 import streamlit as st
 import streamlit.components.v1 as components
 from firebase_admin import firestore
@@ -79,7 +80,7 @@ st.markdown("### 🔴 Live Order Radar - الطلبيات اللحظية")
 col_radar1, col_radar2 = st.columns([3,1])
 with col_radar2:
     if st.button("تحديث اللحظة 🔄", key="live_radar_refresh"):
-        st.experimental_rerun()
+        st.rerun()
 
 with col_radar1:
     if db:
@@ -124,13 +125,14 @@ with col_radar1:
                                 "driver_name": DRIVER_NAME,
                                 "driver_id": DRIVER_PHONE,
                                 "bid_amount": float(bid_amount),
-                                "timestamp": firestore.SERVER_TIMESTAMP,
+                                "timestamp": datetime.now().isoformat(),  # ✅ تم التعديل هنا لتفادي خطأ Firestore Sentinel
                                 "bid_status": "active"
                             }
                             bids.append(new_bid)
                             db.collection("order_lifecycles").document(o_id).update({"bids": bids})
                             st.success(f"🟢 تم إرسال عرضك بقيمة {bid_amount} جنيه بنجاح! بانتظار موافقة العميل.")
-                            st.experimental_rerun()
+                            time.sleep(1)
+                            st.rerun()
                     except Exception as e:
                         st.error(f"فشل في إرسال العرض: {e}")
             except Exception:
@@ -271,7 +273,7 @@ with driver_tabs[1]:
                         try:
                             db.collection("order_lifecycles").document(m_id).update({"status": "picked_up", "picked_up_at": firestore.SERVER_TIMESTAMP})
                             st.success("🔔 تم تأكيد الاستلام. انتقل الطلب إلى حالة 'PICKED_UP'.")
-                            st.experimental_rerun()
+                            st.rerun()
                         except Exception as e:
                             st.error(f"فشل تحديث الحالة: {e}")
                 elif status == "picked_up":
@@ -279,7 +281,7 @@ with driver_tabs[1]:
                         try:
                             db.collection("order_lifecycles").document(m_id).update({"status": "in_transit", "in_transit_at": firestore.SERVER_TIMESTAMP})
                             st.success("🚚 تم تحديث الحالة إلى 'IN_TRANSIT'.")
-                            st.experimental_rerun()
+                            st.rerun()
                         except Exception as e:
                             st.error(f"فشل تحديث الحالة: {e}")
                 elif status == "in_transit":
@@ -287,7 +289,7 @@ with driver_tabs[1]:
                         try:
                             db.collection("order_lifecycles").document(m_id).update({"status": "delivered", "delivered_at": firestore.SERVER_TIMESTAMP})
                             st.success("🎉 تم تسليم الطلب وتسجيله كـ 'DELIVERED'.")
-                            st.experimental_rerun()
+                            st.rerun()
                         except Exception as e:
                             st.error(f"فشل تحديث الحالة: {e}")
                 else:
