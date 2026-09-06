@@ -212,7 +212,7 @@ LANG_TEXTS = {
         "btn_ai": "🤖 عقل مُنجز (AI)",
         "btn_chat": "💬 شات منجز الخاص 🟢",
         "btn_tracking": "🛰️ رادار التتبع والاتصال السحابي المباشر",
-        "btn_settings": "⚙️ الإعدادات والملف الشخصي",
+        "btn_settings": "⚙️ إعدادات التطبيق والملف الشخصي",
     },
     "English": {
         "app_title": "🤖 Mongeze Smart Central Operations Room",
@@ -235,7 +235,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://monjez-app.icu")
-SESSION_GUARD_VERSION = "monjez-mobile-session-guard-v1"
+SESSION_GUARD_VERSION = "monjez-mobile-session-guard-v3"
 
 
 def initialize_session_guard():
@@ -261,7 +261,7 @@ def initialize_session_guard():
     if "language" not in st.session_state:
         st.session_state["language"] = "العربية"
     if "driver_verification_status" not in st.session_state:
-        st.session_state["driver_verification_status"] = "Pending Manual Review"
+        st.session_state["driver_verification_status"] = "Pending"
     if "ai_messages" not in st.session_state:
         st.session_state["ai_messages"] = []
 
@@ -275,7 +275,7 @@ def initialize_session_guard():
 initialize_session_guard()
 
 # ========================================================
-# 🔒 جلب التكوينات وإعداد الاتصال السحابي بالـ Firebase + هيكل القاعدة والـ Triggers
+# 🔒 إعداد الاتصال السحابي بالـ Firebase + هيكل الـ KYC والـ Triggers
 # ========================================================
 try:
     firebase_config = None
@@ -310,34 +310,34 @@ try:
         initialize_app(cred)
         st.success("🔥 تم ربط Firebase بنجاح تام!")
 
-        # تهيئة الهيكل الموحد لقاعدة البيانات والأتمتة المالية
         db = firestore.client()
 
         def initialize_database_schema():
-            print("جاري تهيئة الهيكل الخرساني لقاعدة البيانات...")
+            print("جاري تهيئة الهيكل الخرساني لقاعدة البيانات والإعدادات...")
             user_schema_ref = db.collection("users").document("_schema_template_")
             user_schema_ref.set({
-                "uid": "string (Unique Identifier)",
+                "uid": "string",
                 "name": "string",
                 "phone": "string",
                 "role": "string (client, driver, admin)",
-                "wallet_balance": "number (default: 0.0)",
-                "status": "string (active, suspended)",
+                "wallet_balance": "number",
+                "status": "string",
+                "kyc_status": "string",
+                "language": "string (العربية, English)",
+                "audio_notifications": "boolean",
                 "created_at": "timestamp"
             }, merge=True)
 
             order_schema_ref = db.collection("orders").document("_schema_template_")
             order_schema_ref.set({
-                "order_id": "string (Unique Identifier)",
+                "order_id": "string",
                 "client_id": "string",
                 "driver_id": "string",
                 "service_type": "string",
-                "order_detail": "string",
                 "suggested_price": "number",
                 "status": "string",
                 "timestamp": "timestamp"
             }, merge=True)
-            print("تم إنشاء الهيكل والوثائق المرجعية بنجاح تام.")
 
         def process_completed_order_trigger(order_id):
             order_ref = db.collection("orders").document(order_id)
@@ -360,7 +360,6 @@ try:
                 current_balance = driver_snapshot.to_dict().get("wallet_balance", 0.0)
                 transaction.update(driver_ref, {"wallet_balance": current_balance + earnings})
 
-        # تشغيل التهيئة فور الإقلاع
         initialize_database_schema()
 
 except Exception as e:
@@ -369,42 +368,147 @@ except Exception as e:
 
 
 # ========================================================
-# 📡 دوال الفايربيز الأساسية المخصصة
+# 🛡️ نظام حماية والتحقق من الهوية (KYC Guard)
 # ========================================================
-def fetch_firebase_raw(node):
+def check_driver_kyc_status(username):
     try:
-        res = firebase_request("get", node)
-        if res and res.ok:
-            return res.json()
-        return None
-    except Exception as e:
-        logger.error(f"Error fetching raw Firebase node {node}: {str(e)}")
-        return None
+        db = firestore.client()
+        user_ref = db.collection("users").document(str(username).strip().lower())
+        user_doc = user_ref.get()
+        
+        if not user_doc.exists:
+            user_ref.set({
+                "name": username,
+                "role": "driver",
+                "kyc_status": "Pending Review",
+                "wallet_balance": 0.0,
+                "language": "العربية",
+                "audio_notifications": True
+            }, merge=True)
+            return False, "Pending Review"
+            
+        data = user_doc.to_dict()
+        kyc_status = data.get("kyc_status", "Pending Review")
+        
+        if kyc_status in ["Verified", "موثق", "active"]:
+            return True, kyc_status
+        return False, kyc_status
+    except Exception:
+        return False, "Error Checking"
 
 
-def fetch_user_settings(username):
-    return fetch_firebase_dict(f"users/{sanitize_username(username)}")
+# ========================================================
+# ⚙️ دالة إدارة الإعدادات التقنية والملف الشخصي المتكاملة
+# ========================================================
+def render_technical_settings_engine(username):
+    st.markdown("---")
+    st.subheader("⚙️ لوحة الإعدادات التقنية والملف الشخصي المتقدم")
+    
+    try:
+        db = firestore.client()
+        user_ref = db.collection("users").document(str(username).strip().lower())
+        user_doc = user_ref.get()
+        
+        user_data = user_doc.to_dict() if user_doc.exists else {
+            "language": "العربية",
+            "audio_notifications": True,
+            "phone": ""
+        }
+        
+        with st.form("tech_settings_form"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                current_lang = user_data.get("language", "العربية")
+                selected_lang = st.selectbox(
+                    "🌐 لغة النظام المفضلة (Language):", 
+                    ["العربية", "English"], 
+                    index=0 if current_lang == "العربية" else 1
+                )
+                phone_num = st.text_input("📱 رقم الهاتف الرسمي:", value=user_data.get("phone", ""))
+                
+            with col2:
+                audio_enabled = st.checkbox(
+                    "🔊 تفعيل التنبيهات الصوتية الفورية للطلبات", 
+                    value=user_data.get("audio_notifications", True)
+                )
+                st.info("🔒 الحساب مؤمن بتقنية الحماية السحابية (Session Guard Active).")
+                
+            submit_settings = st.form_submit_button("💾 حفظ وتطبيق الإعدادات التقنية")
+            
+            if submit_settings:
+                user_ref.update({
+                    "language": selected_lang,
+                    "phone": phone_num,
+                    "audio_notifications": audio_enabled
+                })
+                st.session_state["language"] = selected_lang
+                st.session_state["audio_notifications_enabled"] = audio_enabled
+                st.success("✅ تم تحديث إعدادات التطبيق وحفظها في قاعدة البيانات بنجاح!")
+                st.rerun()
+                
+    except Exception as ex:
+        st.error(f"⚠️ تعذر تحميل الإعدادات التقنية حالياً: {str(ex)}")
 
 
-def save_user_settings(username, settings):
-    return update_firebase_node(f"users/{sanitize_username(username)}", settings)
-
-
-# عرض الواجهة الأساسية والجانبية عند تشغيل الملف الرئيسي
+# ========================================================
+# 🖥️ الشاشة الرئيسية والتحكم بالتدفق
+# ========================================================
 def main():
     st.sidebar.title("منصة مُنجز الذكية")
     user_role = st.sidebar.selectbox("اختر هويتك:", ["عميل", "سائق", "مسؤول"], key="main_role_select")
     user_name = st.sidebar.text_input("اسم المستخدم:", value=st.session_state.get("user_name", "أحمد مصطفى"))
     st.session_state["user_name"] = user_name
 
+    # اختيار التنقل بين الخدمات أو الإعدادات من القائمة الجانبية
+    nav_option = st.sidebar.radio("🧭 التنقل السريع:", ["الخدمات الرئيسية", "⚙️ الإعدادات والملف الشخصي"])
+
     st.title("🤖 غرفة العمليات المركزية لـ منجز الذكية")
     st.markdown(f"**مرحباً بك يا {user_name}** في النظام السحابي الموحد.")
 
+    if nav_option == "⚙️ الإعدادات والملف الشخصي":
+        render_technical_settings_engine(user_name)
+        return
+
     if user_role == "عميل":
-        st.info("قم باختيار الصفحات الفرعية المتاحة من القائمة الجانبية للوصول إلى بوابة الطرود أو التاكسي.")
+        st.info("مرحباً بك في بوابة العملاء للطلبات والتاكسي.")
         render_parcels_page(user_name=user_name)
+        
     elif user_role == "سائق":
-        st.info("مرحباً بك في نافذة السائقين.")
+        st.markdown("### 🚕 لوحة تحكم السائق والمندوب")
+        
+        # فحص التوثيق الإلزامي (KYC Guard)
+        is_verified, status_msg = check_driver_kyc_status(user_name)
+        
+        if not is_verified:
+            st.error(f"🚨 **حسابك غير موثق حالياً (الحالة: {status_msg})!** يرجى رفع المستندات المطلوبة أدناه لتفعيل التدفق الفوري للطلبات.")
+            
+            with st.form("driver_kyc_submission_form"):
+                st.subheader("📝 مستندات التحقق الإلزامية (KYC)")
+                id_num = st.text_input("رقم الهوية الوطنية / الإقامة:")
+                drv_lic = st.text_input("رقم رخصة القيادة:")
+                veh_lic = st.text_input("رقم رخصة المركبة / اللوحة:")
+                
+                submitted = st.form_submit_button("💾 إرسال المستندات للاعتماد الفوري")
+                if submitted:
+                    if id_num and drv_lic and veh_lic:
+                        db = firestore.client()
+                        db.collection("users").document(str(user_name).strip().lower()).update({
+                            "id_number": id_num,
+                            "driving_license": drv_lic,
+                            "vehicle_license": veh_lic,
+                            "kyc_status": "Under Admin Review"
+                        })
+                        st.success("✅ تم إرسال بياناتك بنجاح وسيتم اعتمادها من الإدارة قريباً!")
+                        st.rerun()
+                    else:
+                        st.warning("⚠️ يرجى تعبئة جميع الحقول المطلوبة للتوثيق.")
+            return
+            
+        else:
+            st.success("🌟 **حسابك موثق ومعتمد بنجاح!** يمكنك الآن استقبال الطلبات.")
+            render_technical_settings_engine(user_name)
+
     else:
         st.info("مرحباً بك في لوحة تحكم المشرفين.")
 
