@@ -114,6 +114,7 @@ except Exception:
 
 
 import firebase_admin
+from firebase_admin import credentials, initialize_app, firestore
 
 try:
     from firebase_helpers import (
@@ -235,7 +236,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://monjez-app.icu")
-SESSION_GUARD_VERSION = "monjez-mobile-session-guard-v3"
+SESSION_GUARD_VERSION = "monjez-mobile-session-guard-v4"
 
 
 def initialize_session_guard():
@@ -277,6 +278,7 @@ initialize_session_guard()
 # ========================================================
 # 🔒 إعداد الاتصال السحابي بالـ Firebase + هيكل الـ KYC والـ Triggers
 # ========================================================
+db = None
 try:
     firebase_config = None
 
@@ -305,65 +307,33 @@ try:
         st.error("❌ عذراً، لم يتم العثور على بيانات الاعتماد في الـ Secrets!")
 
     if firebase_config and not firebase_admin._apps:
-        from firebase_admin import credentials, initialize_app, firestore
         cred = credentials.Certificate(firebase_config)
         initialize_app(cred)
         st.success("🔥 تم ربط Firebase بنجاح تام!")
 
-        db = firestore.client()
+    db = firestore.client()
 
-        def initialize_database_schema():
-            print("جاري تهيئة الهيكل الخرساني لقاعدة البيانات والإعدادات...")
-            user_schema_ref = db.collection("users").document("_schema_template_")
-            user_schema_ref.set({
-                "uid": "string",
-                "name": "string",
-                "phone": "string",
-                "role": "string (client, driver, admin)",
-                "wallet_balance": "number",
-                "status": "string",
-                "kyc_status": "string",
-                "language": "string (العربية, English)",
-                "audio_notifications": "boolean",
-                "created_at": "timestamp"
-            }, merge=True)
+    def initialize_database_schema():
+        if db is None:
+            return
+        user_schema_ref = db.collection("users").document("_schema_template_")
+        user_schema_ref.set({
+            "uid": "string",
+            "name": "string",
+            "phone": "string",
+            "role": "string",
+            "wallet_balance": "number",
+            "status": "string",
+            "kyc_status": "string",
+            "language": "string",
+            "audio_notifications": "boolean",
+            "created_at": "timestamp"
+        }, merge=True)
 
-            order_schema_ref = db.collection("orders").document("_schema_template_")
-            order_schema_ref.set({
-                "order_id": "string",
-                "client_id": "string",
-                "driver_id": "string",
-                "service_type": "string",
-                "suggested_price": "number",
-                "status": "string",
-                "timestamp": "timestamp"
-            }, merge=True)
-
-        def process_completed_order_trigger(order_id):
-            order_ref = db.collection("orders").document(order_id)
-            order_doc = order_ref.get()
-            if not order_doc.exists:
-                return False
-            order_data = order_doc.to_dict()
-            if order_data.get("status") == "completed" and order_data.get("driver_id"):
-                driver_ref = db.collection("users").document(order_data.get("driver_id"))
-                price = order_data.get("suggested_price", 0)
-                driver_net_earnings = price - (price * 0.10)
-                db.run_transaction(lambda transaction: update_driver_wallet(transaction, driver_ref, driver_net_earnings))
-                return True
-            return False
-
-        @firestore.transactional
-        def update_driver_wallet(transaction, driver_ref, earnings):
-            driver_snapshot = driver_ref.get(transaction=transaction)
-            if driver_snapshot.exists:
-                current_balance = driver_snapshot.to_dict().get("wallet_balance", 0.0)
-                transaction.update(driver_ref, {"wallet_balance": current_balance + earnings})
-
-        initialize_database_schema()
+    initialize_database_schema()
 
 except Exception as e:
-    st.error("⚠️ حدث خطأ أثناء تحليل المفتاح أو تهيئة القاعدة:")
+    st.error("⚠️ حدث خطأ أثناء الاتصال بقاعدة البيانات:")
     st.exception(e)
 
 
@@ -372,7 +342,8 @@ except Exception as e:
 # ========================================================
 def check_driver_kyc_status(username):
     try:
-        db = firestore.client()
+        if db is None:
+            return False, "DB Not Connected"
         user_ref = db.collection("users").document(str(username).strip().lower())
         user_doc = user_ref.get()
         
@@ -405,7 +376,10 @@ def render_technical_settings_engine(username):
     st.subheader("⚙️ لوحة الإعدادات التقنية والملف الشخصي المتقدم")
     
     try:
-        db = firestore.client()
+        if db is None:
+            st.error("قاعدة البيانات غير متصلة حالياً.")
+            return
+            
         user_ref = db.collection("users").document(str(username).strip().lower())
         user_doc = user_ref.get()
         
@@ -460,7 +434,6 @@ def main():
     user_name = st.sidebar.text_input("اسم المستخدم:", value=st.session_state.get("user_name", "أحمد مصطفى"))
     st.session_state["user_name"] = user_name
 
-    # اختيار التنقل بين الخدمات أو الإعدادات من القائمة الجانبية
     nav_option = st.sidebar.radio("🧭 التنقل السريع:", ["الخدمات الرئيسية", "⚙️ الإعدادات والملف الشخصي"])
 
     st.title("🤖 غرفة العمليات المركزية لـ منجز الذكية")
@@ -477,7 +450,6 @@ def main():
     elif user_role == "سائق":
         st.markdown("### 🚕 لوحة تحكم السائق والمندوب")
         
-        # فحص التوثيق الإلزامي (KYC Guard)
         is_verified, status_msg = check_driver_kyc_status(user_name)
         
         if not is_verified:
@@ -492,15 +464,15 @@ def main():
                 submitted = st.form_submit_button("💾 إرسال المستندات للاعتماد الفوري")
                 if submitted:
                     if id_num and drv_lic and veh_lic:
-                        db = firestore.client()
-                        db.collection("users").document(str(user_name).strip().lower()).update({
-                            "id_number": id_num,
-                            "driving_license": drv_lic,
-                            "vehicle_license": veh_lic,
-                            "kyc_status": "Under Admin Review"
-                        })
-                        st.success("✅ تم إرسال بياناتك بنجاح وسيتم اعتمادها من الإدارة قريباً!")
-                        st.rerun()
+                        if db is not None:
+                            db.collection("users").document(str(user_name).strip().lower()).update({
+                                "id_number": id_num,
+                                "driving_license": drv_lic,
+                                "vehicle_license": veh_lic,
+                                "kyc_status": "Under Admin Review"
+                            })
+                            st.success("✅ تم إرسال بياناتك بنجاح وسيتم اعتمادها من الإدارة قريباً!")
+                            st.rerun()
                     else:
                         st.warning("⚠️ يرجى تعبئة جميع الحقول المطلوبة للتوثيق.")
             return
