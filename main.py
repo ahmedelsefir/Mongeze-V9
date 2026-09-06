@@ -411,14 +411,17 @@ def render_technical_settings_engine(username):
             submit_settings = st.form_submit_button("💾 حفظ وتطبيق الإعدادات التقنية")
             
             if submit_settings:
-                user_ref.update({
+                user_ref.set({
                     "language": selected_lang,
                     "phone": phone_num,
-                    "audio_notifications": audio_enabled
-                })
+                    "audio_notifications": audio_enabled,
+                    "name": username,
+                    "updated_at": firestore.SERVER_TIMESTAMP
+                }, merge=True)
+                
                 st.session_state["language"] = selected_lang
                 st.session_state["audio_notifications_enabled"] = audio_enabled
-                st.success("✅ تم تحديث إعدادات التطبيق وحفظها في قاعدة البيانات بنجاح!")
+                st.success("✅ تم حفظ وتحديث الإعدادات في قاعدة البيانات بنجاح تام!")
                 st.rerun()
                 
     except Exception as ex:
@@ -465,12 +468,15 @@ def main():
                 if submitted:
                     if id_num and drv_lic and veh_lic:
                         if db is not None:
-                            db.collection("users").document(str(user_name).strip().lower()).update({
+                            db.collection("users").document(str(user_name).strip().lower()).set({
                                 "id_number": id_num,
                                 "driving_license": drv_lic,
                                 "vehicle_license": veh_lic,
-                                "kyc_status": "Under Admin Review"
-                            })
+                                "kyc_status": "Under Admin Review",
+                                "name": user_name,
+                                "role": "driver",
+                                "updated_at": firestore.SERVER_TIMESTAMP
+                            }, merge=True)
                             st.success("✅ تم إرسال بياناتك بنجاح وسيتم اعتمادها من الإدارة قريباً!")
                             st.rerun()
                     else:
