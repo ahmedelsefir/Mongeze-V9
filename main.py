@@ -128,7 +128,6 @@ try:
         update_firebase_node,
     )
 except Exception:
-    # دوال بديلة احتياطية لتفادي توقف السيرفر كلياً
     def delete_firebase_node(*args, **kwargs):
         pass
 
@@ -188,7 +187,6 @@ except Exception:
         pass
 
 
-# Defensive import for payment hub
 try:
     from pages.Payment_Hub import render_payment_hub
 except Exception:
@@ -197,14 +195,12 @@ except Exception:
     except Exception:
 
         def render_payment_hub(*args, **kwargs):
-            st.warning(
-                "بوابة الدفع غير متاحة حالياً — يرجى تفعيل صفحة Payment_Hub أو إعداد الأسرار."
-            )
+            st.warning("بوابة الدفع غير متاحة حالياً.")
             return None
 
 
 # ========================================================
-# 🌐 قاموس الترجمة الموحد لمنصة منجز الذكية (Localization)
+# 🌐 قاموس الترجمة الموحد لمنصة منجز الذكية
 # ========================================================
 LANG_TEXTS = {
     "العربية": {
@@ -217,44 +213,6 @@ LANG_TEXTS = {
         "btn_chat": "💬 شات منجز الخاص 🟢",
         "btn_tracking": "🛰️ رادار التتبع والاتصال السحابي المباشر",
         "btn_settings": "⚙️ الإعدادات والملف الشخصي",
-        "sidebar_profile": "### 👤 ملف المستخدم",
-        "sidebar_role_lbl": "اختر هويتك في السيستم:",
-        "sidebar_name_lbl": "اسمك المسجل:",
-        "main_dashboard_title": "### 📡 لوحة بث واستقبال العمليات السحابية",
-        "active_orders_lbl": "📊 الطلبات الشغالة على السيرفر حالياً:",
-        "clean_server_msg": "📭 السيرفر نظيف ولا توجد رحلات جارية حالياً.",
-        "tracking_radar_title": (
-            "## 📡 رادار التتبع والاتصال السحابي المباشر"
-        ),
-        "tracking_radar_cap": (
-            "🔄 الرادار نشط: يتم تحديث وسحب الحالات تلقائياً من السيرفر كل 3"
-            " ثوانٍ..."
-        ),
-        "settings_center_title": (
-            "## ⚙️ مركز الإعدادات والملف الشخصي المتقدم"
-        ),
-        "global_settings_sub": "📱 الإعدادات العامة (Global Settings)",
-        "edit_profile_title": "### 👤 تعديل البروفايل الشخصي",
-        "form_full_name": "🔤 الاسم الكامل:",
-        "form_whatsapp": "📱 رقم الواتساب:",
-        "form_save_btn": "💾 حفظ تعديلات البروفايل",
-        "audio_settings_title": "### 🎵 إعدادات التنبيهات الصوتية",
-        "audio_checkbox": "🔊 تفعيل التنبيهات الصوتية",
-        "audio_enabled_msg": "✅ التنبيهات الصوتية مفعّلة",
-        "audio_disabled_msg": "❌ التنبيهات الصوتية معطّلة",
-        "audio_test_btn": "🔊 تجربة الصوت",
-        "lang_settings_title": "### 🌐 إعدادات اللغة",
-        "lang_select_lbl": "اختر لغة الواجهة:",
-        "lang_success_msg": "✅ تم تعيين اللغة بنجاح!",
-        "manual_refresh_btn": "🔄 تحديث الرادار والمحادثات",
-        "error_fetch": "حدث خطأ في جلب البيانات",
-        "profile_success": "✅ تم حفظ تعديلات البروفايل بنجاح!",
-        "profile_error": "❌ فشل حفظ التعديلات. حاول مرة أخرى.",
-        "support_title": "📋 المساعدة والدعم (Support & Maintenance)",
-        "tab_general": "🌍 الإعدادات العامة",
-        "tab_driver": "🚕 إعدادات المندوب",
-        "tab_kyc": "🎖️ التحقق من الهوية (KYC)",
-        "tab_support": "📋 المساعدة والدعم",
     },
     "English": {
         "app_title": "🤖 Mongeze Smart Central Operations Room",
@@ -266,44 +224,6 @@ LANG_TEXTS = {
         "btn_chat": "💬 Private Mongeze Chat 🟢",
         "btn_tracking": "🛰️ Live Tracking Radar",
         "btn_settings": "⚙️ Settings & Profile",
-        "sidebar_profile": "### 👤 User Profile",
-        "sidebar_role_lbl": "Choose your identity:",
-        "sidebar_name_lbl": "Registered Name:",
-        "main_dashboard_title": (
-            "### 📡 Cloud Operations Broadcasting Panel"
-        ),
-        "active_orders_lbl": "📊 Active server orders currently running:",
-        "clean_server_msg": "📭 Server is clean. No active trips right now.",
-        "tracking_radar_title": (
-            "## 📡 Tracking Radar & Direct Cloud Link"
-        ),
-        "tracking_radar_cap": (
-            "🔄 Radar Active: Fetching status automatically from server every"
-            " 3 seconds..."
-        ),
-        "settings_center_title": "## ⚙️ Advanced Settings & Profile Center",
-        "global_settings_sub": "📱 Global Settings",
-        "edit_profile_title": "### 👤 Edit Personal Profile",
-        "form_full_name": "🔤 Full Name:",
-        "form_whatsapp": "📱 WhatsApp Number:",
-        "form_save_btn": "💾 Save Profile Modifications",
-        "audio_settings_title": "### 🎵 Audio Alert Settings",
-        "audio_checkbox": "🔊 Enable Audio Notifications",
-        "audio_enabled_msg": "✅ Audio alerts are enabled",
-        "audio_disabled_msg": "❌ Audio alerts are disabled",
-        "audio_test_btn": "🔊 Test Sound",
-        "lang_settings_title": "### 🌐 Language Settings",
-        "lang_select_lbl": "Choose Interface Language:",
-        "lang_success_msg": "✅ Language updated successfully!",
-        "manual_refresh_btn": "🔄 Quick Sync Radar & Chats",
-        "error_fetch": "Error fetching data from server",
-        "profile_success": "✅ Profile modifications saved successfully!",
-        "profile_error": "❌ Failed to save profile. Please try again.",
-        "support_title": "📋 Support & Maintenance",
-        "tab_general": "🌍 General Settings",
-        "tab_driver": "🚕 Driver Config",
-        "tab_kyc": "🎖️ KYC Identity Verification",
-        "tab_support": "📋 Help & Support",
     },
 }
 
@@ -319,7 +239,6 @@ SESSION_GUARD_VERSION = "monjez-mobile-session-guard-v1"
 
 
 def initialize_session_guard():
-    """تطهير وتنشيط جلسة المستخدم لمنع تضارب الـ Session عند إعادة تحميل الهاتف."""
     protected_keys = {
         "current_page",
         "my_active_order_id",
@@ -342,9 +261,7 @@ def initialize_session_guard():
     if "language" not in st.session_state:
         st.session_state["language"] = "العربية"
     if "driver_verification_status" not in st.session_state:
-        st.session_state["driver_verification_status"] = (
-            "Pending Manual Review"
-        )
+        st.session_state["driver_verification_status"] = "Pending Manual Review"
     if "ai_messages" not in st.session_state:
         st.session_state["ai_messages"] = []
 
@@ -358,7 +275,7 @@ def initialize_session_guard():
 initialize_session_guard()
 
 # ========================================================
-# 🔒 جلب التكوينات وإعداد الاتصال السحابي بالـ Firebase
+# 🔒 جلب التكوينات وإعداد الاتصال السحابي بالـ Firebase + هيكل القاعدة والـ Triggers
 # ========================================================
 try:
     firebase_config = None
@@ -373,9 +290,7 @@ try:
             firebase_config = json.loads(raw_json)
             st.success("✅ تم العثور على المفتاح بنجاح عبر [textkey]!")
         except Exception as ex:
-            st.error(
-                "❌ فشل تحليل JSON داخل [textkey]. تأكد أن القيمة هي JSON صالح."
-            )
+            st.error("❌ فشل تحليل JSON داخل [textkey].")
             st.exception(ex)
 
     elif "firebase" in st.secrets:
@@ -383,26 +298,73 @@ try:
         if "private_key" in firebase_config and isinstance(
             firebase_config["private_key"], str
         ):
-            firebase_config["private_key"] = firebase_config[
-                "private_key"
-            ].replace("\\n", "\n")
+            firebase_config["private_key"] = firebase_config["private_key"].replace("\\n", "\n")
         st.success("✅ تم العثور على المفتاح بنجاح عبر [firebase]!")
 
     else:
-        st.error(
-            "❌ عذراً، لم يتم العثور لا على [textkey] ولا على [firebase] في"
-            " الـ Secrets!"
-        )
+        st.error("❌ عذراً، لم يتم العثور على بيانات الاعتماد في الـ Secrets!")
 
     if firebase_config and not firebase_admin._apps:
-        from firebase_admin import credentials, initialize_app
-
+        from firebase_admin import credentials, initialize_app, firestore
         cred = credentials.Certificate(firebase_config)
         initialize_app(cred)
         st.success("🔥 تم ربط Firebase بنجاح تام!")
 
+        # تهيئة الهيكل الموحد لقاعدة البيانات والأتمتة المالية
+        db = firestore.client()
+
+        def initialize_database_schema():
+            print("جاري تهيئة الهيكل الخرساني لقاعدة البيانات...")
+            user_schema_ref = db.collection("users").document("_schema_template_")
+            user_schema_ref.set({
+                "uid": "string (Unique Identifier)",
+                "name": "string",
+                "phone": "string",
+                "role": "string (client, driver, admin)",
+                "wallet_balance": "number (default: 0.0)",
+                "status": "string (active, suspended)",
+                "created_at": "timestamp"
+            }, merge=True)
+
+            order_schema_ref = db.collection("orders").document("_schema_template_")
+            order_schema_ref.set({
+                "order_id": "string (Unique Identifier)",
+                "client_id": "string",
+                "driver_id": "string",
+                "service_type": "string",
+                "order_detail": "string",
+                "suggested_price": "number",
+                "status": "string",
+                "timestamp": "timestamp"
+            }, merge=True)
+            print("تم إنشاء الهيكل والوثائق المرجعية بنجاح تام.")
+
+        def process_completed_order_trigger(order_id):
+            order_ref = db.collection("orders").document(order_id)
+            order_doc = order_ref.get()
+            if not order_doc.exists:
+                return False
+            order_data = order_doc.to_dict()
+            if order_data.get("status") == "completed" and order_data.get("driver_id"):
+                driver_ref = db.collection("users").document(order_data.get("driver_id"))
+                price = order_data.get("suggested_price", 0)
+                driver_net_earnings = price - (price * 0.10)
+                db.run_transaction(lambda transaction: update_driver_wallet(transaction, driver_ref, driver_net_earnings))
+                return True
+            return False
+
+        @firestore.transactional
+        def update_driver_wallet(transaction, driver_ref, earnings):
+            driver_snapshot = driver_ref.get(transaction=transaction)
+            if driver_snapshot.exists:
+                current_balance = driver_snapshot.to_dict().get("wallet_balance", 0.0)
+                transaction.update(driver_ref, {"wallet_balance": current_balance + earnings})
+
+        # تشغيل التهيئة فور الإقلاع
+        initialize_database_schema()
+
 except Exception as e:
-    st.error("⚠️ حدث خطأ أثناء تحليل المفتاح:")
+    st.error("⚠️ حدث خطأ أثناء تحليل المفتاح أو تهيئة القاعدة:")
     st.exception(e)
 
 
@@ -425,30 +387,21 @@ def fetch_user_settings(username):
 
 
 def save_user_settings(username, settings):
-    return update_firebase_node(
-        f"users/{sanitize_username(username)}", settings
-    )
+    return update_firebase_node(f"users/{sanitize_username(username)}", settings)
 
 
 # عرض الواجهة الأساسية والجانبية عند تشغيل الملف الرئيسي
 def main():
     st.sidebar.title("منصة مُنجز الذكية")
-    user_role = st.sidebar.selectbox(
-        "اختر هويتك:", ["عميل", "سائق", "مسؤول"], key="main_role_select"
-    )
-    user_name = st.sidebar.text_input(
-        "اسم المستخدم:", value=st.session_state.get("user_name", "أحمد مصطفى")
-    )
+    user_role = st.sidebar.selectbox("اختر هويتك:", ["عميل", "سائق", "مسؤول"], key="main_role_select")
+    user_name = st.sidebar.text_input("اسم المستخدم:", value=st.session_state.get("user_name", "أحمد مصطفى"))
     st.session_state["user_name"] = user_name
 
     st.title("🤖 غرفة العمليات المركزية لـ منجز الذكية")
     st.markdown(f"**مرحباً بك يا {user_name}** في النظام السحابي الموحد.")
 
     if user_role == "عميل":
-        st.info(
-            "قم باختيار الصفحات الفرعية المتاحة من القائمة الجانبية (pages)"
-            " للوصول إلى بوابة الطرود أو التاكسي."
-        )
+        st.info("قم باختيار الصفحات الفرعية المتاحة من القائمة الجانبية للوصول إلى بوابة الطرود أو التاكسي.")
         render_parcels_page(user_name=user_name)
     elif user_role == "سائق":
         st.info("مرحباً بك في نافذة السائقين.")
