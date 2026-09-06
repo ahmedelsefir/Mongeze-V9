@@ -22,42 +22,15 @@ st.set_page_config(page_title="منصة منجز الذكية", page_icon="🤖"
 try:
     from assistant import ask_mongeze_ai, get_gemini_api_key
 except Exception:
-
     def ask_mongeze_ai(prompt, *args, **kwargs):
         return "⚠️ عقل مُنجز (AI Agent) غير متصل حالياً."
 
     def get_gemini_api_key():
         return ""
 
-
 # ========================================================
 # 📦 استيراد آمن ومباشر للموديولات من مجلد pages
 # ========================================================
-try:
-    from pages.Admin import (
-        render_admin_kyc_console,
-        render_admin_tracking,
-        render_commission_engine,
-    )
-except Exception:
-    try:
-        from Admin import (
-            render_admin_kyc_console,
-            render_admin_tracking,
-            render_commission_engine,
-        )
-    except Exception:
-
-        def render_admin_kyc_console(*args, **kwargs):
-            st.info("لوحة تحكم المشرف غير متاحة في هذا السياق.")
-
-        def render_admin_tracking(*args, **kwargs):
-            pass
-
-        def render_commission_engine(*args, **kwargs):
-            pass
-
-
 try:
     from pages.Client import (
         render_chat_page,
@@ -66,139 +39,17 @@ try:
         render_taxi_page,
     )
 except Exception:
-    try:
-        from Client import (
-            render_chat_page,
-            render_customer_tracking,
-            render_parcels_page,
-            render_taxi_page,
-        )
-    except Exception:
-
-        def render_chat_page(*args, **kwargs):
-            st.info("صفحة الشات غير محملة.")
-
-        def render_customer_tracking(*args, **kwargs):
-            pass
-
-        def render_parcels_page(*args, **kwargs):
-            st.info("بوابة الطرود غير محملة.")
-
-        def render_taxi_page(*args, **kwargs):
-            st.info("خدمة التاكسي غير محملة.")
-
-
-try:
-    from pages.Driver import (
-        render_driver_kyc_tab,
-        render_driver_settings_tab,
-        render_wallet_topup,
-    )
-except Exception:
-    try:
-        from Driver import (
-            render_driver_kyc_tab,
-            render_driver_settings_tab,
-            render_wallet_topup,
-        )
-    except Exception:
-
-        def render_driver_kyc_tab(*args, **kwargs):
-            pass
-
-        def render_driver_settings_tab(*args, **kwargs):
-            pass
-
-        def render_wallet_topup(*args, **kwargs):
-            pass
-
+    def render_chat_page(*args, **kwargs):
+        st.info("صفحة الشات غير محملة.")
+    def render_customer_tracking(*args, **kwargs):
+        pass
+    def render_parcels_page(*args, **kwargs):
+        st.info("بوابة الطرود غير محملة.")
+    def render_taxi_page(*args, **kwargs):
+        st.info("خدمة التاكسي غير محملة.")
 
 import firebase_admin
 from firebase_admin import credentials, initialize_app, firestore
-
-try:
-    from firebase_helpers import (
-        delete_firebase_node,
-        fetch_firebase_dict,
-        fetch_from_firebase,
-        firebase_request,
-        get_current_timestamp,
-        init_firebase_admin,
-        sanitize_username,
-        send_to_firebase,
-        update_firebase_node,
-    )
-except Exception:
-    def delete_firebase_node(*args, **kwargs):
-        pass
-
-    def fetch_firebase_dict(*args, **kwargs):
-        return {}
-
-    def fetch_from_firebase(*args, **kwargs):
-        return None
-
-    def firebase_request(*args, **kwargs):
-        return None
-
-    def get_current_timestamp(*args, **kwargs):
-        return 0
-
-    def init_firebase_admin(*args, **kwargs):
-        return None
-
-    def sanitize_username(name):
-        return str(name).strip().lower()
-
-    def send_to_firebase(*args, **kwargs):
-        pass
-
-    def update_firebase_node(*args, **kwargs):
-        pass
-
-
-try:
-    from paymob import initiate_wallet_topup
-except Exception:
-
-    def initiate_wallet_topup(*args, **kwargs):
-        return None
-
-
-try:
-    import Policies
-    from Policies import (
-        render_privacy_policy,
-        render_privacy_policy_brief,
-        render_support_contact,
-        render_terms_of_use,
-    )
-except Exception:
-
-    def render_privacy_policy(*args, **kwargs):
-        st.write("سياسة الخصوصية غير متاحة.")
-
-    def render_privacy_policy_brief(*args, **kwargs):
-        pass
-
-    def render_support_contact(*args, **kwargs):
-        st.write("الدعم الفني غير متاح.")
-
-    def render_terms_of_use(*args, **kwargs):
-        pass
-
-
-try:
-    from pages.Payment_Hub import render_payment_hub
-except Exception:
-    try:
-        from Payment_Hub import render_payment_hub
-    except Exception:
-
-        def render_payment_hub(*args, **kwargs):
-            st.warning("بوابة الدفع غير متاحة حالياً.")
-            return None
-
 
 # ========================================================
 # 🌐 قاموس الترجمة الموحد لمنصة منجز الذكية
@@ -206,24 +57,16 @@ except Exception:
 LANG_TEXTS = {
     "العربية": {
         "app_title": "🤖 غرفة العمليات المركزية لـ منجز الذكية",
-        "api_caption": "🔗 خط اتصال الدومين النشط حالياً:",
         "btn_monitor": "🏠 شاشة المراقبة",
         "btn_parcels": "📦 بوابة الطرود",
         "btn_taxi": "🚕 توصيل تاكسي",
-        "btn_ai": "🤖 عقل مُنجز (AI)",
-        "btn_chat": "💬 شات منجز الخاص 🟢",
-        "btn_tracking": "🛰️ رادار التتبع والاتصال السحابي المباشر",
         "btn_settings": "⚙️ إعدادات التطبيق والملف الشخصي",
     },
     "English": {
         "app_title": "🤖 Mongeze Smart Central Operations Room",
-        "api_caption": "🔗 Active Live Domain Connection:",
         "btn_monitor": "🏠 Operations Monitor",
         "btn_parcels": "📦 Parcels Portal",
         "btn_taxi": "🚕 Taxi Delivery",
-        "btn_ai": "🤖 Mongeze AI Agent",
-        "btn_chat": "💬 Private Mongeze Chat 🟢",
-        "btn_tracking": "🛰️ Live Tracking Radar",
         "btn_settings": "⚙️ Settings & Profile",
     },
 }
@@ -231,13 +74,10 @@ LANG_TEXTS = {
 # ========================================================
 # 🤖 إعداد واجهة منصة منجز الذكية وحماية الجلسة
 # ========================================================
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-API_BASE_URL = os.environ.get("API_BASE_URL", "https://monjez-app.icu")
-SESSION_GUARD_VERSION = "monjez-mobile-session-guard-v4"
-
+SESSION_GUARD_VERSION = "monjez-mobile-session-guard-v5"
 
 def initialize_session_guard():
     protected_keys = {
@@ -247,7 +87,6 @@ def initialize_session_guard():
         "audio_notifications_enabled",
         "language",
         "driver_verification_status",
-        "ai_messages",
         "_session_guard_version",
     }
 
@@ -263,8 +102,6 @@ def initialize_session_guard():
         st.session_state["language"] = "العربية"
     if "driver_verification_status" not in st.session_state:
         st.session_state["driver_verification_status"] = "Pending"
-    if "ai_messages" not in st.session_state:
-        st.session_state["ai_messages"] = []
 
     if st.session_state.get("_session_guard_version") != SESSION_GUARD_VERSION:
         for key in list(st.session_state.keys()):
@@ -272,11 +109,10 @@ def initialize_session_guard():
                 st.session_state.pop(key, None)
         st.session_state["_session_guard_version"] = SESSION_GUARD_VERSION
 
-
 initialize_session_guard()
 
 # ========================================================
-# 🔒 إعداد الاتصال السحابي بالـ Firebase + هيكل الـ KYC والـ Triggers
+# 🔒 إعداد الاتصال السحابي بالـ Firebase وتجهيز المخطط
 # ========================================================
 db = None
 try:
@@ -287,13 +123,8 @@ try:
         and isinstance(st.secrets.get("textkey"), dict)
         and "textkey" in st.secrets.get("textkey")
     ):
-        try:
-            raw_json = st.secrets["textkey"]["textkey"]
-            firebase_config = json.loads(raw_json)
-            st.success("✅ تم العثور على المفتاح بنجاح عبر [textkey]!")
-        except Exception as ex:
-            st.error("❌ فشل تحليل JSON داخل [textkey].")
-            st.exception(ex)
+        raw_json = st.secrets["textkey"]["textkey"]
+        firebase_config = json.loads(raw_json)
 
     elif "firebase" in st.secrets:
         firebase_config = dict(st.secrets["firebase"])
@@ -301,15 +132,10 @@ try:
             firebase_config["private_key"], str
         ):
             firebase_config["private_key"] = firebase_config["private_key"].replace("\\n", "\n")
-        st.success("✅ تم العثور على المفتاح بنجاح عبر [firebase]!")
-
-    else:
-        st.error("❌ عذراً، لم يتم العثور على بيانات الاعتماد في الـ Secrets!")
 
     if firebase_config and not firebase_admin._apps:
         cred = credentials.Certificate(firebase_config)
         initialize_app(cred)
-        st.success("🔥 تم ربط Firebase بنجاح تام!")
 
     db = firestore.client()
 
@@ -333,18 +159,17 @@ try:
     initialize_database_schema()
 
 except Exception as e:
-    st.error("⚠️ حدث خطأ أثناء الاتصال بقاعدة البيانات:")
-    st.exception(e)
-
+    st.error(f"⚠️ خطأ في الاتصال بقاعدة البيانات: {str(e)}")
 
 # ========================================================
-# 🛡️ نظام حماية والتحقق من الهوية (KYC Guard)
+# 🛡️ نظام التحقق من الهوية والتوثيق (KYC Engine)
 # ========================================================
 def check_driver_kyc_status(username):
     try:
         if db is None:
             return False, "DB Not Connected"
-        user_ref = db.collection("users").document(str(username).strip().lower())
+        doc_id = str(username).strip().lower()
+        user_ref = db.collection("users").document(doc_id)
         user_doc = user_ref.get()
         
         if not user_doc.exists:
@@ -354,7 +179,8 @@ def check_driver_kyc_status(username):
                 "kyc_status": "Pending Review",
                 "wallet_balance": 0.0,
                 "language": "العربية",
-                "audio_notifications": True
+                "audio_notifications": True,
+                "created_at": firestore.SERVER_TIMESTAMP
             }, merge=True)
             return False, "Pending Review"
             
@@ -367,9 +193,8 @@ def check_driver_kyc_status(username):
     except Exception:
         return False, "Error Checking"
 
-
 # ========================================================
-# ⚙️ دالة إدارة الإعدادات التقنية والملف الشخصي المتكاملة
+# ⚙️ لوحة الإعدادات التقنية والملف الشخصي (مع التحديث الفوري المضمون)
 # ========================================================
 def render_technical_settings_engine(username):
     st.markdown("---")
@@ -380,7 +205,8 @@ def render_technical_settings_engine(username):
             st.error("قاعدة البيانات غير متصلة حالياً.")
             return
             
-        user_ref = db.collection("users").document(str(username).strip().lower())
+        doc_id = str(username).strip().lower()
+        user_ref = db.collection("users").document(doc_id)
         user_doc = user_ref.get()
         
         user_data = user_doc.to_dict() if user_doc.exists else {
@@ -411,11 +237,12 @@ def render_technical_settings_engine(username):
             submit_settings = st.form_submit_button("💾 حفظ وتطبيق الإعدادات التقنية")
             
             if submit_settings:
+                # استخدام set مع merge=True لضمان الإنشاء الفوري وتفادي خطأ 404 نهائياً
                 user_ref.set({
+                    "name": username,
                     "language": selected_lang,
                     "phone": phone_num,
                     "audio_notifications": audio_enabled,
-                    "name": username,
                     "updated_at": firestore.SERVER_TIMESTAMP
                 }, merge=True)
                 
@@ -425,11 +252,10 @@ def render_technical_settings_engine(username):
                 st.rerun()
                 
     except Exception as ex:
-        st.error(f"⚠️ تعذر تحميل الإعدادات التقنية حالياً: {str(ex)}")
-
+        st.error(f"⚠️ تعذر حفظ الإعدادات حالياً: {str(ex)}")
 
 # ========================================================
-# 🖥️ الشاشة الرئيسية والتحكم بالتدفق
+# 🖥️ الشاشة الرئيسية والتحكم بالتدفق والتناغم الكامل
 # ========================================================
 def main():
     st.sidebar.title("منصة مُنجز الذكية")
@@ -456,7 +282,7 @@ def main():
         is_verified, status_msg = check_driver_kyc_status(user_name)
         
         if not is_verified:
-            st.error(f"🚨 **حسابك غير موثق حالياً (الحالة: {status_msg})!** يرجى رفع المستندات المطلوبة أدناه لتفعيل التدفق الفوري للطلبات.")
+            st.error(f"🚨 **حسابك غير موثق حالياً (الحالة: {status_msg})!** يرجى رفع المستندات المطلوبة أدناه للتفعيل.")
             
             with st.form("driver_kyc_submission_form"):
                 st.subheader("📝 مستندات التحقق الإلزامية (KYC)")
@@ -468,7 +294,8 @@ def main():
                 if submitted:
                     if id_num and drv_lic and veh_lic:
                         if db is not None:
-                            db.collection("users").document(str(user_name).strip().lower()).set({
+                            doc_id = str(user_name).strip().lower()
+                            db.collection("users").document(doc_id).set({
                                 "id_number": id_num,
                                 "driving_license": drv_lic,
                                 "vehicle_license": veh_lic,
@@ -477,19 +304,18 @@ def main():
                                 "role": "driver",
                                 "updated_at": firestore.SERVER_TIMESTAMP
                             }, merge=True)
-                            st.success("✅ تم إرسال بياناتك بنجاح وسيتم اعتمادها من الإدارة قريباً!")
+                            st.success("✅ تم إرسال مستندات التحقق بنجاح للاعتماد!")
                             st.rerun()
                     else:
-                        st.warning("⚠️ يرجى تعبئة جميع الحقول المطلوبة للتوثيق.")
+                        st.warning("⚠️ يرجى تعبئة جميع حقول التوثيق المطلوبة.")
             return
             
         else:
-            st.success("🌟 **حسابك موثق ومعتمد بنجاح!** يمكنك الآن استقبال الطلبات.")
+            st.success("🌟 **حسابك موثق ومعتمد بنجاح!** يمكنك إدارة إعداداتك بالأسفل.")
             render_technical_settings_engine(user_name)
 
     else:
         st.info("مرحباً بك في لوحة تحكم المشرفين.")
-
 
 if __name__ == "__main__":
     main()
