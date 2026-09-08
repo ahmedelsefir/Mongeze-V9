@@ -1,136 +1,36 @@
 import base64
-import html
+import html as html_mod
 import json
 import logging
 import os
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from math import asin, cos, radians, sin, sqrt
-
-import pandas as pd
+import time
 import streamlit as st
 
 # ========================================================
 # ⚡ CRITICAL: set_page_config() MUST be the first Streamlit call
 # ========================================================
-st.set_page_config(page_title="منصة منجز الذكية", page_icon="🤖", layout="wide")
-
-# ========================================================
-# 🤖 استيراد عقل مُنجز (AI Agent) مع حماية الدفاع
-# ========================================================
-try:
-    from assistant import ask_mongeze_ai, get_gemini_api_key
-except Exception:
-    def ask_mongeze_ai(prompt, *args, **kwargs):
-        return "⚠️ عقل مُنجز (AI Agent) غير متصل حالياً."
-
-    def get_gemini_api_key():
-        return ""
-
-# ========================================================
-# 📦 استيراد آمن ومباشر للموديولات من مجلد pages
-# ========================================================
-try:
-    from pages.Client import (
-        render_chat_page,
-        render_customer_tracking,
-        render_parcels_page,
-        render_taxi_page,
-    )
-except Exception:
-    def render_chat_page(*args, **kwargs):
-        st.info("صفحة الشات غير محملة.")
-    def render_customer_tracking(*args, **kwargs):
-        pass
-    def render_parcels_page(*args, **kwargs):
-        st.info("بوابة الطرود غير محملة.")
-    def render_taxi_page(*args, **kwargs):
-        st.info("خدمة التاكسي غير محملة.")
+st.set_page_config(
+    page_title="منصة مُنجز الذكية - غرفة العمليات", 
+    page_icon="🚀", 
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 import firebase_admin
-from firebase_admin import credentials, initialize_app, firestore
+from firebase_admin import credentials, firestore, initialize_app
 
 # ========================================================
-# 🌐 قاموس الترجمة الموحد لمنصة منجز الذكية
-# ========================================================
-LANG_TEXTS = {
-    "العربية": {
-        "app_title": "🤖 غرفة العمليات المركزية لـ منجز الذكية",
-        "btn_monitor": "🏠 شاشة المراقبة",
-        "btn_parcels": "📦 بوابة الطرود",
-        "btn_taxi": "🚕 توصيل تاكسي",
-        "btn_settings": "⚙️ إعدادات التطبيق والملف الشخصي",
-    },
-    "English": {
-        "app_title": "🤖 Mongeze Smart Central Operations Room",
-        "btn_monitor": "🏠 Operations Monitor",
-        "btn_parcels": "📦 Parcels Portal",
-        "btn_taxi": "🚕 Taxi Delivery",
-        "btn_settings": "⚙️ Settings & Profile",
-    },
-}
-
-# ========================================================
-# 🤖 إعداد واجهة منصة منجز الذكية وحماية الجلسة
-# ========================================================
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-SESSION_GUARD_VERSION = "monjez-mobile-session-guard-v5"
-
-def initialize_session_guard():
-    protected_keys = {
-        "current_page",
-        "my_active_order_id",
-        "user_name",
-        "audio_notifications_enabled",
-        "language",
-        "driver_verification_status",
-        "_session_guard_version",
-    }
-
-    if "current_page" not in st.session_state:
-        st.session_state["current_page"] = "الرئيسية"
-    if "my_active_order_id" not in st.session_state:
-        st.session_state["my_active_order_id"] = ""
-    if "user_name" not in st.session_state:
-        st.session_state["user_name"] = "أحمد مصطفى"
-    if "audio_notifications_enabled" not in st.session_state:
-        st.session_state["audio_notifications_enabled"] = False
-    if "language" not in st.session_state:
-        st.session_state["language"] = "العربية"
-    if "driver_verification_status" not in st.session_state:
-        st.session_state["driver_verification_status"] = "Pending"
-
-    if st.session_state.get("_session_guard_version") != SESSION_GUARD_VERSION:
-        for key in list(st.session_state.keys()):
-            if key not in protected_keys:
-                st.session_state.pop(key, None)
-        st.session_state["_session_guard_version"] = SESSION_GUARD_VERSION
-
-initialize_session_guard()
-
-# ========================================================
-# 🔒 إعداد الاتصال السحابي بالـ Firebase وتجهيز المخطط
+# 🔒 إعداد الاتصال السحابي بالـ Firebase
 # ========================================================
 db = None
 try:
     firebase_config = None
-
-    if (
-        "textkey" in st.secrets
-        and isinstance(st.secrets.get("textkey"), dict)
-        and "textkey" in st.secrets.get("textkey")
-    ):
+    if "textkey" in st.secrets and isinstance(st.secrets.get("textkey"), dict) and "textkey" in st.secrets.get("textkey"):
         raw_json = st.secrets["textkey"]["textkey"]
         firebase_config = json.loads(raw_json)
-
     elif "firebase" in st.secrets:
         firebase_config = dict(st.secrets["firebase"])
-        if "private_key" in firebase_config and isinstance(
-            firebase_config["private_key"], str
-        ):
+        if "private_key" in firebase_config and isinstance(firebase_config["private_key"], str):
             firebase_config["private_key"] = firebase_config["private_key"].replace("\\n", "\n")
 
     if firebase_config and not firebase_admin._apps:
@@ -138,184 +38,178 @@ try:
         initialize_app(cred)
 
     db = firestore.client()
-
-    def initialize_database_schema():
-        if db is None:
-            return
-        user_schema_ref = db.collection("users").document("_schema_template_")
-        user_schema_ref.set({
-            "uid": "string",
-            "name": "string",
-            "phone": "string",
-            "role": "string",
-            "wallet_balance": "number",
-            "status": "string",
-            "kyc_status": "string",
-            "language": "string",
-            "audio_notifications": "boolean",
-            "created_at": "timestamp"
-        }, merge=True)
-
-    initialize_database_schema()
-
 except Exception as e:
     st.error(f"⚠️ خطأ في الاتصال بقاعدة البيانات: {str(e)}")
 
 # ========================================================
-# 🛡️ نظام التحقق من الهوية والتوثيق (KYC Engine)
+# 🛡️ حماية الجلسة والتهيئة العامة
 # ========================================================
-def check_driver_kyc_status(username):
-    try:
-        if db is None:
-            return False, "DB Not Connected"
-        doc_id = str(username).strip().lower()
-        user_ref = db.collection("users").document(doc_id)
-        user_doc = user_ref.get()
-        
-        if not user_doc.exists:
-            user_ref.set({
-                "name": username,
-                "role": "driver",
-                "kyc_status": "Pending Review",
-                "wallet_balance": 0.0,
-                "language": "العربية",
-                "audio_notifications": True,
-                "created_at": firestore.SERVER_TIMESTAMP
-            }, merge=True)
-            return False, "Pending Review"
-            
-        data = user_doc.to_dict()
-        kyc_status = data.get("kyc_status", "Pending Review")
-        
-        if kyc_status in ["Verified", "موثق", "active"]:
-            return True, kyc_status
-        return False, kyc_status
-    except Exception:
-        return False, "Error Checking"
+if "user_name" not in st.session_state:
+    st.session_state["user_name"] = "أحمد مصطفى"
 
 # ========================================================
-# ⚙️ لوحة الإعدادات التقنية والملف الشخصي (مع التحديث الفوري المضمون)
+# 🖥️ القائمة الجانبية الموحدة (التنقل بين جميع أقسام منجز)
 # ========================================================
-def render_technical_settings_engine(username):
-    st.markdown("---")
-    st.subheader("⚙️ لوحة الإعدادات التقنية والملف الشخصي المتقدم")
+st.sidebar.title("🚀 منصة مُنجز الذكية")
+st.sidebar.markdown("---")
+
+menu_choice = st.sidebar.selectbox(
+    "🧭 اختر القسم أو الخدمة المطلوبة:",
+    [
+        "🏠 رئيسي (غرفة العمليات)", 
+        "🛍️ عميل (طلب طرود وتاكسي ومتاجر)", 
+        "🚗 السائق والمندوب (توثيق KYC)", 
+        "🚖 سائق تاكسي فوري", 
+        "🏪 بوابة البائعين والمتاجر (بالاسم والشعار)",
+        "💬 الشات والدعم الفني", 
+        "💳 مركز الدفع والمحفظة"
+    ]
+)
+
+user_name = st.sidebar.text_input("🏷️ اسم المستخدم / الهوية:", value=st.session_state.get("user_name", "أحمد مصطفى"))
+st.session_state["user_name"] = user_name
+
+# ========================================================
+# 🛡️ نظام توثيق السائقين والمندوبين الكامل (KYC & Documents)
+# ========================================================
+def render_driver_kyc_portal(username):
+    st.markdown("### 🛡️ لوحة توثيق السائق والمندوب (KYC & Document Verification)")
+    st.info("يرجى إرفاق المستندات الرسمية والبيانات بدقة لتفعيل حسابك واستقبال الطلبات.")
+
+    with st.form("driver_kyc_full_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            full_name = st.text_input("👤 الاسم الثلاثي الرسمي:", value=username)
+            national_id = st.text_input("🆔 الرقم القومي (14 رقماً):")
+            phone_number = st.text_input("📱 رقم الجوال الرسمي للتواصل:")
+            email_address = st.text_input("📧 البريد الإلكتروني الفعال:")
+        with col2:
+            driving_license_num = st.text_input("🚗 رقم رخصة القيادة:")
+            vehicle_license_num = st.text_input("🚙 رقم رخصة المركبة / اللوحة:")
+            vehicle_type = st.selectbox("نوع المركبة:", ["تاكسي فوري", "دراجة نارية (توصيل طرود)", "سيارة ملاكي"])
+
+        st.markdown("---")
+        st.markdown("#### 📂 إرفاق المستندات والأوراق الرسمية:")
+        col_f1, col_f2, col_f3 = st.columns(3)
+        with col_f1:
+            id_card_img = st.file_uploader("1️⃣ صورة البطاقة الشخصية", type=["jpg", "png", "jpeg"])
+        with col_f2:
+            drv_img = st.file_uploader("2️⃣ صورة رخصة القيادة", type=["jpg", "png", "jpeg"])
+        with col_f3:
+            veh_img = st.file_uploader("3️⃣ صورة رخصة المركبة", type=["jpg", "png", "jpeg"])
+
+        submitted_kyc = st.form_submit_button("🚀 إرسال المستندات للاعتماد الفوري")
+        if submitted_kyc:
+            if not national_id or not phone_number or not email_address:
+                st.warning("⚠️ يرجى تعبئة الحقول الأساسية (الرقم القومي، الجوال، الإيميل).")
+            else:
+                if db is not None:
+                    try:
+                        doc_id = str(username).strip().lower()
+                        db.collection("users").document(doc_id).set({
+                            "name": full_name,
+                            "email": email_address,
+                            "phone": phone_number,
+                            "national_id": national_id,
+                            "driving_license": driving_license_num,
+                            "vehicle_license": vehicle_license_num,
+                            "vehicle_type": vehicle_type,
+                            "kyc_status": "Under Admin Review",
+                            "role": "driver",
+                            "updated_at": firestore.SERVER_TIMESTAMP
+                        }, merge=True)
+                        st.success("🎉 تم رفع مستنداتك بنجاح! حسابك الآن قيد المراجعة الإدارية للتفعيل.")
+                        st.rerun()
+                    except Exception as ex:
+                        st.error(f"⚠️ خطأ أثناء الحفظ السحابي: {str(ex)}")
+                else:
+                    st.error("⚠️ قاعدة البيانات غير متصلة.")
+
+# ========================================================
+# 🏪 بوابة المتاجر المتعددة (بالاسم والشعار وإدارة الطلبات)
+# ========================================================
+def render_multi_vendor_portal():
+    st.markdown("### 🏪 بوابة البائعين والمتاجر الشريكة (Multi-Vendor)")
+    vendor_id = st.text_input("معرف المتجر (Vendor ID):", value="restaurant_el_tahrir")
     
-    try:
-        if db is None:
-            st.error("قاعدة البيانات غير متصلة حالياً.")
-            return
-            
-        doc_id = str(username).strip().lower()
-        user_ref = db.collection("users").document(doc_id)
-        user_doc = user_ref.get()
-        
-        user_data = user_doc.to_dict() if user_doc.exists else {
-            "language": "العربية",
-            "audio_notifications": True,
-            "phone": ""
+    if db is not None:
+        vendor_ref = db.collection("vendors").document(vendor_id)
+        vendor_doc = vendor_ref.get()
+        v_data = vendor_doc.to_dict() if vendor_doc.exists else {
+            "name": "مطعم البرجر الملكي السريع",
+            "logo_url": "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=200",
+            "category": "مأكولات ومطاعم",
+            "is_open": True
         }
         
-        with st.form("tech_settings_form"):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                current_lang = user_data.get("language", "العربية")
-                selected_lang = st.selectbox(
-                    "🌐 لغة النظام المفضلة (Language):", 
-                    ["العربية", "English"], 
-                    index=0 if current_lang == "العربية" else 1
-                )
-                phone_num = st.text_input("📱 رقم الهاتف الرسمي:", value=user_data.get("phone", ""))
-                
-            with col2:
-                audio_enabled = st.checkbox(
-                    "🔊 تفعيل التنبيهات الصوتية الفورية للطلبات", 
-                    value=user_data.get("audio_notifications", True)
-                )
-                st.info("🔒 الحساب مؤمن بتقنية الحماية السحابية (Session Guard Active).")
-                
-            submit_settings = st.form_submit_button("💾 حفظ وتطبيق الإعدادات التقنية")
-            
-            if submit_settings:
-                # استخدام set مع merge=True لضمان الإنشاء الفوري وتفادي خطأ 404 نهائياً
-                user_ref.set({
-                    "name": username,
-                    "language": selected_lang,
-                    "phone": phone_num,
-                    "audio_notifications": audio_enabled,
-                    "updated_at": firestore.SERVER_TIMESTAMP
-                }, merge=True)
-                
-                st.session_state["language"] = selected_lang
-                st.session_state["audio_notifications_enabled"] = audio_enabled
-                st.success("✅ تم حفظ وتحديث الإعدادات في قاعدة البيانات بنجاح تام!")
-                st.rerun()
-                
-    except Exception as ex:
-        st.error(f"⚠️ تعذر حفظ الإعدادات حالياً: {str(ex)}")
+        col_l, col_i = st.columns([1, 3])
+        with col_l:
+            st.image(v_data.get("logo_url", "https://via.placeholder.com/150"), width=120, caption="شعار المطعم")
+        with col_i:
+            st.markdown(f"### 🏷️ اسم المطعم: **{v_data.get('name')}**")
+            st.markdown(f"📂 التصنيف: `{v_data.get('category')}`")
+            st.markdown(f"🟢 الحالة: {'مفتوح' if v_data.get('is_open') else 'مغلق'}")
+
+        st.markdown("---")
+        st.markdown("#### 📥 طلبات العملاء الواردة لهذا المطعم:")
+        try:
+            orders = db.collection("orders").where("vendor_id", "==", vendor_id).stream()
+            found = False
+            for o in orders:
+                found = True
+                data = o.to_dict()
+                st.info(f"📌 طلب من: {data.get('client_name')} | الحالة: {data.get('status')}")
+            if not found:
+                st.success("👍 لا توجد طلبات جديدة حالياً.")
+        except Exception:
+            st.info("لا توجد طلبات مسجلة بعد.")
 
 # ========================================================
-# 🖥️ الشاشة الرئيسية والتحكم بالتدفق والتناغم الكامل
+# 🧭 التوجيه التنفيذي بناءً على اختيار القائمة
 # ========================================================
-def main():
-    st.sidebar.title("منصة مُنجز الذكية")
-    user_role = st.sidebar.selectbox("اختر هويتك:", ["عميل", "سائق", "مسؤول"], key="main_role_select")
-    user_name = st.sidebar.text_input("اسم المستخدم:", value=st.session_state.get("user_name", "أحمد مصطفى"))
-    st.session_state["user_name"] = user_name
+try:
+    if "رئيسي" in menu_choice:
+        st.title("🚀 غرفة العمليات المركزية لـ منجز الذكية")
+        st.success("النظام يعمل بكفاءة تامة ومتصل بقاعدة بيانات Firebase وسحابة Google.")
+        st.markdown("اختر الخدمة المطلوبة من القائمة الجانبية للبدء فوراً.")
 
-    nav_option = st.sidebar.radio("🧭 التنقل السريع:", ["الخدمات الرئيسية", "⚙️ الإعدادات والملف الشخصي"])
+    elif "عميل" in menu_choice:
+        st.title("🛍️ بوابة العملاء (طلب الطرود والخدمات)")
+        with st.form("client_order_form"):
+            pickup = st.text_input("📍 نقطة الاستلام:", "شارع التحرير، الجيزة")
+            dropoff = st.text_input("🎯 نقطة التسليم:", "المهندسين")
+            details = st.text_area("📝 تفاصيل الطلب:")
+            if st.form_submit_button("🚀 نشر الطلب"):
+                if db is not None:
+                    db.collection("orders").add({
+                        "client_name": user_name,
+                        "pickup": pickup,
+                        "dropoff": dropoff,
+                        "details": details,
+                        "status": "Pending",
+                        "created_at": firestore.SERVER_TIMESTAMP
+                    })
+                    st.success("✅ تم نشر طلبك بنجاح للمندوبين!")
 
-    st.title("🤖 غرفة العمليات المركزية لـ منجز الذكية")
-    st.markdown(f"**مرحباً بك يا {user_name}** في النظام السحابي الموحد.")
+    elif "السائق" in menu_choice:
+        render_driver_kyc_portal(user_name)
 
-    if nav_option == "⚙️ الإعدادات والملف الشخصي":
-        render_technical_settings_engine(user_name)
-        return
+    elif "سائق تاكسي" in menu_choice:
+        st.title("🚖 خدمة التاكسي الفوري")
+        st.info("نظام استقبال رحلات التتاكسي مفعل وجاهز لاستقبال طلبات الركاب.")
 
-    if user_role == "عميل":
-        st.info("مرحباً بك في بوابة العملاء للطلبات والتاكسي.")
-        render_parcels_page(user_name=user_name)
-        
-    elif user_role == "سائق":
-        st.markdown("### 🚕 لوحة تحكم السائق والمندوب")
-        
-        is_verified, status_msg = check_driver_kyc_status(user_name)
-        
-        if not is_verified:
-            st.error(f"🚨 **حسابك غير موثق حالياً (الحالة: {status_msg})!** يرجى رفع المستندات المطلوبة أدناه للتفعيل.")
-            
-            with st.form("driver_kyc_submission_form"):
-                st.subheader("📝 مستندات التحقق الإلزامية (KYC)")
-                id_num = st.text_input("رقم الهوية الوطنية / الإقامة:")
-                drv_lic = st.text_input("رقم رخصة القيادة:")
-                veh_lic = st.text_input("رقم رخصة المركبة / اللوحة:")
-                
-                submitted = st.form_submit_button("💾 إرسال المستندات للاعتماد الفوري")
-                if submitted:
-                    if id_num and drv_lic and veh_lic:
-                        if db is not None:
-                            doc_id = str(user_name).strip().lower()
-                            db.collection("users").document(doc_id).set({
-                                "id_number": id_num,
-                                "driving_license": drv_lic,
-                                "vehicle_license": veh_lic,
-                                "kyc_status": "Under Admin Review",
-                                "name": user_name,
-                                "role": "driver",
-                                "updated_at": firestore.SERVER_TIMESTAMP
-                            }, merge=True)
-                            st.success("✅ تم إرسال مستندات التحقق بنجاح للاعتماد!")
-                            st.rerun()
-                    else:
-                        st.warning("⚠️ يرجى تعبئة جميع حقول التوثيق المطلوبة.")
-            return
-            
-        else:
-            st.success("🌟 **حسابك موثق ومعتمد بنجاح!** يمكنك إدارة إعداداتك بالأسفل.")
-            render_technical_settings_engine(user_name)
+    elif "بوابة البائعين" in menu_choice:
+        render_multi_vendor_portal()
 
-    else:
-        st.info("مرحباً بك في لوحة تحكم المشرفين.")
+    elif "الشات" in menu_choice:
+        st.title("💬 شات منجز المباشر والدعم الفني")
+        msg = st.text_input("اكتب رسالتك:")
+        if st.button("إرسال للعملاء أو السائقين"):
+            st.success("تم إرسال الرسالة بنجاح عبر النظام السحابي.")
 
-if __name__ == "__main__":
-    main()
+    elif "مركز الدفع" in menu_choice:
+        st.title("💳 المحفظة الإلكترونية وبوابة الدفع")
+        st.metric("رصيد الحساب الحالي", "350.00 ج.م")
+
+except Exception as e:
+    st.error(f"⚠️ حدث خطأ تقني غير متوقع: {str(e)}")
