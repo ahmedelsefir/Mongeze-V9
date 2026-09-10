@@ -56,12 +56,12 @@ def render_vendor_portal(db, vendor_id="restaurant_el_tahrir"):
             
             col_v1, col_v2 = st.columns(2)
             with col_v1:
-                if st.button(f"👨‍🍳 قبول وتحضير الطلب", key=f"accept_v_{o_id}"):
+                if st.button("👨‍🍳 قبول وتحضير الطلب", key=f"accept_v_{o_id}"):
                     db.collection("orders").document(o_id).update({"status": "Preparing"})
                     st.success("✅ تم قبول الطلب وبدء التحضير في المطبخ!")
                     st.rerun()
             with col_v2:
-                if st.button(f"🚀 جاهز للتوصيل (تسليم للمندوب)", key=f"ready_v_{o_id}"):
+                if st.button("🚀 جاهز للتوصيل (تسليم للمندوب)", key=f"ready_v_{o_id}"):
                     db.collection("orders").document(o_id).update({"status": "Ready for Delivery"})
                     st.success("✅ تم إعلام السائق بأن الطلب جاهز للاستلام!")
                     st.rerun()
