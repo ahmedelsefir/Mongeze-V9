@@ -90,8 +90,16 @@ def init_firebase(notify: bool = True) -> bool:
 
 
 def init_firestore(notify: bool = True):
-    """Compatibility wrapper to initialize and return a Firestore client."""
-    initialize_firebase(notify=notify)
+    """Initialize Firebase and return a Firestore client, or None on failure."""
+    try:
+        ok = initialize_firebase(notify=notify)
+    except Exception as e:
+        logger.error(f"initialize_firebase raised: {e}")
+        if notify:
+            st.error(f"فشل الاتصال بقاعدة البيانات: {e}")
+        return None
+    if not ok:
+        return None
     try:
         from firebase_admin import firestore
         return firestore.client()
