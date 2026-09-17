@@ -1,7 +1,3 @@
-import base64
-import json
-import logging
-import os
 import streamlit as st
 import pandas as pd
 
@@ -15,30 +11,20 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-import firebase_admin
-from firebase_admin import credentials, firestore, initialize_app
+from firebase_admin import firestore
+from firebase_helpers import init_firestore
 
 # ========================================================
 # 🔒 إعداد الاتصال السحابي بالـ Firebase بذكاء وأمان
+# Uses the centralized initializer from firebase_helpers to avoid
+# duplicate initialization conflicts across pages.
 # ========================================================
-db = None
-try:
-    firebase_config = None
-    if "textkey" in st.secrets and isinstance(st.secrets.get("textkey"), dict) and "textkey" in st.secrets.get("textkey"):
-        raw_json = st.secrets["textkey"]["textkey"]
-        firebase_config = json.loads(raw_json)
-    elif "firebase" in st.secrets:
-        firebase_config = dict(st.secrets["firebase"])
-        if "private_key" in firebase_config and isinstance(firebase_config["private_key"], str):
-            firebase_config["private_key"] = firebase_config["private_key"].replace("\\n", "\n")
-
-    if firebase_config and not firebase_admin._apps:
-        cred = credentials.Certificate(firebase_config)
-        initialize_app(cred)
-
-    db = firestore.client()
-except Exception as e:
-    st.error(f"⚠️ خطأ في الاتصال بقاعدة البيانات: {str(e)}")
+db = init_firestore(notify=False)
+if db is None:
+    try:
+        st.sidebar.warning("⚠️ قاعدة البيانات غير متصلة — بعض الميزات ستكون معطلة.")
+    except Exception:
+        pass
 
 # ========================================================
 # 🛡️ حماية الجلسة والتهيئة العامة للمستخدمين
