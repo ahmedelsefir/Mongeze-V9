@@ -125,8 +125,10 @@ menu_choice = st.sidebar.selectbox(
         "🏪 بوابة المتاجر والمطاعم (بوابة البائعين)",
         "💳 مركز الدفع والمحفظة الإلكترونية",
         "🚪 تسجيل الخروج"
-    ]
+    ],
+    key="main_menu_choice",
 )
+st.session_state["current_page"] = menu_choice
 
 if menu_choice == "🚪 تسجيل الخروج":
     st.session_state["user_authenticated"] = False

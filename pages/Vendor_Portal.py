@@ -1,5 +1,10 @@
+import logging
+
 import streamlit as st
 from firebase_admin import firestore
+from firebase_helpers import init_firestore
+
+logger = logging.getLogger(__name__)
 
 def render_vendor_portal(db, vendor_id="restaurant_el_tahrir"):
     st.markdown("<h2 style='color: #1E3A8A; text-align: right;'>🏪 لوحة تحكم التاجر والمطعم الشريك</h2>", unsafe_allow_html=True)
@@ -87,3 +92,25 @@ def render_vendor_portal(db, vendor_id="restaurant_el_tahrir"):
             })
             st.success("✅ تم تحديث اسم وشعار وطريقة عمل المطعم بنجاح سحابياً!")
             st.rerun()
+
+
+def render_vendor_page() -> None:
+    """Render the standalone Marketplace page without allowing backend errors to blank it."""
+    st.title("🏪 بوابة المتاجر والمطاعم")
+    st.caption("إدارة بيانات المطعم والطلبات الواردة من منصة منجز")
+
+    try:
+        db = init_firestore(notify=False)
+    except Exception:
+        logger.exception("Vendor Portal database initialization failed")
+        st.error("⚠️ تعذر الاتصال بقاعدة البيانات حالياً. يمكنك فتح الصفحة مرة أخرى لاحقاً.")
+        return
+
+    try:
+        render_vendor_portal(db)
+    except Exception:
+        logger.exception("Vendor Portal rendering failed")
+        st.error("⚠️ تعذر تحميل بوابة المتاجر حالياً. يرجى المحاولة مرة أخرى.")
+
+
+render_vendor_page()
