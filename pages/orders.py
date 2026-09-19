@@ -81,11 +81,11 @@ for order in active_orders:
         col1, col2 = st.columns([1, 1])
         with col1:
             if st.button(f"عرض خريطة وتفاصيل الطلب {order['id']}", key=f"map_{order['id']}"):
-                st.success(تم فتح تفاصيل الخريطة ومواقع الاستلام والتسليم للطلب {order['id']} بنجاح!)
-                # هنا يتم توجيه السائق لخريطة الـ GPS وتفاصيل الإحداثيات
+                st.success(f"تم فتح تفاصيل الخريطة ومواقع الاستلام والتسليم للطلب {order['id']} بنجاح!")
         with col2:
             if st.button(f"قبول الطلب وتأكيد السعر {order['id']}", key=f"accept_{order['id']}"):
                 st.balloons()
+                st.success(f"تم قبول الطلب بنجاح! تم تحويله إلى قائمة طلباتك النشطة للطلب {order['id']}.")
                 st.success(تم قبول الطلب بنجاح! تم تحويله إلى قائمة طلباتك النشطة.)
 
 st.markdown("---")
