@@ -1,7 +1,8 @@
 import html as html_mod
 import requests
 import time
-from datetime import datetime
+from datetime import datetime, timezone
+import logging
 
 import streamlit as st
 
@@ -13,6 +14,8 @@ st.set_page_config(
 )
 
 import streamlit.components.v1 as components
+
+logger = logging.getLogger(__name__)
 
 # استيرادات آمنة لتفادي إيقاف السيرفر في حال عدم توفر الموديول
 try:
@@ -42,6 +45,78 @@ except Exception:
         def render_payment_hub(*args, **kwargs):
             st.warning("بوابة الدفع غير متاحة حالياً — يرجى تفعيل صفحة Payment_Hub أو إعداد الأسرار.")
             return None
+
+# --- دالة رفع مستندات السائق - النسخة النهائية المحمية ---
+def upload_driver_docs(
+    driver_phone: str,
+    driver_name: str,
+    uploaded_files: dict,
+    db=None,
+    storage_bucket=None,
+) -> dict:
+    try:
+        if not driver_phone:
+            return {"success": False, "message": "رقم الهاتف مطلوب.", "urls": {}}
+
+        doc_id = driver_phone.strip().replace("+", "")
+
+        if db is None:
+            from firebase_helpers import init_firestore
+            db = init_firestore(notify=False)
+
+        if db is None:
+            return {"success": False, "message": "قاعدة البيانات غير متاحة.", "urls": {}}
+
+        storage_urls = {}
+        if storage_bucket is None:
+            try:
+                from firebase_admin import storage
+                # التعديل الأهم: يقرأ الباكت من الأسرار اللي انت حميتها
+                bucket_name = st.secrets["firebase"]["storage_bucket"]
+                storage_bucket = storage.bucket(bucket_name)
+            except Exception as e:
+                logger.warning(f"Storage unavailable: {e}")
+                storage_bucket = None
+
+        required_keys = ["front_id", "back_id", "vehicle_front", "vehicle_back", "license_front", "license_back"]
+
+        for file_key in required_keys:
+            uploaded_file = uploaded_files.get(file_key)
+            if uploaded_file is None:
+                continue
+            if not hasattr(uploaded_file, "read"):
+                continue
+
+            file_name = getattr(uploaded_file, "name", f"{file_key}.jpg")
+            file_ext = file_name.split(".")[-1].lower() if "." in file_name else "jpg"
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            storage_path = f"driver_docs/{doc_id}/{file_key}_{timestamp}.{file_ext}"
+
+            try:
+                uploaded_file.seek(0)
+                if storage_bucket is not None:
+                    blob = storage_bucket.blob(storage_path)
+                    blob.upload_from_string(
+                        uploaded_file.read(),
+                        content_type=getattr(uploaded_file, "type", "image/jpeg")
+                    )
+                    storage_urls[file_key] = storage_path
+                else:
+                    storage_urls[file_key] = storage_path
+            except Exception as e:
+                logger.error(f"Upload failed for {file_key}: {e}")
+                return {"success": False, "message": f"فشل رفع {file_key}: {e}", "urls": storage_urls}
+
+        # التعديل التاني: بيرجع الـ urls بس، والـ set بيتعمل مرة واحدة في الفورم
+        return {
+            "success": True,
+            "message": "تم رفع مستندات التوثيق بنجاح، وجار مراجعة الحساب.",
+            "urls": storage_urls,
+        }
+
+    except Exception as e:
+        logger.exception(f"upload_driver_docs exception: {e}")
+        return {"success": False, "message": f"خطأ غير متوقع: {e}", "urls": {}}
 
 # --- 1️⃣ الاتصال الآمن بالفايربيز ---
 db = init_firestore()
@@ -413,6 +488,72 @@ with driver_tabs[2]:
             """,
             height=670
         )
+
+    st.markdown("---")
+    st.markdown("#### 🛡️ بوابة توثيق السائقين والمناديب (KYC)")
+    st.info("يرجى إرفاق صور المستندات الرسمية (الوجه الأمامي والخلفي للبطاقة والرخصة والمركبة) لتفعيل الحساب.")
+
+    with st.form("driver_kyc_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            national_id = st.text_input("🆔 الرقم القومي (14 رقماً):", key="national_id_input")
+            email = st.text_input("📧 البريد الإلكتروني الفعال:", key="driver_email_input")
+        with col2:
+            drv_license = st.text_input("🚗 رقم رخصة القيادة:", key="driver_license_number")
+            veh_license = st.text_input("🚙 رقم رخصة المركبة / اللوحة:", key="vehicle_license_number")
+
+        st.markdown("#### 📎 رفع المستندات الرسمية (6 صور)")
+        col_files1, col_files2, col_files3 = st.columns(3)
+        
+        with col_files1:
+            front_id = st.file_uploader("📷 صورة البطاقة (وش)", type=["jpg", "jpeg", "png", "pdf"], key="front_id_upload")
+            vehicle_front = st.file_uploader("🚗 صورة المركبة (وش)", type=["jpg", "jpeg", "png", "pdf"], key="vehicle_front_upload")
+        
+        with col_files2:
+            back_id = st.file_uploader("📷 صورة البطاقة (ظهر)", type=["jpg", "jpeg", "png", "pdf"], key="back_id_upload")
+            vehicle_back = st.file_uploader("🚗 صورة المركبة (ظهر)", type=["jpg", "jpeg", "png", "pdf"], key="vehicle_back_upload")
+        
+        with col_files3:
+            license_front = st.file_uploader("📄 صورة الرخصة (وش)", type=["jpg", "jpeg", "png", "pdf"], key="license_front_upload")
+            license_back = st.file_uploader("📄 صورة الرخصة (ظهر)", type=["jpg", "jpeg", "png", "pdf"], key="license_back_upload")
+
+        if st.form_submit_button("🚀 إرسال المستندات والموقع للاعتماد", key="submit_kyc_form", use_container_width=True):
+            if not national_id or not drv_license:
+                st.warning("⚠️ يرجى تعبئة الحقول الأساسية (الرقم القومي ورخصة القيادة).")
+            else:
+                uploaded_files = {
+                    "front_id": front_id,
+                    "back_id": back_id,
+                    "vehicle_front": vehicle_front,
+                    "vehicle_back": vehicle_back,
+                    "license_front": license_front,
+                    "license_back": license_back,
+                }
+                
+                result = upload_driver_docs(
+                    driver_phone=DRIVER_PHONE,
+                    driver_name=DRIVER_NAME,
+                    uploaded_files=uploaded_files,
+                    db=db,
+                )
+                
+                if result["success"]:
+                    try:
+                        doc_id = DRIVER_PHONE.strip().replace("+", "")
+                        db.collection("users").document(doc_id).set({
+                            "national_id": national_id,
+                            "email": email,
+                            "driving_license": drv_license,
+                            "vehicle_license": veh_license,
+                            "kyc_status": "قيد المراجعة",
+                            "kyc_type": "driver",
+                            "documents": result["urls"],
+                            "updated_at": datetime.now(timezone.utc).isoformat()
+                        }, merge=True)
+                    except Exception as e:
+                        logger.error("Failed to update Firestore after document upload: %s", e)
+                
+                st.success(result["message"])
 
     st.markdown("---")
     st.markdown("#### 🛠️ مركز المساعدة والدعم المباشر")
