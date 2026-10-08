@@ -133,7 +133,7 @@ user_data = st.session_state.get("user_data", {
 DRIVER_NAME = user_data.get("name", "ahmed mostafa mohammed")
 DRIVER_PHONE = user_data.get("phone", "+201000000000")
 
-# مفتاح اختيار الدور في أعلى الصفحة للاختبار والتنقل السريع
+# --- مفتاح اختيار الدور ---
 st.sidebar.markdown("### 🎛️ وضع التشغيل الميداني")
 worker_role = st.sidebar.radio(
     "حدد طبيعة عملك اليوم:",
@@ -144,6 +144,54 @@ worker_role = st.sidebar.radio(
 is_courier = "مندوب" in worker_role
 role_title = "المندوب" if is_courier else "الكابتن"
 vehicle_icon = "🏍️" if is_courier else "🚖"
+
+# --- 📍 GPS Live Tracking - النسخة النهائية المتحركة ---
+try:
+    from streamlit_js_eval import streamlit_js_eval
+    
+    # يجيب موقعك الحقيقي من المتصفح
+    loc = streamlit_js_eval(
+        js_expressions="""
+        new Promise((resolve) => {
+            navigator.geolocation.getCurrentPosition(
+                pos => resolve({lat: pos.coords.latitude, lon: pos.coords.longitude}),
+                err => resolve({lat: 30.0444, lon: 31.2357})
+            );
+        })
+        """,
+        key="get_loc"
+    )
+    
+    if loc and isinstance(loc, dict):
+        lat = loc.get("lat", 30.0444)
+        lon = loc.get("lon", 31.2357)
+        st.session_state.driver_lat = lat
+        st.session_state.driver_lon = lon
+    else:
+        lat = st.session_state.get("driver_lat", 30.0444)
+        lon = st.session_state.get("driver_lon", 31.2357)
+        
+except ImportError:
+    # لو المكتبة مش متثبتة، استخدم الافتراضي
+    lat = st.session_state.get("driver_lat", 30.0444)
+    lon = st.session_state.get("driver_lon", 31.2357)
+
+# حفظ الموقع مع رقمك واسمك اللي سجلت بيه
+if db is not None:
+    try:
+        doc_id = DRIVER_PHONE.strip().replace("+", "")
+        db.collection("users").document(doc_id).set({
+            "last_location": {"lat": float(lat), "lon": float(lon)},
+            "last_seen": datetime.now(timezone.utc).isoformat(),
+            "is_online": True,
+            "driver_name": DRIVER_NAME,
+            "driver_phone": DRIVER_PHONE,
+            "driver_role": worker_role
+        }, merge=True)
+        st.sidebar.success(f"📍 موقعك Live: {lat:.4f}, {lon:.4f}")
+        st.sidebar.map([{"lat": float(lat), "lon": float(lon)}])
+    except Exception as e:
+        logger.error(f"GPS update failed: {e}")
 
 # --- 3️⃣ رادار فحص قائمة الحظر الفورية منع الاحتيال ---
 if db:
